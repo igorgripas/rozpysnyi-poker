@@ -1,5 +1,15 @@
 // Публікує вердикт рецензента: commit status `agent-review`, коментар, запуск фіксера.
-import { REPO, RUN_URL, addLabels, closesIssue, comment, gh, ghJson, readResult } from './lib.mjs';
+import {
+  REPO,
+  RUN_URL,
+  addLabels,
+  closesIssue,
+  comment,
+  failureReason,
+  gh,
+  ghJson,
+  readResult,
+} from './lib.mjs';
 
 const { PR, HEAD_SHA, RESULT_FILE } = process.env;
 const { raw, report, error } = readResult(RESULT_FILE);
@@ -26,7 +36,7 @@ if (!report) {
   addLabels(PR, ['needs-human']);
   comment(
     PR,
-    `<!-- agent-review -->\n⚠️ Рецензент не повернув вердикт (${raw?.subtype ?? error}). Лог: ${RUN_URL}`,
+    `<!-- agent-review -->\n⚠️ Рецензент не повернув вердикт (${failureReason(raw, error)}). Лог: ${RUN_URL}`,
   );
   process.exit(0);
 }

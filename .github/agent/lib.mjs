@@ -66,6 +66,13 @@ export function closesIssue(body = '') {
   return m ? Number(m[1]) : null;
 }
 
+/** Короткий опис, чому агент не повернув звіт (текст помилки CLI, а не лише subtype). */
+export function failureReason(raw, error) {
+  if (!raw) return error ?? 'немає result.json';
+  const text = typeof raw.result === 'string' ? raw.result.slice(0, 300) : '';
+  return [raw.subtype, raw.is_error ? 'is_error' : '', text].filter(Boolean).join(': ');
+}
+
 export function readResult(path) {
   try {
     const raw = JSON.parse(readFileSync(path, 'utf8'));

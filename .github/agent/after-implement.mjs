@@ -5,6 +5,7 @@ import {
   RUN_URL,
   addLabels,
   comment,
+  failureReason,
   gh,
   ghJson,
   pushFromWorkspace,
@@ -31,7 +32,7 @@ function handOver(reason) {
 }
 
 if (!report) {
-  handOver(`агент не повернув звіт (${raw?.subtype ?? error ?? 'невідома помилка'}).`);
+  handOver(`агент не повернув звіт (${failureReason(raw, error)}).`);
   process.exit(0);
 }
 if (report.status !== 'done') {
