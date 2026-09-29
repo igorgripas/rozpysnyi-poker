@@ -21,3 +21,5 @@ export { deal } from './deal.js';
 export type { DealResult } from './deal.js';
 export { chooseFirstDealer, createSchedule, dealerForHand } from './schedule.js';
 export type { HandPhase, HandSpec, TrumpRule } from './schedule.js';
+export { determineTrump } from './trump.js';
+export type { TrumpResult } from './trump.js';
