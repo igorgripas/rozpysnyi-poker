@@ -1,3 +1,21 @@
 /** Версія формату логу дій; збільшується при несумісних змінах replay. */
 export const ENGINE_LOG_VERSION = 1;
 export { formatScore } from './formatScore.js';
+export {
+  DECK_SIZE,
+  MAX_PLAYERS,
+  MIN_PLAYERS,
+  RANKS,
+  SUITS,
+  assertPlayerCount,
+  cardId,
+  compareRank,
+  createDeck,
+  isJoker,
+  maxCardsPerHand,
+} from './cards.js';
+export type { Card, JokerCard, Rank, StandardCard, Suit } from './cards.js';
+export { createRng, shuffle } from './rng.js';
+export type { Rng } from './rng.js';
+export { deal } from './deal.js';
+export type { DealResult } from './deal.js';
