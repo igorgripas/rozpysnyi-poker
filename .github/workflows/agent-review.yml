@@ -1,0 +1,79 @@
+# Після CI у PR: зелений → рецензія агентом (status `agent-review`), червоний → фіксер.
+name: Agent review
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  statuses: write
+  actions: write
+jobs:
+  route:
+    if: >-
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    outputs:
+      action: ${{ steps.route.outputs.action }}
+      pr: ${{ steps.route.outputs.pr }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github/agent
+      - id: route
+        run: node .github/agent/route-ci.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+
+  review:
+    needs: route
+    if: needs.route.outputs.action == 'review'
+    runs-on: ubuntu-latest
+    environment: agent
+    timeout-minutes: 30
+    env:
+      PR: ${{ needs.route.outputs.pr }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github/agent
+          path: ctl
+      - run: mv ctl/.github/agent "$RUNNER_TEMP/ctl" && rm -rf ctl
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - run: >-
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" -f state=pending -f context=agent-review
+          -f description="Рецензія триває"
+      - run: curl -fsSL https://claude.ai/install.sh | bash && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - run: node "$RUNNER_TEMP/ctl/render-prompt.mjs" review > "$RUNNER_TEMP/prompt.md"
+      - name: Рецензент
+        run: |
+          [ -n "$ANTHROPIC_API_KEY" ] || unset ANTHROPIC_API_KEY
+          unset GH_TOKEN
+          claude -p --model "${AGENT_MODEL:-opus}" --permission-mode dontAsk \
+            --allowedTools "Read,Grep,Glob,Bash(git diff *),Bash(git log *),Bash(git show *)" \
+            --output-format json --json-schema "$(cat "$RUNNER_TEMP/ctl/schemas/review.json")" \
+            --max-budget-usd "${AGENT_REVIEW_BUDGET_USD:-3}" --no-session-persistence \
+            < "$RUNNER_TEMP/prompt.md" > "$RUNNER_TEMP/result.json" || true
+          jq '{subtype, total_cost_usd, structured_output}' "$RUNNER_TEMP/result.json" || true
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AGENT_MODEL: ${{ vars.AGENT_MODEL }}
+          AGENT_REVIEW_BUDGET_USD: ${{ vars.AGENT_REVIEW_BUDGET_USD }}
+      - if: always()
+        run: node "$RUNNER_TEMP/ctl/post-review.mjs"
+        env:
+          RESULT_FILE: ${{ runner.temp }}/result.json

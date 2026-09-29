@@ -1,0 +1,83 @@
+# Бере наступну задачу `agent:ready` і реалізує її агентом → PR з auto-merge.
+name: Agent dispatch
+on:
+  schedule:
+    - cron: '17 */2 * * *'
+  push:
+    branches: [main]
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+concurrency:
+  group: agent-dispatch
+  cancel-in-progress: false
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+jobs:
+  pick:
+    if: github.event_name != 'issues' || github.event.label.name == 'agent:ready'
+    runs-on: ubuntu-latest
+    outputs:
+      issue: ${{ steps.pick.outputs.issue }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github/agent
+      - id: pick
+        run: node .github/agent/pick-task.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AGENT_PAUSED: ${{ vars.AGENT_PAUSED }}
+          AGENT_DAILY_PR_CAP: ${{ vars.AGENT_DAILY_PR_CAP }}
+
+  implement:
+    needs: pick
+    if: needs.pick.outputs.issue != ''
+    runs-on: ubuntu-latest
+    environment: agent
+    timeout-minutes: 90
+    env:
+      ISSUE: ${{ needs.pick.outputs.issue }}
+      BRANCH: agent/issue-${{ needs.pick.outputs.issue }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Керувальні файли (копія з main до початку роботи агента)
+        run: cp -r .github/agent "$RUNNER_TEMP/ctl"
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - run: npm install -g "pnpm@$(node -p "require('./package.json').packageManager.split('@')[1]")"
+      - run: pnpm install --frozen-lockfile
+      - run: curl -fsSL https://claude.ai/install.sh | bash && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Промпт
+        run: node "$RUNNER_TEMP/ctl/render-prompt.mjs" implement > "$RUNNER_TEMP/prompt.md"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Агент
+        run: |
+          [ -n "$ANTHROPIC_API_KEY" ] || unset ANTHROPIC_API_KEY
+          git config user.name "poker-agent"
+          git config user.email "poker-agent@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          claude -p --model "${AGENT_MODEL:-opus}" --permission-mode bypassPermissions \
+            --output-format json --json-schema "$(cat "$RUNNER_TEMP/ctl/schemas/report.json")" \
+            --max-budget-usd "${AGENT_BUDGET_USD:-10}" --no-session-persistence \
+            < "$RUNNER_TEMP/prompt.md" > "$RUNNER_TEMP/result.json" || true
+          jq '{subtype, is_error, num_turns, total_cost_usd, structured_output}' "$RUNNER_TEMP/result.json" || true
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AGENT_MODEL: ${{ vars.AGENT_MODEL }}
+          AGENT_BUDGET_USD: ${{ vars.AGENT_BUDGET_USD }}
+      - name: Публікація PR
+        if: always()
+        run: node "$RUNNER_TEMP/ctl/after-implement.mjs"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AGENT_GH_TOKEN: ${{ secrets.AGENT_GH_TOKEN }}
+          RESULT_FILE: ${{ runner.temp }}/result.json

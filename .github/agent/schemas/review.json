@@ -1,0 +1,21 @@
+{
+  "type": "object",
+  "properties": {
+    "verdict": { "type": "string", "enum": ["approve", "changes", "needs_human"] },
+    "summary": { "type": "string" },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "severity": { "type": "string", "enum": ["blocker", "major", "minor"] },
+          "file": { "type": "string" },
+          "line": { "type": "integer" },
+          "problem": { "type": "string" }
+        },
+        "required": ["severity", "file", "problem"]
+      }
+    }
+  },
+  "required": ["verdict", "summary", "findings"]
+}

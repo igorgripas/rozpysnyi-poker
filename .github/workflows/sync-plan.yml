@@ -1,0 +1,21 @@
+name: Sync plan
+on:
+  push:
+    branches: [main]
+    paths: [docs/PLAN.md]
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: |
+            .github/agent
+            docs
+      - run: node .github/agent/sync-plan.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}

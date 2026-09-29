@@ -1,0 +1,19 @@
+{
+  "name": "@poker/engine",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Детермінований рушій правил розписного покера",
+  "type": "module",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  }
+}

@@ -1,0 +1,87 @@
+# Виправлення PR агента після червоного CI або зауважень рецензента (до 3 спроб).
+name: Agent fix
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        required: true
+        type: string
+      reason:
+        required: true
+        type: choice
+        options: [ci, review]
+      run_id:
+        required: false
+        type: string
+        default: ''
+concurrency:
+  group: agent-fix-${{ inputs.pr }}
+  cancel-in-progress: false
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  actions: read
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    environment: agent
+    timeout-minutes: 60
+    env:
+      PR: ${{ inputs.pr }}
+      REASON: ${{ inputs.reason }}
+      RUN_ID: ${{ inputs.run_id }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github/agent
+          path: ctl
+      - run: mv ctl/.github/agent "$RUNNER_TEMP/ctl" && rm -rf ctl
+      - id: pre
+        run: node "$RUNNER_TEMP/ctl/fix-precheck.mjs"
+        env:
+          AGENT_GH_TOKEN: ${{ secrets.AGENT_GH_TOKEN }}
+          CONTEXT_FILE: ${{ runner.temp }}/context.md
+      - if: steps.pre.outputs.skip == 'false'
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.pre.outputs.branch }}
+          fetch-depth: 0
+          persist-credentials: false
+      - if: steps.pre.outputs.skip == 'false'
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+      - if: steps.pre.outputs.skip == 'false'
+        run: |
+          npm install -g "pnpm@$(node -p "require('./package.json').packageManager.split('@')[1]")"
+          pnpm install --frozen-lockfile
+          curl -fsSL https://claude.ai/install.sh | bash && echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - if: steps.pre.outputs.skip == 'false'
+        run: node "$RUNNER_TEMP/ctl/render-prompt.mjs" fix > "$RUNNER_TEMP/prompt.md"
+        env:
+          CONTEXT_FILE: ${{ runner.temp }}/context.md
+      - if: steps.pre.outputs.skip == 'false'
+        name: Фіксер
+        run: |
+          [ -n "$ANTHROPIC_API_KEY" ] || unset ANTHROPIC_API_KEY
+          unset GH_TOKEN
+          git config user.name "poker-agent"
+          git config user.email "poker-agent@users.noreply.github.com"
+          claude -p --model "${AGENT_MODEL:-opus}" --permission-mode bypassPermissions \
+            --output-format json --json-schema "$(cat "$RUNNER_TEMP/ctl/schemas/report.json")" \
+            --max-budget-usd "${AGENT_BUDGET_USD:-10}" --no-session-persistence \
+            < "$RUNNER_TEMP/prompt.md" > "$RUNNER_TEMP/result.json" || true
+          jq '{subtype, total_cost_usd, structured_output}' "$RUNNER_TEMP/result.json" || true
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AGENT_MODEL: ${{ vars.AGENT_MODEL }}
+          AGENT_BUDGET_USD: ${{ vars.AGENT_BUDGET_USD }}
+      - if: always() && steps.pre.outputs.skip == 'false'
+        run: node "$RUNNER_TEMP/ctl/after-fix.mjs"
+        env:
+          BRANCH: ${{ steps.pre.outputs.branch }}
+          AGENT_GH_TOKEN: ${{ secrets.AGENT_GH_TOKEN }}
+          RESULT_FILE: ${{ runner.temp }}/result.json

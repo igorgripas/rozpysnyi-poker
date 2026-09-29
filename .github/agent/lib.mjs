@@ -1,0 +1,99 @@
+// Спільні хелпери для керувальних скриптів автопілота. Запускаються лише з main.
+import { execFileSync } from 'node:child_process';
+import { appendFileSync, readFileSync } from 'node:fs';
+
+export const REPO = process.env.GITHUB_REPOSITORY ?? process.env.REPO;
+export const OWNER = process.env.GITHUB_REPOSITORY_OWNER ?? REPO?.split('/')[0];
+export const RUN_URL = process.env.GITHUB_RUN_ID
+  ? `${process.env.GITHUB_SERVER_URL}/${REPO}/actions/runs/${process.env.GITHUB_RUN_ID}`
+  : '(локальний запуск)';
+
+/** Шляхи, які агент не може змінювати без мітки `spec-change` від власника. */
+export const PROTECTED = [
+  /^docs\/RULES\.md$/,
+  /^packages\/engine\/test\/golden\//,
+  /^\.github\//,
+  /^CLAUDE\.md$/,
+];
+export const isProtected = (file) => PROTECTED.some((re) => re.test(file));
+
+export function run(cmd, args, opts = {}) {
+  return execFileSync(cmd, args, { encoding: 'utf8', maxBuffer: 64 << 20, ...opts });
+}
+
+/** Виклик gh; `token` підміняє GH_TOKEN (напр. PAT агента замість GITHUB_TOKEN). */
+export function gh(args, { token, input } = {}) {
+  const env = token ? { ...process.env, GH_TOKEN: token } : process.env;
+  return run('gh', args, { env, input });
+}
+export const ghJson = (args, opts) => JSON.parse(gh(args, opts) || 'null');
+
+export function setOutput(name, value) {
+  const line = `${name}<<__EOF__\n${value}\n__EOF__\n`;
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, line);
+  else console.log(`[output] ${name}=${value}`);
+}
+
+export function addLabels(number, labels, opts) {
+  if (labels.length)
+    gh(['issue', 'edit', String(number), '--repo', REPO, '--add-label', labels.join(',')], opts);
+}
+export function removeLabels(number, labels, opts) {
+  for (const label of labels) {
+    try {
+      gh(['issue', 'edit', String(number), '--repo', REPO, '--remove-label', label], opts);
+    } catch {
+      // мітки могло й не бути
+    }
+  }
+}
+export function comment(number, body, opts) {
+  gh(['issue', 'comment', String(number), '--repo', REPO, '--body-file', '-'], {
+    ...opts,
+    input: body,
+  });
+}
+
+/** Номери з рядка `Depends on #1, #2`. */
+export function dependsOn(body = '') {
+  const line = body.match(/Depends on:?([^\n]*)/i);
+  return line ? [...line[1].matchAll(/#(\d+)/g)].map((m) => Number(m[1])) : [];
+}
+
+/** Номер issue з `Closes #N` у тілі PR. */
+export function closesIssue(body = '') {
+  const m = body.match(/(?:Closes|Fixes|Resolves)\s+#(\d+)/i);
+  return m ? Number(m[1]) : null;
+}
+
+export function readResult(path) {
+  try {
+    const raw = JSON.parse(readFileSync(path, 'utf8'));
+    return { raw, report: raw.structured_output ?? null };
+  } catch (e) {
+    return { raw: null, report: null, error: String(e) };
+  }
+}
+
+/**
+ * Переносить коміти з робочої копії (де працював агент) у чистий клон і пушить з PAT.
+ * Робоча копія вважається недовіреною: її git-config і хуки не використовуються.
+ */
+export function pushFromWorkspace({ workspace, branch, token, force = false }) {
+  const dir = `${process.env.RUNNER_TEMP ?? '/tmp'}/push-${Date.now()}`;
+  const url = `https://x-access-token:${token}@github.com/${REPO}.git`;
+  run('git', ['init', '-q', dir]);
+  run('git', ['-C', dir, 'fetch', '-q', '--no-tags', workspace, `HEAD:refs/heads/${branch}`]);
+  const args = [
+    '-C',
+    dir,
+    '-c',
+    'core.hooksPath=/dev/null',
+    'push',
+    '-q',
+    url,
+    `refs/heads/${branch}:refs/heads/${branch}`,
+  ];
+  if (force) args.splice(5, 0, '--force');
+  run('git', args);
+}
