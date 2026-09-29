@@ -3,7 +3,7 @@ import { writeFileSync } from 'node:fs';
 import {
   REPO,
   addLabels,
-  closesIssue,
+  closesIssues,
   comment,
   gh,
   ghJson,
@@ -35,8 +35,7 @@ if (pr.state !== 'OPEN' || labels.includes('needs-human')) {
 if (attempts >= MAX_ATTEMPTS) {
   gh(['pr', 'merge', PR, '--repo', REPO, '--disable-auto'], { token: AGENT_GH_TOKEN });
   addLabels(PR, ['needs-human']);
-  const issue = closesIssue(pr.body);
-  if (issue) addLabels(issue, ['needs-human']);
+  for (const issue of closesIssues(pr.body)) addLabels(issue, ['needs-human']);
   comment(
     PR,
     `🛑 ${MAX_ATTEMPTS} спроби виправлення не допомогли. Auto-merge вимкнено, потрібна людина.`,

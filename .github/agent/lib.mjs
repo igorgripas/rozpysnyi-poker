@@ -34,11 +34,16 @@ export function setOutput(name, value) {
   else console.log(`[output] ${name}=${value}`);
 }
 
+/** DRY_RUN=1 — лише логувати зміни міток і коментарі (для локальної перевірки). */
+const DRY = Boolean(process.env.DRY_RUN);
+
 export function addLabels(number, labels, opts) {
+  if (DRY) return console.log(`[dry] #${number} +${labels.join(',')}`);
   if (labels.length)
     gh(['issue', 'edit', String(number), '--repo', REPO, '--add-label', labels.join(',')], opts);
 }
 export function removeLabels(number, labels, opts) {
+  if (DRY) return console.log(`[dry] #${number} -${labels.join(',')}`);
   for (const label of labels) {
     try {
       gh(['issue', 'edit', String(number), '--repo', REPO, '--remove-label', label], opts);
@@ -48,6 +53,7 @@ export function removeLabels(number, labels, opts) {
   }
 }
 export function comment(number, body, opts) {
+  if (DRY) return console.log(`[dry] #${number} коментар: ${body.slice(0, 80)}`);
   gh(['issue', 'comment', String(number), '--repo', REPO, '--body-file', '-'], {
     ...opts,
     input: body,
@@ -60,10 +66,9 @@ export function dependsOn(body = '') {
   return line ? [...line[1].matchAll(/#(\d+)/g)].map((m) => Number(m[1])) : [];
 }
 
-/** Номер issue з `Closes #N` у тілі PR. */
-export function closesIssue(body = '') {
-  const m = body.match(/(?:Closes|Fixes|Resolves)\s+#(\d+)/i);
-  return m ? Number(m[1]) : null;
+/** Номери issues з рядків `Closes #N` у тілі PR (PR може закривати пакет задач). */
+export function closesIssues(body = '') {
+  return [...body.matchAll(/(?:Closes|Fixes|Resolves)\s+#(\d+)/gi)].map((m) => Number(m[1]));
 }
 
 /** Короткий опис, чому агент не повернув звіт (текст помилки CLI, а не лише subtype). */

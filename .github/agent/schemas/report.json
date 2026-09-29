@@ -2,6 +2,11 @@
   "type": "object",
   "properties": {
     "status": { "type": "string", "enum": ["done", "blocked"] },
+    "completed": {
+      "type": "array",
+      "items": { "type": "integer" },
+      "description": "Номери повністю виконаних issues"
+    },
     "summary": { "type": "string", "description": "Markdown-список змін українською" },
     "blocked_reason": { "type": "string" },
     "followups": {

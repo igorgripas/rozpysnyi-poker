@@ -56,8 +56,8 @@ Workflow `guard` відхиляє PR агента, який торкається
 |----------|--------|-----------|
 | `ci.yml` | PR, push у main | `pnpm verify`: lint, typecheck, unit + property, golden, симуляція 10k ігор, build, Playwright e2e (мобільний + десктоп), пороги coverage |
 | `guard.yml` | PR | перевіряє, що захищені шляхи змінені лише з дозволу |
-| `agent-dispatch.yml` | cron кожні 2 год, merge PR, ручний запуск | якщо немає відкритого PR агента — бере наступну `agent:ready`-задачу (P0 → P2, потім за номером), ставить `in-progress`, запускає implement |
-| `agent-implement.yml` | з dispatch | Claude Code (`anthropics/claude-code-action`): читає CLAUDE.md, RULES.md, issue. Працює за TDD: спершу тести, потім код. Запускає `pnpm verify` і відкриває PR |
+| `agent-dispatch.yml` | cron кожні 2 год, merge PR, ручний запуск | якщо немає відкритого PR агента, бере **пакет** до `AGENT_BATCH_SIZE` задач `agent:ready` одного етапу (P0 → P2, потім за номером). Залежності кожної задачі мають бути закриті або входити в той самий пакет. Задачі зі `spec-change` завжди йдуть окремо. Ставить `in-progress` і запускає implement |
+| implement (job у dispatch) | з dispatch | Claude Code CLI виконує задачі пакета по черзі за TDD, по коміту на задачу. Відкривається один PR з `Closes #…` для кожної виконаної задачі. Якщо агент зупинився посеред пакета, виконані задачі йдуть у PR, задача, на якій він зупинився, — людині, решта повертається в чергу |
 | `agent-review.yml` | PR агента, зелений CI | окремий запуск Claude з роллю рецензента: звіряє зміни з RULES.md і критеріями приймання, шукає послаблені тести та невідтестовані гілки. Результат публікує як status check `agent-review` |
 | `agent-fix.yml` | CI червоний або `agent-review` = changes | Claude виправляє. Після 3 невдалих спроб ставить `needs-human` і надсилає сповіщення |
 | auto-merge | branch protection | обов'язкові checks: `verify` (CI), `guard`, `agent-review`. Після них — squash-merge |
@@ -93,9 +93,10 @@ Workflow `guard` відхиляє PR агента, який торкається
 | Змінна | За замовчуванням | Призначення |
 |--------|------------------|-------------|
 | `AGENT_PAUSED` | — | `true` — аварійний вимикач: агент не бере нових задач |
-| `AGENT_DAILY_PR_CAP` | 10 | ліміт PR агента на добу |
+| `AGENT_DAILY_PR_CAP` | 10 | ліміт PR агента на добу (UTC) |
+| `AGENT_BATCH_SIZE` | 3 | максимум задач в одному PR |
 | `AGENT_MODEL` | `opus` | модель агентів |
-| `AGENT_BUDGET_USD` / `AGENT_REVIEW_BUDGET_USD` | 10 / 3 | `--max-budget-usd` на один запуск |
+| `AGENT_BUDGET_USD` / `AGENT_REVIEW_BUDGET_USD` | 10 / 3 | `--max-budget-usd`: для implement — на кожну задачу пакета, для рецензента — на запуск |
 
 **Секрети** — лише в environment `agent`, до якого є доступ тільки з гілки main. Workflows з PR-гілок цих секретів не бачать.
 - `CLAUDE_CODE_OAUTH_TOKEN` (через `claude setup-token`) або `ANTHROPIC_API_KEY`.

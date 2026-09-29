@@ -1,16 +1,23 @@
-// Обирає наступну задачу для агента або нічого, якщо агент зайнятий / на паузі / вичерпав ліміт.
+// Обирає наступний пакет задач (до AGENT_BATCH_SIZE, один етап) або нічого, якщо агент зайнятий /
+// на паузі / вичерпав ліміт. Задачі, що потребують `spec-change`, завжди йдуть окремим PR.
 import { REPO, addLabels, comment, dependsOn, ghJson, removeLabels, setOutput } from './lib.mjs';
 
 const PRIORITY = { P0: 0, P1: 1, P2: 2 };
 const cap = Number(process.env.AGENT_DAILY_PR_CAP || 10);
+const batchSize = Math.max(1, Number(process.env.AGENT_BATCH_SIZE || 3));
 
-function done(issue, reason) {
-  console.log(issue ? `Обрано #${issue}` : `Нічого не обрано: ${reason}`);
-  setOutput('issue', issue ? String(issue) : '');
+function done(issues, reason) {
+  console.log(
+    issues.length
+      ? `Обрано ${issues.map((n) => `#${n}`).join(', ')}`
+      : `Нічого не обрано: ${reason}`,
+  );
+  setOutput('issue', issues.length ? String(issues[0]) : '');
+  setOutput('issues', issues.join(' '));
   process.exit(0);
 }
 
-if (process.env.AGENT_PAUSED === 'true') done(null, 'AGENT_PAUSED=true');
+if (process.env.AGENT_PAUSED === 'true') done([], 'AGENT_PAUSED=true');
 
 const openPrs = ghJson([
   'pr',
@@ -24,7 +31,7 @@ const openPrs = ghJson([
   '--json',
   'number',
 ]);
-if (openPrs.length) done(null, `відкритий PR агента #${openPrs[0].number}`);
+if (openPrs.length) done([], `відкритий PR агента #${openPrs[0].number}`);
 
 const today = new Date().toISOString().slice(0, 10);
 const createdToday = ghJson([
@@ -43,7 +50,7 @@ const createdToday = ghJson([
   '--limit',
   '100',
 ]);
-if (createdToday.length >= cap) done(null, `денний ліміт ${cap} PR вичерпано`);
+if (createdToday.length >= cap) done([], `денний ліміт ${cap} PR вичерпано`);
 
 const all = ghJson([
   'issue',
@@ -88,16 +95,32 @@ const ready = ghJson([
   '--json',
   'number,body,labels',
 ]);
-const candidates = ready
+const prio = (i) => {
+  const p = [...labelsOf(i)].find((l) => l in PRIORITY);
+  return p ? PRIORITY[p] : 1;
+};
+const epic = (i) => [...labelsOf(i)].find((l) => l.startsWith('epic:')) ?? null;
+const solo = (i) => /spec-change/.test(i.body ?? '');
+const depsReady = (i, batch) =>
+  dependsOn(i.body).every((n) => state.get(n) !== 'OPEN' || batch.has(n));
+const sorted = ready
   .filter((i) => !labelsOf(i).has('needs-human'))
-  .filter((i) => dependsOn(i.body).every((n) => state.get(n) !== 'OPEN'))
-  .map((i) => {
-    const p = [...labelsOf(i)].find((l) => l in PRIORITY);
-    return { number: i.number, prio: p ? PRIORITY[p] : 1 };
-  })
-  .sort((a, b) => a.prio - b.prio || a.number - b.number);
+  .sort((a, b) => prio(a) - prio(b) || a.number - b.number);
 
-if (!candidates.length) done(null, 'немає готових задач із закритими залежностями');
-const issue = candidates[0].number;
-addLabels(issue, ['agent:in-progress']);
-done(issue);
+const first = sorted.find((i) => depsReady(i, new Set()));
+if (!first) done([], 'немає готових задач із закритими залежностями');
+
+// Пакет: задачі того ж етапу, чиї залежності закриті або вже є в пакеті (порядок = топологічний).
+const batch = [first];
+while (!solo(first) && batch.length < batchSize) {
+  const taken = new Set(batch.map((i) => i.number));
+  const next = sorted.find(
+    (i) => !taken.has(i.number) && !solo(i) && epic(i) === epic(first) && depsReady(i, taken),
+  );
+  if (!next) break;
+  batch.push(next);
+}
+
+const numbers = batch.map((i) => i.number);
+for (const n of numbers) addLabels(n, ['agent:in-progress']);
+done(numbers);

@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { OWNER, REPO, closesIssue, ghJson } from './lib.mjs';
+import { OWNER, REPO, closesIssues, ghJson } from './lib.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const kind = process.argv[2];
@@ -11,7 +11,6 @@ const env = process.env;
 
 /** Текст issue: заголовок, опис і коментарі лише від власника (решта — потенційно недовірені). */
 function issueText(number) {
-  if (!number) return '(задачу не знайдено)';
   const i = ghJson([
     'issue',
     'view',
@@ -25,18 +24,22 @@ function issueText(number) {
     .filter((c) => c.author?.login === OWNER)
     .map((c) => `Коментар власника:\n${c.body}`)
     .join('\n\n');
-  return `#${i.number} ${i.title}\n\n${i.body}${comments ? `\n\n${comments}` : ''}`;
+  return `<issue number="${i.number}">\n#${i.number} ${i.title}\n\n${i.body}${comments ? `\n\n${comments}` : ''}\n</issue>`;
 }
+
+const issuesText = (numbers) =>
+  numbers.length ? numbers.map(issueText).join('\n\n') : "(пов'язаних задач не знайдено)";
 
 const vars = {};
 if (kind === 'implement') {
-  vars.ISSUE_NUMBER = env.ISSUE;
-  vars.ISSUE = issueText(env.ISSUE);
+  const numbers = (env.ISSUES || env.ISSUE).split(/\s+/).filter(Boolean).map(Number);
+  vars.ISSUE_LIST = numbers.map((n) => `#${n}`).join(', ');
+  vars.ISSUES = issuesText(numbers);
 } else {
   const pr = ghJson(['pr', 'view', env.PR, '--repo', REPO, '--json', 'number,title,body']);
   vars.PR_NUMBER = String(pr.number);
   vars.PR_TITLE = pr.title;
-  vars.ISSUE = issueText(closesIssue(pr.body));
+  vars.ISSUES = issuesText(closesIssues(pr.body));
   if (kind === 'fix') {
     vars.REASON = env.REASON === 'ci' ? 'CI впав' : 'рецензент попросив змін';
     vars.CONTEXT = readFileSync(env.CONTEXT_FILE, 'utf8');

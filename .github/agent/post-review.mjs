@@ -3,7 +3,7 @@ import {
   REPO,
   RUN_URL,
   addLabels,
-  closesIssue,
+  closesIssues,
   comment,
   failureReason,
   gh,
@@ -69,6 +69,5 @@ if (report.verdict === 'approve') {
 } else {
   status('failure', 'Потрібне рішення людини');
   addLabels(PR, ['needs-human']);
-  const issue = closesIssue(pr.body);
-  if (issue) addLabels(issue, ['needs-human']);
+  for (const issue of closesIssues(pr.body)) addLabels(issue, ['needs-human']);
 }

@@ -21,6 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       issue: ${{ steps.pick.outputs.issue }}
+      issues: ${{ steps.pick.outputs.issues }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -31,15 +32,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           AGENT_PAUSED: ${{ vars.AGENT_PAUSED }}
           AGENT_DAILY_PR_CAP: ${{ vars.AGENT_DAILY_PR_CAP }}
+          AGENT_BATCH_SIZE: ${{ vars.AGENT_BATCH_SIZE }}
 
   implement:
     needs: pick
     if: needs.pick.outputs.issue != ''
     runs-on: ubuntu-latest
     environment: agent
-    timeout-minutes: 90
+    timeout-minutes: 150
     env:
       ISSUE: ${{ needs.pick.outputs.issue }}
+      ISSUES: ${{ needs.pick.outputs.issues }}
       BRANCH: agent/issue-${{ needs.pick.outputs.issue }}
     steps:
       - uses: actions/checkout@v5
@@ -65,9 +68,11 @@ jobs:
           git config user.name "poker-agent"
           git config user.email "poker-agent@users.noreply.github.com"
           git checkout -b "$BRANCH"
+          # Бюджет масштабується з розміром пакета.
+          BUDGET=$(awk -v b="${AGENT_BUDGET_USD:-10}" -v n="$(wc -w <<< "$ISSUES")" 'BEGIN { print b * n }')
           claude -p --model "${AGENT_MODEL:-opus}" --permission-mode bypassPermissions \
             --output-format json --json-schema "$(cat "$RUNNER_TEMP/ctl/schemas/report.json")" \
-            --max-budget-usd "${AGENT_BUDGET_USD:-10}" --no-session-persistence \
+            --max-budget-usd "$BUDGET" --no-session-persistence \
             < "$RUNNER_TEMP/prompt.md" > "$RUNNER_TEMP/result.json" || true
           jq '{subtype, is_error, num_turns, total_cost_usd, structured_output}' "$RUNNER_TEMP/result.json" || true
         env:
