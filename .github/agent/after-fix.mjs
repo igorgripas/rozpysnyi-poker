@@ -9,6 +9,7 @@ import {
   isProtected,
   pushFromWorkspace,
   readResult,
+  redact,
   removeLabels,
   run,
 } from './lib.mjs';
@@ -38,7 +39,16 @@ const touched = run('git', [
   .split('\n')
   .filter(Boolean)
   .filter(isProtected);
-pushFromWorkspace({ workspace: GITHUB_WORKSPACE, branch: BRANCH, token: AGENT_GH_TOKEN });
+try {
+  pushFromWorkspace({ workspace: GITHUB_WORKSPACE, branch: BRANCH, token: AGENT_GH_TOKEN });
+} catch (e) {
+  addLabels(PR, ['needs-human']);
+  comment(
+    PR,
+    `🛑 Не вдалося запушити виправлення: ${redact(e.stderr || e.message, AGENT_GH_TOKEN)}\n\nЛог: ${RUN_URL}`,
+  );
+  process.exit(0);
+}
 
 const labels = ghJson(['pr', 'view', PR, '--repo', REPO, '--json', 'labels']).labels.map(
   (l) => l.name,

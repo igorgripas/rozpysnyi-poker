@@ -6,6 +6,7 @@ import {
   addLabels,
   comment,
   failureReason,
+  redact,
   gh,
   ghJson,
   pushFromWorkspace,
@@ -44,50 +45,56 @@ if (ahead === 0) {
   process.exit(0);
 }
 
-pushFromWorkspace({
-  workspace: GITHUB_WORKSPACE,
-  branch: BRANCH,
-  token: AGENT_GH_TOKEN,
-  force: true,
-});
+let url;
+try {
+  pushFromWorkspace({
+    workspace: GITHUB_WORKSPACE,
+    branch: BRANCH,
+    token: AGENT_GH_TOKEN,
+    force: true,
+  });
 
-const { title } = ghJson(['issue', 'view', String(issue), '--repo', REPO, '--json', 'title']);
-const body = [
-  `Closes #${issue}`,
-  '',
-  '## Що зроблено',
-  report.summary,
-  report.followups?.length
-    ? `\n## Пропозиції (створено issues з міткою triage)\n${report.followups.map((f) => `- ${f.title}`).join('\n')}`
-    : '',
-  '',
-  `_Автопілот · [лог](${RUN_URL}) · вартість ≈ $${(raw.total_cost_usd ?? 0).toFixed(2)}_`,
-].join('\n');
-const bodyFile = `${process.env.RUNNER_TEMP ?? '/tmp'}/pr-body.md`;
-writeFileSync(bodyFile, body);
+  const { title } = ghJson(['issue', 'view', String(issue), '--repo', REPO, '--json', 'title']);
+  const body = [
+    `Closes #${issue}`,
+    '',
+    '## Що зроблено',
+    report.summary,
+    report.followups?.length
+      ? `\n## Пропозиції (створено issues з міткою triage)\n${report.followups.map((f) => `- ${f.title}`).join('\n')}`
+      : '',
+    '',
+    `_Автопілот · [лог](${RUN_URL}) · вартість ≈ $${(raw.total_cost_usd ?? 0).toFixed(2)}_`,
+  ].join('\n');
+  const bodyFile = `${process.env.RUNNER_TEMP ?? '/tmp'}/pr-body.md`;
+  writeFileSync(bodyFile, body);
 
-const auth = { token: AGENT_GH_TOKEN };
-const url = gh(
-  [
-    'pr',
-    'create',
-    '--repo',
-    REPO,
-    '--head',
-    BRANCH,
-    '--base',
-    'main',
-    '--title',
-    title,
-    '--body-file',
-    bodyFile,
-    '--label',
-    'agent',
-  ],
-  auth,
-).trim();
-gh(['pr', 'merge', url, '--auto', '--squash', '--delete-branch'], auth);
-console.log(`PR: ${url}`);
+  const auth = { token: AGENT_GH_TOKEN };
+  url = gh(
+    [
+      'pr',
+      'create',
+      '--repo',
+      REPO,
+      '--head',
+      BRANCH,
+      '--base',
+      'main',
+      '--title',
+      title,
+      '--body-file',
+      bodyFile,
+      '--label',
+      'agent',
+    ],
+    auth,
+  ).trim();
+  gh(['pr', 'merge', url, '--auto', '--squash', '--delete-branch'], auth);
+  console.log(`PR: ${url}`);
+} catch (e) {
+  handOver(`не вдалося опублікувати PR: ${redact(e.stderr || e.message, AGENT_GH_TOKEN)}`);
+  process.exit(0);
+}
 
 for (const f of report.followups ?? []) {
   gh([

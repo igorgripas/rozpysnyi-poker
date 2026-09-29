@@ -23,7 +23,7 @@ export function run(cmd, args, opts = {}) {
 
 /** Виклик gh; `token` підміняє GH_TOKEN (напр. PAT агента замість GITHUB_TOKEN). */
 export function gh(args, { token, input } = {}) {
-  const env = token ? { ...process.env, GH_TOKEN: token } : process.env;
+  const env = token ? { ...process.env, GH_TOKEN: token.trim() } : process.env;
   return run('gh', args, { env, input });
 }
 export const ghJson = (args, opts) => JSON.parse(gh(args, opts) || 'null');
@@ -82,25 +82,38 @@ export function readResult(path) {
   }
 }
 
+/** Прибирає токени з тексту, що може потрапити в публічний коментар. */
+export function redact(text, ...secrets) {
+  let out = String(text);
+  for (const secret of secrets.filter(Boolean)) out = out.split(secret).join('***');
+  return out.replace(
+    /(x-access-token:|basic |gh[pousr]_|github_pat_)[A-Za-z0-9_=+/:-]+/gi,
+    '$1***',
+  );
+}
+
 /**
- * Переносить коміти з робочої копії (де працював агент) у чистий клон і пушить з PAT.
+ * Переносить коміти з робочої копії (де працював агент) у чистий репозиторій і пушить з PAT.
  * Робоча копія вважається недовіреною: її git-config і хуки не використовуються.
+ * Токен передається заголовком (не в URL), щоб не потрапити в повідомлення про помилки.
  */
 export function pushFromWorkspace({ workspace, branch, token, force = false }) {
   const dir = `${process.env.RUNNER_TEMP ?? '/tmp'}/push-${Date.now()}`;
-  const url = `https://x-access-token:${token}@github.com/${REPO}.git`;
+  const basic = Buffer.from(`x-access-token:${token.trim()}`).toString('base64');
+  if (process.env.GITHUB_ACTIONS) console.log(`::add-mask::${basic}`);
   run('git', ['init', '-q', dir]);
   run('git', ['-C', dir, 'fetch', '-q', '--no-tags', workspace, `HEAD:refs/heads/${branch}`]);
-  const args = [
+  run('git', [
     '-C',
     dir,
     '-c',
     'core.hooksPath=/dev/null',
+    '-c',
+    `http.https://github.com/.extraheader=AUTHORIZATION: basic ${basic}`,
     'push',
     '-q',
-    url,
+    ...(force ? ['--force'] : []),
+    `https://github.com/${REPO}.git`,
     `refs/heads/${branch}:refs/heads/${branch}`,
-  ];
-  if (force) args.splice(5, 0, '--force');
-  run('git', args);
+  ]);
 }
