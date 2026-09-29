@@ -1,5 +1,4 @@
-/** Версія формату логу дій; збільшується при несумісних змінах replay. */
-export const ENGINE_LOG_VERSION = 1;
+export { ENGINE_LOG_VERSION } from './log.js';
 export { formatScore } from './formatScore.js';
 export {
   DECK_SIZE,
@@ -41,3 +40,22 @@ export {
 export type { JokerCall, PlayedJoker, TrickCard } from './trick.js';
 export { JOKER_PENALTY, buildScoreTable, countJokers, finalScore, scoreHand } from './score.js';
 export type { HandRecord, ScoreCell, ScoreRow, ScoreSummary, ScoreTable } from './score.js';
+export {
+  IllegalActionError,
+  apply,
+  createGame,
+  gameLog,
+  legalActions,
+  replay,
+  scoreTable,
+  viewFor,
+} from './game.js';
+export type {
+  Action,
+  CompletedTrick,
+  GameLog,
+  GameState,
+  GameStatus,
+  HandState,
+  PlayerView,
+} from './game.js';
