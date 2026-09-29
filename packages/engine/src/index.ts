@@ -23,3 +23,10 @@ export { chooseFirstDealer, createSchedule, dealerForHand } from './schedule.js'
 export type { HandPhase, HandSpec, TrumpRule } from './schedule.js';
 export { determineTrump } from './trump.js';
 export type { TrumpResult } from './trump.js';
+export {
+  biddingOrder,
+  forbiddenDealerBid,
+  handHasBidding,
+  isLegalBid,
+  legalBids,
+} from './bidding.js';
