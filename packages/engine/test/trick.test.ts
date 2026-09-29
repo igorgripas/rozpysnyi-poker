@@ -74,9 +74,8 @@ describe('розіграш взяток', () => {
     expect(isLegalPlay(hand, [], null, c('clubs', 7))).toBe(false);
   });
 
-  it('R-5.2: rejects a hand or trick with jokers (handled in T15)', () => {
+  it('R-5.2: rejects a trick with an undeclared joker (see §6)', () => {
     const joker = { kind: 'joker', index: 0 } as const;
-    expect(() => legalPlays([joker] as never, [], null)).toThrow(RangeError);
     expect(() => legalPlays([c('hearts', 6)], [joker] as never, null)).toThrow(RangeError);
   });
 
@@ -121,7 +120,7 @@ describe('розіграш взяток', () => {
     ).toBe(0);
   });
 
-  it('R-5.4: trick winner rejects an empty trick, too many cards and jokers', () => {
+  it('R-5.4: trick winner rejects an empty trick, too many cards and undeclared jokers', () => {
     expect(() => trickWinner(0, [], null, 3)).toThrow(RangeError);
     expect(() =>
       trickWinner(0, [c('hearts', 6), c('hearts', 7), c('hearts', 8), c('hearts', 9)], null, 3),

@@ -30,4 +30,12 @@ export {
   isLegalBid,
   legalBids,
 } from './bidding.js';
-export { firstLeader, isLegalPlay, legalPlays, trickWinner } from './trick.js';
+export {
+  firstLeader,
+  isLegalJokerCall,
+  isLegalPlay,
+  legalJokerCalls,
+  legalPlays,
+  trickWinner,
+} from './trick.js';
+export type { JokerCall, PlayedJoker, TrickCard } from './trick.js';
