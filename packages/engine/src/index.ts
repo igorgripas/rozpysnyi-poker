@@ -30,3 +30,4 @@ export {
   isLegalBid,
   legalBids,
 } from './bidding.js';
+export { firstLeader, isLegalPlay, legalPlays, trickWinner } from './trick.js';
