@@ -39,3 +39,5 @@ export {
   trickWinner,
 } from './trick.js';
 export type { JokerCall, PlayedJoker, TrickCard } from './trick.js';
+export { JOKER_PENALTY, buildScoreTable, countJokers, finalScore, scoreHand } from './score.js';
+export type { HandRecord, ScoreCell, ScoreRow, ScoreSummary, ScoreTable } from './score.js';
