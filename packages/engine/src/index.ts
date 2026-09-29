@@ -19,3 +19,5 @@ export { createRng, shuffle } from './rng.js';
 export type { Rng } from './rng.js';
 export { deal } from './deal.js';
 export type { DealResult } from './deal.js';
+export { chooseFirstDealer, createSchedule, dealerForHand } from './schedule.js';
+export type { HandPhase, HandSpec, TrumpRule } from './schedule.js';
