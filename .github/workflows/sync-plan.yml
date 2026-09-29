@@ -4,6 +4,9 @@ on:
     branches: [main]
     paths: [docs/PLAN.md]
   workflow_dispatch:
+concurrency:
+  group: sync-plan
+  cancel-in-progress: false
 permissions:
   contents: read
   issues: write
