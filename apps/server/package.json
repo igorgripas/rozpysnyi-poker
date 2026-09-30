@@ -1,0 +1,31 @@
+{
+  "name": "@poker/server",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Авторитетний сервер розписного покера (Fastify + Socket.IO)",
+  "type": "module",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "dev": "tsx --conditions=source src/main.ts",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@poker/bots": "workspace:*",
+    "@poker/engine": "workspace:*",
+    "@poker/protocol": "workspace:*",
+    "fastify": "^5.12.5",
+    "socket.io": "^4.8.4"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.4"
+  }
+}
