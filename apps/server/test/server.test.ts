@@ -1,4 +1,4 @@
-import { PROTOCOL_VERSION, roomStateSchema } from '@poker/protocol';
+import { PROTOCOL_VERSION, playerViewSchema, roomStateSchema } from '@poker/protocol';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type PokerServer, createPokerServer } from '../src/server.js';
 import { TestClient } from './client.js';
@@ -12,6 +12,15 @@ function client(version?: number): TestClient {
   const created = new TestClient(url, version);
   clients.push(created);
   return created;
+}
+
+/** Чекає умову, перевіряючи її кожні кілька мілісекунд. */
+async function waitFor(predicate: () => boolean, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error('Не дочекалися умови');
+    await new Promise((resolve) => setTimeout(resolve, 2));
+  }
 }
 
 beforeEach(async () => {
@@ -106,4 +115,47 @@ describe('кімната через сокети', () => {
       'alreadyStarted',
     );
   });
+});
+
+describe('гра через сокети', () => {
+  it('сервер розсилає viewFor після кожної дії; людина з ботами дограває гру до кінця', async () => {
+    await server.close();
+    server = createPokerServer({ random: testRandom(4), botDelayMs: 0 });
+    url = await server.listen({ port: 0, host: '127.0.0.1' });
+
+    const host = client();
+    const guest = client();
+    const session = unwrap(await host.request('room:create', { name: 'Оля' }));
+    unwrap(await guest.request('room:join', { code: session.code, name: 'Петро' }));
+    unwrap(await host.request('room:addBot', {}));
+    expect(errorCode(await host.request('game:bid', { bid: 0 }))).toBe('notStarted');
+    unwrap(await host.request('room:start', {}));
+
+    await host.until((c) => c.view !== null);
+    await guest.until((c) => c.view !== null);
+    expect(host.view?.seat).not.toBe(guest.view?.seat);
+    expect(playerViewSchema.parse(host.view)).toEqual(host.view);
+
+    const players = [host, guest];
+    const finished = () => players.every((c) => c.room?.status === 'finished');
+    while (!finished()) {
+      await waitFor(
+        () => finished() || players.some((c) => (c.view?.legalActions.length ?? 0) > 0),
+      );
+      for (const c of players) {
+        const action = c.view?.legalActions[0];
+        if (action === undefined) continue;
+        c.view = null;
+        const result =
+          action.type === 'bid'
+            ? await c.request('game:bid', { bid: action.bid })
+            : await c.request('game:play', {
+                card: action.card,
+                ...(action.call !== undefined && { call: action.call }),
+              });
+        unwrap(result);
+      }
+    }
+    expect(host.view?.status ?? 'finished').toBe('finished');
+  }, 60_000);
 });

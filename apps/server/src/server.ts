@@ -5,6 +5,7 @@ import {
   type ClientToServerEvents,
   PROTOCOL_VERSION,
   type Result,
+  type ServerMessage,
   type ServerToClientEvents,
   type Session,
   handshakeSchema,
@@ -22,6 +23,8 @@ export interface PokerServerOptions {
   /** Дозволені джерела CORS для Socket.IO (за замовчуванням — будь-які). */
   corsOrigin?: string | string[];
   logger?: boolean;
+  /** Затримка перед ходом бота, мс. */
+  botDelayMs?: number;
 }
 
 /** Сесія, привʼязана до зʼєднання після create/join/resume. */
@@ -52,6 +55,7 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
   const rooms = new RoomManager({
     ...(options.random && { random: options.random }),
     ...(options.publicUrl !== undefined && { publicUrl: options.publicUrl }),
+    ...(options.botDelayMs !== undefined && { botDelayMs: options.botDelayMs }),
   });
   const io: PokerIo = new Server(app.server, {
     cors: { origin: options.corsOrigin ?? true },
@@ -71,11 +75,17 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
     return result;
   }
 
+  /** Надсилає гравцеві стан кімнати й, якщо гра йде, його `viewFor`. */
+  function sendState(socket: PokerSocket): void {
+    const session = socket.data.session;
+    if (session === null) return;
+    socket.emit('room:state', rooms.roomState(session.code, session.playerId));
+    const view = rooms.view(session.code, session.playerId);
+    if (view !== null) socket.emit('game:view', view as ServerMessage<'game:view'>);
+  }
+
   rooms.subscribe((code) => {
-    for (const socket of socketsIn(code)) {
-      const session = socket.data.session;
-      if (session !== null) socket.emit('room:state', rooms.roomState(code, session.playerId));
-    }
+    for (const socket of socketsIn(code)) sendState(socket);
   });
 
   function unbind(socket: PokerSocket): void {
@@ -99,7 +109,7 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
     connections.set(k, sockets.add(socket));
     rooms.setConnected(session.code, session.playerId, true);
     // Якщо гравець уже був підключений, стан не змінився — надсилаємо його новому зʼєднанню.
-    socket.emit('room:state', rooms.roomState(session.code, session.playerId));
+    sendState(socket);
   }
 
   /** Обгортка обробника: валідує payload, вимагає сесію (для подій, крім входу). */
@@ -136,8 +146,10 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
     ),
     'room:shuffle': withSession(({ code, playerId }) => rooms.shuffle(code, playerId)),
     'room:start': withSession(({ code, playerId }) => rooms.start(code, playerId)),
-    'game:bid': withSession(() => fail('notStarted', 'Ігровий цикл ще не підтримується')),
-    'game:play': withSession(() => fail('notStarted', 'Ігровий цикл ще не підтримується')),
+    'game:bid': withSession(({ code, playerId }, { bid }) => rooms.bid(code, playerId, bid)),
+    'game:play': withSession(({ code, playerId }, { card, call }) =>
+      rooms.play(code, playerId, card, call),
+    ),
   };
 
   io.use((socket, next) => {
@@ -171,6 +183,7 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
       return address;
     },
     async close() {
+      rooms.close();
       await io.close();
       await app.close();
     },

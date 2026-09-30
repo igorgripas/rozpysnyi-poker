@@ -19,6 +19,7 @@
     "start": "node dist/main.js"
   },
   "dependencies": {
+    "@poker/bots": "workspace:*",
     "@poker/engine": "workspace:*",
     "@poker/protocol": "workspace:*",
     "fastify": "^5.12.5",

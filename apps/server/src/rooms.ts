@@ -1,4 +1,17 @@
-import { type GameState, MAX_PLAYERS, MIN_PLAYERS, createGame } from '@poker/engine';
+import { type Bot, createHeuristicBot } from '@poker/bots';
+import {
+  type Action,
+  type Card,
+  type GameState,
+  IllegalActionError,
+  type JokerCall,
+  MAX_PLAYERS,
+  MIN_PLAYERS,
+  type PlayerView,
+  apply,
+  createGame,
+  viewFor,
+} from '@poker/engine';
 import {
   type ErrorCode,
   ROOM_CODE_ALPHABET,
@@ -34,7 +47,12 @@ export interface RoomManagerOptions {
   random?: RandomSource;
   /** Базова адреса веб-клієнта для посилань-запрошень, напр. `https://poker.example`. */
   publicUrl?: string;
+  /** Затримка перед ходом бота, мс. */
+  botDelayMs?: number;
 }
+
+/** Затримка ходу бота за замовчуванням: щоб люди встигали бачити карти. */
+export const DEFAULT_BOT_DELAY_MS = 700;
 
 /** Сповіщення про зміну кімнати з кодом `code`. */
 export type RoomListener = (code: string) => void;
@@ -58,10 +76,16 @@ export class RoomManager {
   private readonly listeners = new Set<RoomListener>();
   private readonly random: RandomSource;
   private readonly publicUrl: string;
+  private readonly botDelayMs: number;
+  /** Заплановані ходи ботів за кодом кімнати. */
+  private readonly botTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Боти за ідентифікатором учасника. */
+  private readonly bots = new Map<string, Bot>();
 
   constructor(options: RoomManagerOptions = {}) {
     this.random = options.random ?? cryptoRandom;
     this.publicUrl = (options.publicUrl ?? '').replace(/\/+$/, '');
+    this.botDelayMs = options.botDelayMs ?? DEFAULT_BOT_DELAY_MS;
   }
 
   subscribe(listener: RoomListener): () => void {
@@ -228,8 +252,81 @@ export class RoomManager {
     }
     room.game = createGame(this.random.int(UINT32), room.seats.length);
     room.status = 'playing';
+    for (const member of room.seats) {
+      if (member.kind === 'bot') this.bots.set(member.id, createHeuristicBot());
+    }
     this.changed(code);
+    this.scheduleBot(room);
     return ok(null);
+  }
+
+  /** Замовлення гравця (R-4.x): перевіряє рушій. */
+  bid(code: string, playerId: string, bid: number): Result<null> {
+    return this.act(code, playerId, (seat) => ({ type: 'bid', seat, bid }));
+  }
+
+  /** Хід картою (R-5.x, R-6.x): перевіряє рушій. */
+  play(code: string, playerId: string, card: Card, call?: JokerCall): Result<null> {
+    return this.act(code, playerId, (seat) => ({
+      type: 'play',
+      seat,
+      card,
+      ...(call !== undefined && { call }),
+    }));
+  }
+
+  /** Погляд гравця на гру (`viewFor` його місця) або `null`, якщо гра не почалася. */
+  view(code: string, playerId: string): PlayerView | null {
+    const room = this.rooms.get(code);
+    const seat = room?.seats.findIndex((m) => m.id === playerId) ?? -1;
+    if (room?.game == null || seat < 0) return null;
+    return viewFor(room.game, seat);
+  }
+
+  /** Скасовує заплановані ходи ботів (зупинка сервера). */
+  close(): void {
+    for (const timer of this.botTimers.values()) clearTimeout(timer);
+    this.botTimers.clear();
+  }
+
+  /** Сервер авторитетний: дію гравця приймає лише рушій, місце береться з сесії. */
+  private act(code: string, playerId: string, toAction: (seat: number) => Action): Result<null> {
+    const access = this.access(code, playerId);
+    if (!access.ok) return access;
+    const { room, member } = access.data;
+    if (room.game === null || room.status !== 'playing') {
+      return fail('notStarted', 'Гра не йде');
+    }
+    try {
+      this.applyAction(room, toAction(room.seats.indexOf(member)));
+    } catch (error) {
+      if (error instanceof IllegalActionError) return fail('illegalAction', error.message);
+      throw error;
+    }
+    return ok(null);
+  }
+
+  private applyAction(room: Room, action: Action): void {
+    room.game = apply(room.game as GameState, action);
+    if (room.game.status === 'finished') room.status = 'finished';
+    this.changed(room.code);
+    this.scheduleBot(room);
+  }
+
+  /** Якщо зараз хід бота — планує його хід із затримкою. */
+  private scheduleBot(room: Room): void {
+    const turn = room.game?.turn ?? null;
+    if (turn === null || this.botTimers.has(room.code)) return;
+    const member = room.seats[turn] as Member;
+    if (member.kind !== 'bot') return;
+    const timer = setTimeout(() => {
+      this.botTimers.delete(room.code);
+      const game = room.game as GameState;
+      if (game.turn !== turn) return;
+      const bot = this.bots.get(member.id) as Bot;
+      this.applyAction(room, bot.act(viewFor(game, turn)));
+    }, this.botDelayMs);
+    this.botTimers.set(room.code, timer);
   }
 
   /** Позначає, чи підключений гравець (є хоч одне активне зʼєднання). */
