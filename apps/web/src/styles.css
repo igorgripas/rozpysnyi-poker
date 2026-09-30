@@ -1,0 +1,645 @@
+/* Дизайн-система: змінні тем, типографіка, карти й адаптивна сітка (mobile-first, від 360px). */
+
+:root {
+  color-scheme: light;
+  --bg: #eef3ef;
+  --surface: #ffffff;
+  --surface-2: #f4f7f5;
+  --text: #17231c;
+  --muted: #5b6b61;
+  --border: #cfdbd3;
+  --accent: #0f7a4a;
+  --accent-text: #ffffff;
+  --danger: #b3261e;
+  --felt: #1d6b45;
+  --felt-edge: #134d31;
+  --felt-text: #f1f7f3;
+  --card-paper: #ffffff;
+  --card-edge: #b9c4bd;
+  --suit-red: #c62828;
+  --suit-black: #1b1f1d;
+  --suit-joker: #6a3fb5;
+  --card-back: #2e4a8a;
+  --focus: #f0b429;
+  --shadow: 0 1px 3px rgb(0 0 0 / 0.15);
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --radius: 10px;
+  --card-w: 56px;
+
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    'Noto Sans',
+    sans-serif;
+  line-height: 1.4;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-text-size-adjust: 100%;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0f1512;
+  --surface: #18211c;
+  --surface-2: #1f2a24;
+  --text: #e5eee8;
+  --muted: #9aaba1;
+  --border: #2f3d35;
+  --accent: #3ccf8e;
+  --accent-text: #06150d;
+  --danger: #ff8a80;
+  --felt: #164d33;
+  --felt-edge: #0d3321;
+  --felt-text: #e5eee8;
+  --card-paper: #f5f5f0;
+  --card-edge: #7e8a83;
+  --suit-red: #d32f2f;
+  --suit-black: #1b1f1d;
+  --suit-joker: #6a3fb5;
+  --card-back: #3a5aa8;
+  --shadow: 0 1px 3px rgb(0 0 0 / 0.5);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-width: 360px;
+  overflow-x: hidden;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* ── Каркас ─────────────────────────────────────────────────────────────── */
+
+.app {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-height: 100dvh;
+}
+
+.app__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  padding-top: max(var(--space-2), env(safe-area-inset-top));
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.app__title {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.app__main {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--space-4);
+  padding-bottom: max(var(--space-4), env(safe-area-inset-bottom));
+}
+
+/* ── Елементи керування ─────────────────────────────────────────────────── */
+
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  min-width: 44px;
+  min-height: 44px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface-2);
+  cursor: pointer;
+  font-size: 1.25rem;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.button--primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.panel {
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.field {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.field input {
+  min-height: 44px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.error {
+  color: var(--danger);
+}
+
+/* ── Карти ──────────────────────────────────────────────────────────────── */
+
+.card {
+  display: block;
+  width: var(--card-w);
+  height: auto;
+  flex: none;
+  filter: drop-shadow(var(--shadow));
+  user-select: none;
+}
+
+.card__paper {
+  fill: var(--card-paper);
+  stroke: var(--card-edge);
+}
+
+.card[data-color='red'] .card__ink {
+  fill: var(--suit-red);
+}
+
+.card[data-color='black'] .card__ink {
+  fill: var(--suit-black);
+}
+
+.card[data-color='joker'] .card__ink {
+  fill: var(--suit-joker);
+}
+
+.card__corner {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.card__corner-suit {
+  font-size: 12px;
+}
+
+.card__pip {
+  font-size: 30px;
+}
+
+.card__joker-star {
+  font-size: 30px;
+}
+
+.card__joker-label {
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.card--back .card__pattern {
+  fill: var(--card-back);
+  stroke: var(--card-paper);
+  stroke-width: 2;
+}
+
+/* ── Головна ────────────────────────────────────────────────────────────── */
+
+.home {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-4);
+  text-align: center;
+}
+
+.home__cards {
+  display: flex;
+  gap: var(--space-2);
+  --card-w: 64px;
+}
+
+.home__tagline {
+  max-width: 32rem;
+  margin: 0;
+  color: var(--muted);
+}
+
+/* ── Лобі й кімната очікування ─────────────────────────────────────────── */
+
+.lobby {
+  width: 100%;
+  max-width: 420px;
+  text-align: left;
+}
+
+.lobby__form {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.lobby__invite {
+  margin: 0 0 var(--space-3);
+  font-weight: 600;
+}
+
+.lobby__or {
+  margin: 0;
+  text-align: center;
+}
+
+.lobby__join {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: var(--space-2);
+}
+
+.waiting {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.waiting h2,
+.waiting h3 {
+  margin: 0 0 var(--space-2);
+}
+
+.waiting__link {
+  overflow-wrap: anywhere;
+}
+
+.waiting__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.seats {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.seat {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.seat__number {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--border);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.seat__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.seat__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.badge {
+  padding: 0 var(--space-2);
+  border-radius: 999px;
+  background: var(--border);
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+
+.badge--accent {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.badge--muted {
+  color: var(--muted);
+  background: transparent;
+  border: 1px dashed var(--border);
+}
+
+.icon-button--small {
+  min-width: 36px;
+  min-height: 36px;
+  font-size: 1rem;
+}
+
+/* ── Ігровий стіл ───────────────────────────────────────────────────────── */
+
+.game {
+  display: grid;
+  grid-template-areas:
+    'info'
+    'turn'
+    'players'
+    'felt'
+    'alert'
+    'hand';
+  gap: var(--space-3);
+}
+
+.game__info {
+  grid-area: info;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+}
+
+.game__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  font-size: 0.9375rem;
+}
+
+.game__revealed {
+  display: grid;
+  justify-items: center;
+  margin: 0;
+  font-size: 0.75rem;
+}
+
+.card--small {
+  --card-w: 36px;
+}
+
+.game__turn {
+  grid-area: turn;
+  margin: 0;
+  font-weight: 600;
+  text-align: center;
+}
+
+.game > [role='alert'] {
+  grid-area: alert;
+  margin: 0;
+  text-align: center;
+}
+
+.players {
+  grid-area: players;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.player {
+  display: grid;
+  gap: 2px;
+  padding: var(--space-2);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 0.875rem;
+}
+
+.player[aria-current='true'] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.player__name {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.player__badges:empty {
+  display: none;
+}
+
+.player__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  color: var(--muted);
+}
+
+.felt {
+  grid-area: felt;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: var(--space-2);
+  min-height: 150px;
+  padding: var(--space-3);
+  border: 4px solid var(--felt-edge);
+  border-radius: 24px;
+  background: var(--felt);
+  color: var(--felt-text);
+}
+
+.felt__caption {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.felt__trick {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.felt__trick--last {
+  opacity: 0.75;
+}
+
+.felt__card {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  margin: 0;
+  max-width: calc(var(--card-w) + 24px);
+  font-size: 0.75rem;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+/* Рука: карти перекриваються, щоб до 12 карт вміщалися в ширину екрана. */
+.hand {
+  grid-area: hand;
+  display: flex;
+  justify-content: center;
+  margin: 0;
+  padding: var(--space-3) 0 0;
+  list-style: none;
+  --overlap: min(
+    0px,
+    calc(
+      (100vw - 2 * var(--space-4) - var(--card-w)) / max(var(--hand-size) - 1, 1) - var(--card-w)
+    )
+  );
+}
+
+.hand__slot + .hand__slot {
+  margin-left: var(--overlap);
+}
+
+.hand__card {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+
+.hand__card:disabled {
+  cursor: default;
+}
+
+.hand__card[data-legal='false'] {
+  filter: grayscale(0.7) brightness(0.8);
+  opacity: 0.55;
+}
+
+.hand__card[aria-pressed='true'] {
+  transform: translateY(calc(-1 * var(--space-3)));
+}
+
+.hand__card[aria-pressed='true'] .card__paper {
+  stroke: var(--focus);
+  stroke-width: 3;
+}
+
+/* ── Адаптивність ───────────────────────────────────────────────────────── */
+
+@media (min-width: 600px) {
+  :root {
+    --card-w: 64px;
+  }
+
+  .app__title {
+    font-size: 1.375rem;
+  }
+
+  .app__main {
+    padding: var(--space-6);
+  }
+
+  .waiting {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+
+  .felt {
+    min-height: 200px;
+  }
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --card-w: 76px;
+  }
+
+  /* Десктоп: гравці збоку від столу. */
+  .game {
+    grid-template-columns: 280px 1fr;
+    grid-template-areas:
+      'info info'
+      'players turn'
+      'players felt'
+      'players alert'
+      'hand hand';
+    align-items: start;
+  }
+
+  .players {
+    grid-template-columns: 1fr;
+  }
+
+  .hand {
+    --overlap: min(
+      0px,
+      calc(
+        (min(100vw, 1200px) - 2 * var(--space-6) - var(--card-w)) / max(var(--hand-size) - 1, 1) -
+          var(--card-w)
+      )
+    );
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
