@@ -19,7 +19,8 @@ test.afterEach(async () => {
 });
 
 async function open(page: Page): Promise<void> {
-  await page.goto(`/?server=${encodeURIComponent(server.url)}`);
+  // Пауза взятки вимкнена: інакше повна гра не вкладеться в таймаут.
+  await page.goto(`/?server=${encodeURIComponent(server.url)}&trickPause=0`);
   await expect(page.getByRole('img', { name: 'Звʼязок є' })).toBeVisible();
 }
 
@@ -63,7 +64,9 @@ test('гра: замовлення, стіл, джокер, таблиця й р
 
   // Стіл посеред роздачі: ваш хід, на столі вже є карти суперників.
   await playUntil(page, async () => {
-    const onTable = await page.locator('.felt__trick:not(.felt__trick--last) .felt__card').count();
+    const onTable = await page
+      .locator('.felt__trick:not(.felt__trick--last, .felt__trick--taken) .felt__card')
+      .count();
     const cards = await page.locator('.hand__card').count();
     return onTable >= 2 && cards >= 4 && (await page.locator('.hand__card:enabled').count()) > 0;
   });

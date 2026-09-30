@@ -19,7 +19,7 @@ export interface SeededServer {
 }
 
 /**
- * Окремий сервер у процесі тесту з фіксованим seed і миттєвими ботами:
+ * Окремий сервер у процесі тесту з фіксованим seed, миттєвими ботами й без паузи після взятки:
  * екрани відтворюються піксель у піксель незалежно від інших тестів і повторів.
  */
 export async function startSeededServer(seed: number, publicUrl: string): Promise<SeededServer> {
@@ -27,6 +27,7 @@ export async function startSeededServer(seed: number, publicUrl: string): Promis
     random: seededRandom(seed),
     publicUrl,
     botDelayMs: 0,
+    trickPauseMs: 0,
   });
   const url = await server.listen({ port: 0, host: '127.0.0.1' });
   return {

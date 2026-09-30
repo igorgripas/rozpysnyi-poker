@@ -7,8 +7,11 @@ const POLL_MS = 25;
 /** Що зараз може зробити гравець на своїй сторінці. */
 type Move = 'done' | 'joker' | 'bid' | 'play';
 
-/** Знімок того, що бачить гравець: після його дії він обовʼязково змінюється. */
-function snapshot(): string {
+/**
+ * Знімок того, що бачить гравець: після його дії він обовʼязково змінюється.
+ * `withDialog: false` — без діалогу: він закривається ще до відповіді сервера.
+ */
+function snapshot(withDialog: boolean): string {
   const text = (selector: string) => document.querySelector(selector)?.textContent ?? '';
   // Без вибору карти (aria-pressed): він змінюється ще до відповіді сервера.
   const hand = [...document.querySelectorAll('.hand__card')].map((card) =>
@@ -18,7 +21,7 @@ function snapshot(): string {
     text('.game__facts'),
     text('.game__turn'),
     hand.join(','),
-    document.querySelector('[role="dialog"]') ? 'dialog' : '',
+    withDialog && document.querySelector('[role="dialog"]') ? 'dialog' : '',
     document.querySelector('.bidding__options') ? 'bidding' : '',
     document.querySelector('.results') ? 'results' : '',
   ].join('|');
@@ -48,7 +51,9 @@ async function nextMove(page: Page, timeout: number): Promise<Move> {
 export async function takeTurn(page: Page, timeout = 60_000): Promise<boolean> {
   const move = await nextMove(page, timeout);
   if (move === 'done') return false;
-  const before = await page.evaluate(snapshot);
+  // Після оголошення джокера чекаємо на новий стан від сервера, а не на закриття діалогу.
+  const withDialog = move !== 'joker';
+  const before = await page.evaluate(snapshot, withDialog);
   if (move === 'bid') {
     await page
       .getByRole('group', { name: 'Ваше замовлення' })
@@ -63,10 +68,14 @@ export async function takeTurn(page: Page, timeout = 60_000): Promise<boolean> {
     await card.click();
   }
   // Дія дійшла до сервера, і він надіслав новий стан.
-  await page.waitForFunction(`(${snapshot.toString()})() !== ${JSON.stringify(before)}`, null, {
-    polling: POLL_MS,
-    timeout,
-  });
+  await page.waitForFunction(
+    `(${snapshot.toString()})(${withDialog}) !== ${JSON.stringify(before)}`,
+    null,
+    {
+      polling: POLL_MS,
+      timeout,
+    },
+  );
   return true;
 }
 

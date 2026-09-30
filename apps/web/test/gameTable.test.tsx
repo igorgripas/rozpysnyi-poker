@@ -237,10 +237,14 @@ describe('ігровий стіл', () => {
     ).toBeInTheDocument();
   });
 
-  it('R-9.2: остання взятка видна, поки не покладуть першу карту наступної', () => {
+  it('R-9.2: остання взятка роздачі видна, поки не покладуть першу карту наступної', () => {
     const state = findState(
       3,
-      (s) => s.status === 'playing' && s.hand.trick.length === 0 && s.lastTrick !== null,
+      (s) =>
+        s.status === 'playing' &&
+        s.hand.trick.length === 0 &&
+        s.lastTrick !== null &&
+        s.hand.taken.some((n) => n > 0),
     );
     renderAt(state, 0);
     const table = screen.getByRole('region', { name: 'Стіл' });

@@ -56,12 +56,17 @@ export interface RoomManagerOptions {
   publicUrl?: string;
   /** Затримка перед ходом бота, мс. */
   botDelayMs?: number;
+  /** Пауза після завершення взятки перед наступним ходом бота, мс: щоб люди встигли її роздивитися. */
+  trickPauseMs?: number;
   /** Сховище, з якого кімнати відновлюються під час старту і куди зберігаються після змін. */
   store?: RoomStore;
 }
 
 /** Затримка ходу бота за замовчуванням: щоб люди встигали бачити карти. */
 export const DEFAULT_BOT_DELAY_MS = 700;
+
+/** Пауза після взятки за замовчуванням: клієнт стільки ж показує, хто її бере. */
+export const TRICK_PAUSE_MS = 2000;
 
 /** Сповіщення про зміну кімнати з кодом `code`. */
 export type RoomListener = (code: string) => void;
@@ -86,6 +91,7 @@ export class RoomManager {
   private readonly random: RandomSource;
   private readonly publicUrl: string;
   private readonly botDelayMs: number;
+  private readonly trickPauseMs: number;
   private readonly store: RoomStore | null;
   /** Заплановані ходи за кодом кімнати: хід бота або хід за гравця, чий час сплив. */
   private readonly turnTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -96,6 +102,7 @@ export class RoomManager {
     this.random = options.random ?? cryptoRandom;
     this.publicUrl = (options.publicUrl ?? '').replace(/\/+$/, '');
     this.botDelayMs = options.botDelayMs ?? DEFAULT_BOT_DELAY_MS;
+    this.trickPauseMs = options.trickPauseMs ?? TRICK_PAUSE_MS;
     this.store = options.store ?? null;
     if (this.store !== null) this.restore(this.store.load());
   }
@@ -406,15 +413,17 @@ export class RoomManager {
   private applyAction(room: Room, action: Action): void {
     room.game = apply(room.game as GameState, action);
     if (room.game.status === 'finished') room.status = 'finished';
-    this.scheduleTurn(room);
+    // Карта завершила взятку (і, можливо, роздачу): стіл порожній.
+    this.scheduleTurn(room, action.type === 'play' && room.game.hand.trick.length === 0);
     this.changed(room.code);
   }
 
   /**
    * Планує поточний хід: бот ходить із затримкою; за людину, якщо ввімкнено таймер (R-9.3),
    * легальний хід робить сервер, коли час сплив. Без таймера місце чекає на гравця.
+   * Після завершення взятки бот чекає щонайменше паузу взятки.
    */
-  private scheduleTurn(room: Room): void {
+  private scheduleTurn(room: Room, afterTrick = false): void {
     const pending = this.turnTimers.get(room.code);
     if (pending !== undefined) clearTimeout(pending);
     this.turnTimers.delete(room.code);
@@ -425,7 +434,7 @@ export class RoomManager {
     let delay: number;
     let bot: Bot;
     if (member.kind === 'bot') {
-      delay = this.botDelayMs;
+      delay = afterTrick ? Math.max(this.botDelayMs, this.trickPauseMs) : this.botDelayMs;
       bot = this.bots.get(member.id) as Bot;
     } else if (room.turnTimerSec !== null) {
       delay = room.turnTimerSec * 1000;

@@ -18,7 +18,12 @@ let url = '';
 const clients: TestClient[] = [];
 
 async function start(options: PokerServerOptions = {}): Promise<void> {
-  server = createPokerServer({ random: testRandom(11), botDelayMs: 0, ...options });
+  server = createPokerServer({
+    random: testRandom(11),
+    botDelayMs: 0,
+    trickPauseMs: 0,
+    ...options,
+  });
   url = await server.listen({ port: 0, host: '127.0.0.1' });
 }
 

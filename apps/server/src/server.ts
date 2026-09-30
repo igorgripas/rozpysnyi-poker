@@ -26,6 +26,8 @@ export interface PokerServerOptions {
   logger?: boolean;
   /** Затримка перед ходом бота, мс. */
   botDelayMs?: number;
+  /** Пауза після завершення взятки перед ходом бота, мс. */
+  trickPauseMs?: number;
   /** Сховище кімнат: із ним сервер переживає рестарт посеред гри. */
   store?: RoomStore;
 }
@@ -59,6 +61,7 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
     ...(options.random && { random: options.random }),
     ...(options.publicUrl !== undefined && { publicUrl: options.publicUrl }),
     ...(options.botDelayMs !== undefined && { botDelayMs: options.botDelayMs }),
+    ...(options.trickPauseMs !== undefined && { trickPauseMs: options.trickPauseMs }),
     ...(options.store && { store: options.store }),
   });
   const io: PokerIo = new Server(app.server, {

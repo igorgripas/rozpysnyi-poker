@@ -5,6 +5,7 @@ import { RoomManager } from '../src/rooms.js';
 import { errorCode, testRandom, unwrap } from './support.js';
 
 const DELAY = 500;
+const PAUSE = 2000;
 
 function manager(seed = 1) {
   return new RoomManager({ random: testRandom(seed), botDelayMs: DELAY });
@@ -127,6 +128,73 @@ describe('боти', () => {
     expect(replay(game?.seed as number, gameLog(game as GameState))).toEqual(game);
     expect(changes.length).toBeGreaterThan(0);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('після завершення взятки бот ходить не раніше ніж через паузу взятки', () => {
+    const rooms = new RoomManager({
+      random: testRandom(3),
+      botDelayMs: DELAY,
+      trickPauseMs: PAUSE,
+    });
+    const host = unwrap(rooms.create('Оля'));
+    unwrap(rooms.addBot(host.code, host.playerId));
+    unwrap(rooms.addBot(host.code, host.playerId));
+    unwrap(rooms.start(host.code, host.playerId));
+    const code = host.code;
+    const game = () => rooms.get(code)?.game as GameState;
+    let checked = 0;
+    let steps = 0;
+    while (game().status !== 'finished' && checked < 5) {
+      expect(++steps).toBeLessThan(5000);
+      const before = game();
+      const view = rooms.view(code, host.playerId);
+      if (view?.legalActions.length) {
+        unwrap(send(rooms, code, host.playerId, view.legalActions[0] as Action));
+      } else {
+        vi.advanceTimersByTime(DELAY);
+        if (game() === before) vi.advanceTimersByTime(PAUSE);
+      }
+      const after = game();
+      // Щойно завершилася взятка, а далі черга бота.
+      const completed = after.lastTrick !== before.lastTrick && after.lastTrick !== null;
+      const next = after.turn;
+      if (!completed || next === null || rooms.get(code)?.seats[next]?.kind !== 'bot') continue;
+      const count = after.actions.length;
+      vi.advanceTimersByTime(PAUSE - 1);
+      expect(game().actions.length).toBe(count);
+      vi.advanceTimersByTime(1);
+      expect(game().actions.length).toBe(count + 1);
+      checked++;
+    }
+    expect(checked).toBe(5);
+    rooms.close();
+  });
+
+  it('усередині взятки бот ходить зі звичайною затримкою', () => {
+    const rooms = new RoomManager({
+      random: testRandom(3),
+      botDelayMs: DELAY,
+      trickPauseMs: PAUSE,
+    });
+    const host = unwrap(rooms.create('Оля'));
+    unwrap(rooms.addBot(host.code, host.playerId));
+    unwrap(rooms.addBot(host.code, host.playerId));
+    unwrap(rooms.start(host.code, host.playerId));
+    const code = host.code;
+    const game = () => rooms.get(code)?.game as GameState;
+    let steps = 0;
+    // Чекаємо ходу бота посеред взятки.
+    while (!(game().status === 'playing' && game().hand.trick.length > 0 && game().turn !== 0)) {
+      expect(++steps).toBeLessThan(5000);
+      const view = rooms.view(code, host.playerId);
+      if (view?.legalActions.length) {
+        unwrap(send(rooms, code, host.playerId, view.legalActions[0] as Action));
+      } else vi.advanceTimersByTime(1);
+    }
+    const count = game().actions.length;
+    vi.advanceTimersByTime(DELAY);
+    expect(game().actions.length).toBe(count + 1);
+    rooms.close();
   });
 
   it('close() скасовує заплановані ходи ботів', () => {

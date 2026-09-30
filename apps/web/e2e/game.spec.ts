@@ -118,3 +118,46 @@ test('таблиця гри відкривається під час гри й �
   await dialog.getByRole('button', { name: 'Закрити' }).click();
   await expect(dialog).toBeHidden();
 });
+
+test('пауза після взятки: видно, хто бере, і всі карти; у новій роздачі стіл чистий (R-9.2)', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.getByLabel('Ваше імʼя').fill('Оля');
+  await page.getByRole('button', { name: 'Створити кімнату' }).click();
+  await page.getByRole('button', { name: 'Додати бота' }).click();
+  await page.getByRole('button', { name: 'Додати бота' }).click();
+  await expect(page.getByRole('list', { name: 'Гравці' }).getByRole('listitem')).toHaveCount(3);
+  await page.getByRole('button', { name: 'Почати гру' }).click();
+
+  // Перша роздача — 1 карта: замовлення й одна взятка.
+  const bidding = page.getByRole('group', { name: 'Ваше замовлення' });
+  await bidding.locator('button:enabled').first().click();
+  const card = page.locator('.hand__card:enabled').first();
+  await card.click();
+  await card.click();
+  // Джокер спершу питає оголошення.
+  if (await page.locator('.joker-dialog').isVisible()) {
+    await page.locator('.joker-dialog button').first().click();
+  }
+
+  const felt = page.getByRole('region', { name: 'Стіл' });
+  const players = page.getByRole('list', { name: 'Гравці за столом' }).getByRole('listitem');
+  await expect(felt.locator('.felt__trick--taken')).toBeVisible();
+  await expect(felt).toContainText(/Бере: Бот \d|Ви берете/);
+  await expect(felt.getByRole('figure')).toHaveCount(3);
+  await expect(felt.locator('.felt__card[data-winner]')).toHaveCount(1);
+  // Хто взяв останню взятку — підсвічено й підписано.
+  await expect(players.and(page.locator('[data-last-taker]'))).toHaveCount(1);
+  await expect(players.and(page.locator('[data-last-taker]'))).toContainText('взяв останню');
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(0);
+
+  // Після паузи — друга роздача: замовлення, а на столі нічого з попередньої.
+  await expect(page.getByRole('region', { name: 'Роздача' })).toContainText('Роздача 2 з');
+  await expect(felt.getByRole('figure')).toHaveCount(0);
+  await expect(felt).not.toContainText('Остання взятка');
+  await expect(players.and(page.locator('[data-last-taker]'))).toHaveCount(0);
+});
