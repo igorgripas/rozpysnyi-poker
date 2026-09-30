@@ -22,14 +22,15 @@ test('повна гра: 4 гравці в окремих браузерах г�
   }
   const [host, ...guests] = pages as [Page, ...Page[]];
 
-  await host.goto('/');
+  // Пауза взятки вимкнена: інакше 162 взятки не вкладуться в таймаут.
+  await host.goto('/?trickPause=0');
   await host.getByLabel('Ваше імʼя').fill(NAMES[0] ?? '');
   await host.getByRole('button', { name: 'Створити кімнату' }).click();
   const heading = host.getByRole('heading', { name: /^Кімната [A-Z0-9]{5}$/ });
   const code = ((await heading.textContent()) ?? '').replace('Кімната ', '');
 
   for (const [i, guest] of guests.entries()) {
-    await guest.goto(`/r/${code}`);
+    await guest.goto(`/r/${code}?trickPause=0`);
     await guest.getByLabel('Ваше імʼя').fill(NAMES[i + 1] ?? '');
     await guest.getByRole('button', { name: 'Увійти в кімнату' }).click();
     await expect(guest.getByText('Чекаємо, поки хост почне гру')).toBeVisible();

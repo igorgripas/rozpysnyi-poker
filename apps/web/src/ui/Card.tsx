@@ -1,15 +1,14 @@
-import type { Card, Suit } from '@poker/engine';
-import { cardName, rankLabel, suitSymbol, uk } from '../i18n';
+import type { Card } from '@poker/engine';
+import { cardName, rankLabel, uk } from '../i18n';
+import { isRedSuit, suitGlyph } from './SuitMark';
 
 // Карти малюються як SVG 60×84 (пропорції 5:7), розмір задає CSS через ширину.
-
-const RED_SUITS: ReadonlySet<Suit> = new Set(['diamonds', 'hearts']);
 
 type CardColor = 'red' | 'black' | 'joker';
 
 function colorOf(card: Card): CardColor {
   if (card.kind === 'joker') return 'joker';
-  return RED_SUITS.has(card.suit) ? 'red' : 'black';
+  return isRedSuit(card.suit) ? 'red' : 'black';
 }
 
 export interface CardFaceProps {
@@ -21,7 +20,7 @@ export interface CardFaceProps {
 export function CardFace({ card, className }: CardFaceProps) {
   const color = colorOf(card);
   const corner = card.kind === 'joker' ? '★' : rankLabel(card.rank);
-  const symbol = card.kind === 'joker' ? '' : suitSymbol(card.suit);
+  const symbol = card.kind === 'joker' ? '' : suitGlyph(card.suit);
   return (
     <svg
       className={['card', className].filter(Boolean).join(' ')}

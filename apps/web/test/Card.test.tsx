@@ -12,6 +12,13 @@ describe('SVG-карти', () => {
     expect(card).toHaveTextContent('♥');
   });
 
+  it('масть у кутку карти — текстовий символ (U+FE0E), не емодзі', () => {
+    render(<CardFace card={{ kind: 'standard', suit: 'diamonds', rank: 9 }} />);
+    const card = screen.getByRole('img', { name: 'Девʼятка бубни' });
+    expect(card.querySelector('.card__corner-suit')).toHaveTextContent('♦\uFE0E');
+    expect(card.querySelector('.card__pip')).toHaveTextContent('♦\uFE0E');
+  });
+
   it('R-1.1: червоні масті (♦, ♥) відрізняються кольором від чорних (♠, ♣)', () => {
     render(
       <>

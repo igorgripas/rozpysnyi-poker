@@ -1,7 +1,8 @@
 import { type HandPhase, formatScore } from '@poker/engine';
 import type { WirePlayerView } from '@poker/protocol';
-import { useState } from 'react';
-import { phaseName, plural, suitSymbol, trumpLabel, uk } from '../i18n';
+import { type ReactNode, useState } from 'react';
+import { phaseName, plural, trumpLabel, uk } from '../i18n';
+import { SuitMark } from '../ui/SuitMark';
 import { useMediaQuery } from '../ui/useMediaQuery';
 
 type Table = WirePlayerView['table'];
@@ -131,17 +132,22 @@ export function ScoreSheet({ table, names }: ScoreSheetProps) {
         </table>
       </div>
       <p role="note" className="sheet__legend muted">
-        {uk.sheet.legend}
+        9<SuitMark suit="hearts" /> {uk.sheet.legend}
       </p>
     </div>
   );
 }
 
 /** Компактне позначення роздачі: «9♥», «9б/к» (відкрито джокера), «Б», «М», «В». */
-function dealLabel(row: Row): string {
+function dealLabel(row: Row): ReactNode {
   const mark = PHASE_MARKS[row.phase];
   if (mark !== undefined) return mark;
-  return `${row.cards}${row.trump === null ? uk.noTrump : suitSymbol(row.trump)}`;
+  return (
+    <>
+      {row.cards}
+      {row.trump === null ? uk.noTrump : <SuitMark suit={row.trump} />}
+    </>
+  );
 }
 
 /** Повний опис роздачі для доступності й підказки (R-8.1). */

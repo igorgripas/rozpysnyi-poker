@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { trickPauseFromSearch } from './game/trickPause';
 import { PokerClient } from './net/client';
 import { createSocketConnection } from './net/connection';
 import { serverUrl } from './net/serverUrl';
@@ -12,6 +13,7 @@ const url = serverUrl(window.location.search, {
   configured: import.meta.env.VITE_SERVER_URL as string | undefined,
 });
 const client = new PokerClient(createSocketConnection(url));
+const trickPauseMs = trickPauseFromSearch(window.location.search, import.meta.env.DEV);
 
 registerServiceWorker();
 
@@ -19,6 +21,6 @@ const root = document.getElementById('root');
 if (root === null) throw new Error('Немає елемента #root');
 createRoot(root).render(
   <StrictMode>
-    <App client={client} />
+    <App client={client} trickPauseMs={trickPauseMs} />
   </StrictMode>,
 );

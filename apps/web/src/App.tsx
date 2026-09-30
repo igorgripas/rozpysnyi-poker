@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { GameTable } from './game/GameTable';
+import { TRICK_PAUSE_MS, TrickPauseContext } from './game/trickPause';
 import { uk } from './i18n';
 import { Lobby } from './lobby/Lobby';
 import { WaitingRoom } from './lobby/WaitingRoom';
@@ -11,25 +12,34 @@ import { ThemeProvider, ThemeToggle } from './ui/theme';
 import { VibrationToggle } from './ui/vibration';
 
 /** Каркас застосунку: шапка й основна область. */
-export function App({ client }: { client: PokerClient }) {
+export function App({
+  client,
+  trickPauseMs = TRICK_PAUSE_MS,
+}: {
+  client: PokerClient;
+  /** Скільки завершена взятка лежить на столі, мс. */
+  trickPauseMs?: number;
+}) {
   return (
     <ThemeProvider>
-      <ClientProvider client={client}>
-        <div className="app">
-          <header className="app__header">
-            <h1 className="app__title">{uk.appTitle}</h1>
-            <div className="app__tools">
-              <ConnectionIndicator />
-              <VibrationToggle />
-              <ThemeToggle />
-            </div>
-          </header>
-          <ConnectionBanner />
-          <main className="app__main">
-            <Screen client={client} />
-          </main>
-        </div>
-      </ClientProvider>
+      <TrickPauseContext value={trickPauseMs}>
+        <ClientProvider client={client}>
+          <div className="app">
+            <header className="app__header">
+              <h1 className="app__title">{uk.appTitle}</h1>
+              <div className="app__tools">
+                <ConnectionIndicator />
+                <VibrationToggle />
+                <ThemeToggle />
+              </div>
+            </header>
+            <ConnectionBanner />
+            <main className="app__main">
+              <Screen client={client} />
+            </main>
+          </div>
+        </ClientProvider>
+      </TrickPauseContext>
     </ThemeProvider>
   );
 }

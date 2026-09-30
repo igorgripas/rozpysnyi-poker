@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { type Locator, expect, test } from '@playwright/test';
 
 test('ігровий стіл: рука, гравці й стіл вміщуються в екран', async ({ page }) => {
   await page.goto('/');
@@ -103,7 +103,7 @@ test('таблиця гри відкривається під час гри й �
   const dialog = page.getByRole('dialog', { name: 'Таблиця гри' });
   const table = dialog.getByRole('table', { name: 'Таблиця гри' });
   await expect(table).toBeVisible();
-  await expect(table.getByRole('rowheader').first()).toHaveText(/^1(б\/к|[♠♣♦♥])$/);
+  await expect(table.getByRole('rowheader').first()).toHaveText(/^1(б\/к|[♠♣♦♥]\uFE0E)$/);
   await expect(dialog.getByRole('note')).toContainText('Б — безкозирка');
 
   const scroll = dialog.locator('.sheet__scroll');
@@ -118,3 +118,110 @@ test('таблиця гри відкривається під час гри й �
   await dialog.getByRole('button', { name: 'Закрити' }).click();
   await expect(dialog).toBeHidden();
 });
+
+test('пауза після взятки: видно, хто бере, і всі карти; у новій роздачі стіл чистий (R-9.2)', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.getByLabel('Ваше імʼя').fill('Оля');
+  await page.getByRole('button', { name: 'Створити кімнату' }).click();
+  await page.getByRole('button', { name: 'Додати бота' }).click();
+  await page.getByRole('button', { name: 'Додати бота' }).click();
+  await expect(page.getByRole('list', { name: 'Гравці' }).getByRole('listitem')).toHaveCount(3);
+  await page.getByRole('button', { name: 'Почати гру' }).click();
+
+  // Перша роздача — 1 карта: замовлення й одна взятка.
+  const bidding = page.getByRole('group', { name: 'Ваше замовлення' });
+  await bidding.locator('button:enabled').first().click();
+  const card = page.locator('.hand__card:enabled').first();
+  await card.click();
+  await card.click();
+  // Джокер спершу питає оголошення.
+  if (await page.locator('.joker-dialog').isVisible()) {
+    await page.locator('.joker-dialog button').first().click();
+  }
+
+  const felt = page.getByRole('region', { name: 'Стіл' });
+  const players = page.getByRole('list', { name: 'Гравці за столом' }).getByRole('listitem');
+  await expect(felt.locator('.felt__trick--taken')).toBeVisible();
+  await expect(felt).toContainText(/Бере: Бот \d|Ви берете/);
+  await expect(felt.getByRole('figure')).toHaveCount(3);
+  await expect(felt.locator('.felt__card[data-winner]')).toHaveCount(1);
+  // Хто взяв останню взятку — підсвічено й підписано.
+  await expect(players.and(page.locator('[data-last-taker]'))).toHaveCount(1);
+  await expect(players.and(page.locator('[data-last-taker]'))).toContainText('взяв останню');
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(0);
+
+  // Після паузи — друга роздача: замовлення, а на столі нічого з попередньої.
+  await expect(page.getByRole('region', { name: 'Роздача' })).toContainText('Роздача 2 з');
+  await expect(felt.getByRole('figure')).toHaveCount(0);
+  await expect(felt).not.toContainText('Остання взятка');
+  await expect(players.and(page.locator('[data-last-taker]'))).toHaveCount(0);
+});
+
+/** Колір і розмір кожного значка масті порівняно з текстом поруч. */
+async function suitMarks(scope: Locator) {
+  return scope.locator('.suit-mark').evaluateAll((marks) =>
+    marks.map((mark) => {
+      const style = getComputedStyle(mark);
+      const parent = getComputedStyle(mark.parentElement as HTMLElement);
+      return {
+        red: mark.getAttribute('data-color') === 'red',
+        color: style.color,
+        textColor: parent.color,
+        size: style.fontSize,
+        textSize: parent.fontSize,
+      };
+    }),
+  );
+}
+
+for (const theme of ['light', 'dark'] as const) {
+  test(`масті в козирі й таблиці: ♦ ♥ червоні, ♠ ♣ кольору тексту, розміром як текст (${theme})`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ colorScheme: theme });
+    await page.goto('/');
+    await page.getByLabel('Ваше імʼя').fill('Оля');
+    await page.getByRole('button', { name: 'Створити кімнату' }).click();
+    for (let i = 0; i < 5; i++) await page.getByRole('button', { name: 'Додати бота' }).click();
+    await expect(page.getByRole('list', { name: 'Гравці' }).getByRole('listitem')).toHaveCount(6);
+    await page.getByRole('button', { name: 'Почати гру' }).click();
+    await expect(page.getByRole('list', { name: 'Ваші карти' })).toBeVisible();
+
+    const red = theme === 'light' ? 'rgb(198, 40, 40)' : 'rgb(255, 123, 114)';
+    const check = (marks: Awaited<ReturnType<typeof suitMarks>>) => {
+      for (const mark of marks) {
+        expect(mark.color).toBe(mark.red ? red : mark.textColor);
+        expect(mark.size).toBe(mark.textSize);
+      }
+    };
+    // Козир (якщо відкрито не джокера).
+    check(await suitMarks(page.getByRole('region', { name: 'Роздача' }).locator('.game__trump')));
+
+    // Кути карт: масть того ж розміру, що й ранг.
+    const corners = await page
+      .locator('.hand .card')
+      .first()
+      .evaluate((card) => {
+        const size = (selector: string) =>
+          getComputedStyle(card.querySelector(selector) as Element).fontSize;
+        return [size('.card__corner'), size('.card__corner-suit')];
+      });
+    expect(corners[1]).toBe(corners[0]);
+
+    await page.getByRole('button', { name: 'Таблиця' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Таблиця гри' });
+    const marks = await suitMarks(dialog.getByRole('table', { name: 'Таблиця гри' }));
+    // Поки зіграно лише першу роздачу — у таблиці її рядок (з мастю, якщо є козир).
+    check(marks);
+    // Легенда: «9♥» — червона масть того ж розміру, що й цифра.
+    const legend = await suitMarks(dialog.getByRole('note'));
+    expect(legend).toHaveLength(1);
+    expect(legend[0]?.red).toBe(true);
+    check(legend);
+  });
+}

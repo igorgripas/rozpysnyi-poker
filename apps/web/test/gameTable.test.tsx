@@ -133,7 +133,14 @@ describe('ігровий стіл', () => {
     renderAt(state, 0);
     const revealed = defined(state.hand.revealed);
     const info = screen.getByRole('region', { name: 'Роздача' });
-    expect(info).toHaveTextContent(/Козир: [♠♣♦♥] (піка|трефа|бубна|чирва)/);
+    expect(info).toHaveTextContent(/Козир: [♠♣♦♥]\uFE0E? (піка|трефа|бубна|чирва)/);
+    // Козир — спільним значком масті: ♦ ♥ червоні.
+    const trump = defined(state.hand.trump);
+    const mark = info.querySelector('.game__trump .suit-mark');
+    expect(mark).toHaveAttribute('data-suit', trump);
+    expect(mark?.getAttribute('data-color') === 'red').toBe(
+      trump === 'diamonds' || trump === 'hearts',
+    );
     expect(within(info).getByRole('img', { name: cardName(revealed) })).toBeInTheDocument();
   });
 
@@ -237,16 +244,43 @@ describe('ігровий стіл', () => {
     ).toBeInTheDocument();
   });
 
-  it('R-9.2: остання взятка видна, поки не покладуть першу карту наступної', () => {
+  it('R-9.2: остання взятка роздачі видна, поки не покладуть першу карту наступної', () => {
     const state = findState(
       3,
-      (s) => s.status === 'playing' && s.hand.trick.length === 0 && s.lastTrick !== null,
+      (s) =>
+        s.status === 'playing' &&
+        s.hand.trick.length === 0 &&
+        s.lastTrick !== null &&
+        s.hand.taken.some((n) => n > 0),
     );
     renderAt(state, 0);
     const table = screen.getByRole('region', { name: 'Стіл' });
     const winner = nameAt(defined(state.lastTrick).winner);
     expect(table).toHaveTextContent(`Остання взятка: ${winner}`);
     expect(within(table).getAllByRole('figure')).toHaveLength(3);
+  });
+
+  it('R-6.2: оголошення джокера на столі показує масть значком масті', () => {
+    const state = findState(
+      3,
+      (s) =>
+        s.status === 'playing' &&
+        s.hand.trick.some(
+          (c) => c.kind === 'joker' && (c.call.type === 'high' || c.call.type === 'low'),
+        ),
+    );
+    renderAt(state, 0);
+    const played = defined(
+      state.hand.trick.find(
+        (c) => c.kind === 'joker' && (c.call.type === 'high' || c.call.type === 'low'),
+      ),
+    );
+    const call = played.kind === 'joker' ? played.call : null;
+    const suit = call !== null && 'suit' in call ? call.suit : null;
+    const mark = screen
+      .getByRole('region', { name: 'Стіл' })
+      .querySelector('.felt__call .suit-mark');
+    expect(mark).toHaveAttribute('data-suit', defined(suit));
   });
 
   it('рука впорядкована: джокери, далі масті ♠ ♣ ♦ ♥ від старшої карти', () => {

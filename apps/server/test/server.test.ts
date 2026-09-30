@@ -121,7 +121,7 @@ describe('кімната через сокети', () => {
 describe('гра через сокети', () => {
   it('сервер розсилає viewFor після кожної дії; людина з ботами дограває гру до кінця', async () => {
     await server.close();
-    server = createPokerServer({ random: testRandom(4), botDelayMs: 0 });
+    server = createPokerServer({ random: testRandom(4), botDelayMs: 0, trickPauseMs: 0 });
     url = await server.listen({ port: 0, host: '127.0.0.1' });
 
     const host = client();
@@ -165,7 +165,7 @@ describe('перепідключення й рестарт (R-9.3)', () => {
   it('R-9.3: сервер переживає рестарт посеред гри; гравець повертається за токеном і бачить свою руку', async () => {
     const store = new MemoryRoomStore();
     await server.close();
-    server = createPokerServer({ random: testRandom(4), store, botDelayMs: 0 });
+    server = createPokerServer({ random: testRandom(4), store, botDelayMs: 0, trickPauseMs: 0 });
     url = await server.listen({ port: 0, host: '127.0.0.1' });
 
     const host = client();
@@ -178,7 +178,7 @@ describe('перепідключення й рестарт (R-9.3)', () => {
     host.close();
 
     await server.close();
-    server = createPokerServer({ random: testRandom(5), store, botDelayMs: 0 });
+    server = createPokerServer({ random: testRandom(5), store, botDelayMs: 0, trickPauseMs: 0 });
     url = await server.listen({ port: 0, host: '127.0.0.1' });
 
     const again = client();

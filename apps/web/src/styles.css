@@ -17,6 +17,8 @@
   --card-paper: #ffffff;
   --card-edge: #b9c4bd;
   --suit-red: #c62828;
+  /* Червона масть як текст на тлі сторінки й панелей (контраст ≥ 4.5:1). */
+  --suit-red-text: #c62828;
   --suit-black: #1b1f1d;
   --suit-joker: #6a3fb5;
   --card-back: #2e4a8a;
@@ -61,6 +63,7 @@
   --card-paper: #f5f5f0;
   --card-edge: #7e8a83;
   --suit-red: #d32f2f;
+  --suit-red-text: #ff7b72;
   --suit-black: #1b1f1d;
   --suit-joker: #6a3fb5;
   --card-back: #3a5aa8;
@@ -279,7 +282,7 @@ input {
 }
 
 .card__corner-suit {
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .card__pip {
@@ -480,6 +483,21 @@ input {
   font-size: 0.75rem;
 }
 
+/* Значок масті поза картою: розмір як у тексту поруч, ♦ ♥ — червоні, ♠ ♣ — кольору тексту. */
+.suit-mark {
+  font-size: 1em;
+  font-style: normal;
+}
+
+.suit-mark[data-color='red'] {
+  color: var(--suit-red-text);
+}
+
+/* «Козир: ♥ чирва» не розривається між мастю й назвою. */
+.game__trump {
+  white-space: nowrap;
+}
+
 .card--small {
   --card-w: 36px;
 }
@@ -521,6 +539,19 @@ input {
 .player[aria-current='true'] {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent);
+}
+
+/* Хто взяв останню взятку (і заходить у наступну, R-5.1): рамка акцентом і текстова позначка. */
+.player[data-last-taker] {
+  outline: 2px dashed var(--accent);
+  outline-offset: 2px;
+}
+
+.badge--taker {
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--text);
+  font-weight: 600;
 }
 
 .player > :not(.player__bid) {
@@ -607,8 +638,46 @@ input {
   gap: var(--space-2);
 }
 
+.felt__caption--takes {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
 .felt__trick--last {
   opacity: 0.75;
+}
+
+/* Оголошення джокера на сукні — світла плашка, щоб червона масть була контрастною. */
+.felt__call {
+  padding: 0 var(--space-1);
+  border-radius: 4px;
+  background: var(--card-paper);
+  color: var(--suit-black);
+  white-space: nowrap;
+}
+
+.felt__call .suit-mark[data-color='red'] {
+  color: var(--suit-red);
+}
+
+.felt__card--winner .card {
+  border-radius: 6px;
+  box-shadow:
+    0 0 0 3px var(--felt-text),
+    0 0 12px 2px var(--felt-text);
+}
+
+.felt__card--winner figcaption {
+  font-weight: 700;
+}
+
+/* Завершена взятка «їде» до картки переможця (зсув рахує GameTable). */
+.felt__trick--collect .felt__card {
+  opacity: 0;
+  transform: translate(var(--collect-x, 0), var(--collect-y, 0)) scale(0.3);
+  transition:
+    transform 400ms ease-in,
+    opacity 400ms ease-in;
 }
 
 .felt__card {
@@ -811,11 +880,6 @@ input {
 .joker-dialog__suit {
   flex: 1;
   font-size: 1.375rem;
-}
-
-.joker-dialog__suit[data-suit='diamonds'],
-.joker-dialog__suit[data-suit='hearts'] {
-  color: var(--suit-red);
 }
 
 .joker-dialog__hint {
