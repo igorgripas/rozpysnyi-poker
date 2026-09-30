@@ -14,9 +14,10 @@
     "test": "pnpm -r --if-present test",
     "build": "pnpm -r --if-present build",
     "e2e": "pnpm -r --if-present e2e",
-    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm rules-coverage && pnpm test && pnpm simulate && pnpm build",
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm rules-coverage && pnpm test && pnpm simulate && pnpm benchmark && pnpm build",
     "rules-coverage": "node scripts/rules-coverage.mjs",
-    "simulate": "pnpm --filter @poker/engine simulate"
+    "simulate": "pnpm --filter @poker/engine simulate",
+    "benchmark": "pnpm --filter @poker/bots benchmark"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
