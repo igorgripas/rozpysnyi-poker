@@ -2,7 +2,7 @@
 name: Agent dispatch
 on:
   schedule:
-    - cron: '17 */2 * * *'
+    - cron: '*/30 * * * *'
   push:
     branches: [main]
   issues:

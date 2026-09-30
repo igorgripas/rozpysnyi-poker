@@ -1,6 +1,15 @@
 // Обирає наступний пакет задач (до AGENT_BATCH_SIZE, один етап) або нічого, якщо агент зайнятий /
 // на паузі / вичерпав ліміт. Задачі, що потребують `spec-change`, завжди йдуть окремим PR.
-import { REPO, addLabels, comment, dependsOn, ghJson, removeLabels, setOutput } from './lib.mjs';
+import {
+  REPO,
+  addLabels,
+  closesIssues,
+  comment,
+  dependsOn,
+  ghJson,
+  removeLabels,
+  setOutput,
+} from './lib.mjs';
 
 const PRIORITY = { P0: 0, P1: 1, P2: 2 };
 const cap = Number(process.env.AGENT_DAILY_PR_CAP || 10);
@@ -65,10 +74,30 @@ const all = ghJson([
   'number,state,title,labels',
 ]);
 const state = new Map(all.map((i) => [i.number, i.state]));
+
+// Після merge GitHub закриває issues із затримкою, а dispatch стартує одразу на push у main.
+// Задачі зі змерджених PR агента вважаємо закритими, щоб не взяти їх удруге.
+const recentlyMerged = ghJson([
+  'pr',
+  'list',
+  '--repo',
+  REPO,
+  '--label',
+  'agent',
+  '--state',
+  'merged',
+  '--limit',
+  '20',
+  '--json',
+  'body',
+]);
+for (const pr of recentlyMerged) for (const n of closesIssues(pr.body)) state.set(n, 'CLOSED');
 const labelsOf = (i) => new Set(i.labels.map((l) => l.name));
 
 // Задачі, що «застрягли» в роботі без PR (впав job) — повертаємо в чергу, вдруге — людині.
-for (const i of all.filter((i) => i.state === 'OPEN' && labelsOf(i).has('agent:in-progress'))) {
+for (const i of all.filter(
+  (i) => state.get(i.number) === 'OPEN' && labelsOf(i).has('agent:in-progress'),
+)) {
   removeLabels(i.number, ['agent:in-progress']);
   if (labelsOf(i).has('agent:stale')) {
     addLabels(i.number, ['needs-human']);
@@ -104,6 +133,7 @@ const solo = (i) => /spec-change/.test(i.body ?? '');
 const depsReady = (i, batch) =>
   dependsOn(i.body).every((n) => state.get(n) !== 'OPEN' || batch.has(n));
 const sorted = ready
+  .filter((i) => state.get(i.number) === 'OPEN')
   .filter((i) => !labelsOf(i).has('needs-human'))
   .sort((a, b) => prio(a) - prio(b) || a.number - b.number);
 
