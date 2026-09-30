@@ -15,6 +15,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { Server, type Socket } from 'socket.io';
 import type { RandomSource } from './random.js';
 import { RoomManager, fail } from './rooms.js';
+import type { RoomStore } from './store.js';
 
 export interface PokerServerOptions {
   random?: RandomSource;
@@ -25,6 +26,8 @@ export interface PokerServerOptions {
   logger?: boolean;
   /** Затримка перед ходом бота, мс. */
   botDelayMs?: number;
+  /** Сховище кімнат: із ним сервер переживає рестарт посеред гри. */
+  store?: RoomStore;
 }
 
 /** Сесія, привʼязана до зʼєднання після create/join/resume. */
@@ -56,6 +59,7 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
     ...(options.random && { random: options.random }),
     ...(options.publicUrl !== undefined && { publicUrl: options.publicUrl }),
     ...(options.botDelayMs !== undefined && { botDelayMs: options.botDelayMs }),
+    ...(options.store && { store: options.store }),
   });
   const io: PokerIo = new Server(app.server, {
     cors: { origin: options.corsOrigin ?? true },
@@ -145,7 +149,13 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
       rooms.removeBot(code, playerId, seat),
     ),
     'room:shuffle': withSession(({ code, playerId }) => rooms.shuffle(code, playerId)),
+    'room:settings': withSession(({ code, playerId }, { turnTimerSec }) =>
+      rooms.settings(code, playerId, turnTimerSec),
+    ),
     'room:start': withSession(({ code, playerId }) => rooms.start(code, playerId)),
+    'room:replaceWithBot': withSession(({ code, playerId }, { seat }) =>
+      rooms.replaceWithBot(code, playerId, seat),
+    ),
     'game:bid': withSession(({ code, playerId }, { bid }) => rooms.bid(code, playerId, bid)),
     'game:play': withSession(({ code, playerId }, { card, call }) =>
       rooms.play(code, playerId, card, call),

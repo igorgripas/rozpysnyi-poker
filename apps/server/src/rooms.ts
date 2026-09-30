@@ -10,6 +10,8 @@ import {
   type PlayerView,
   apply,
   createGame,
+  gameLog,
+  replay,
   viewFor,
 } from '@poker/engine';
 import {
@@ -22,6 +24,7 @@ import {
   type Session,
 } from '@poker/protocol';
 import { type RandomSource, cryptoRandom } from './random.js';
+import { ROOM_SNAPSHOT_VERSION, type RoomSnapshot, type RoomStore } from './store.js';
 
 /** Учасник кімнати: людина з токеном або бот. */
 export interface Member {
@@ -41,6 +44,10 @@ export interface Room {
   seats: Member[];
   /** Стан гри; `null`, поки гра не почалася. */
   game: GameState | null;
+  /** Таймер ходу, секунди; `null` — вимкнений (R-9.3). */
+  turnTimerSec: number | null;
+  /** Коли сплине час поточного ходу (мс від епохи Unix) або `null`. */
+  turnDeadline: number | null;
 }
 
 export interface RoomManagerOptions {
@@ -49,6 +56,8 @@ export interface RoomManagerOptions {
   publicUrl?: string;
   /** Затримка перед ходом бота, мс. */
   botDelayMs?: number;
+  /** Сховище, з якого кімнати відновлюються під час старту і куди зберігаються після змін. */
+  store?: RoomStore;
 }
 
 /** Затримка ходу бота за замовчуванням: щоб люди встигали бачити карти. */
@@ -77,8 +86,9 @@ export class RoomManager {
   private readonly random: RandomSource;
   private readonly publicUrl: string;
   private readonly botDelayMs: number;
-  /** Заплановані ходи ботів за кодом кімнати. */
-  private readonly botTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly store: RoomStore | null;
+  /** Заплановані ходи за кодом кімнати: хід бота або хід за гравця, чий час сплив. */
+  private readonly turnTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Боти за ідентифікатором учасника. */
   private readonly bots = new Map<string, Bot>();
 
@@ -86,6 +96,52 @@ export class RoomManager {
     this.random = options.random ?? cryptoRandom;
     this.publicUrl = (options.publicUrl ?? '').replace(/\/+$/, '');
     this.botDelayMs = options.botDelayMs ?? DEFAULT_BOT_DELAY_MS;
+    this.store = options.store ?? null;
+    if (this.store !== null) this.restore(this.store.load());
+  }
+
+  /** Відновлює кімнати зі знімків: гру — через `replay`, люди чекають на перепідключення (R-9.3). */
+  private restore(snapshots: readonly RoomSnapshot[]): void {
+    for (const snapshot of snapshots) {
+      let game: GameState | null = null;
+      try {
+        if (snapshot.game !== null) {
+          game = replay(snapshot.game.seed, snapshot.game.log);
+          if (game.playerCount !== snapshot.seats.length) continue;
+        }
+      } catch {
+        // Знімок, який не відтворюється, пропускаємо: решта кімнат має піднятися.
+        continue;
+      }
+      const room: Room = {
+        code: snapshot.code,
+        hostId: snapshot.hostId,
+        status: snapshot.status,
+        seats: snapshot.seats.map((seat) => ({ ...seat, connected: seat.kind === 'bot' })),
+        game,
+        turnTimerSec: snapshot.turnTimerSec,
+        turnDeadline: null,
+      };
+      for (const member of room.seats) {
+        if (member.kind === 'bot') this.bots.set(member.id, createHeuristicBot());
+      }
+      this.rooms.set(room.code, room);
+    }
+    for (const room of this.rooms.values()) {
+      if (room.status === 'playing') this.scheduleTurn(room);
+    }
+  }
+
+  private snapshot(room: Room): RoomSnapshot {
+    return {
+      version: ROOM_SNAPSHOT_VERSION,
+      code: room.code,
+      hostId: room.hostId,
+      status: room.status,
+      turnTimerSec: room.turnTimerSec,
+      seats: room.seats.map(({ id, name, kind, token }) => ({ id, name, kind, token })),
+      game: room.game === null ? null : { seed: room.game.seed, log: gameLog(room.game) },
+    };
   }
 
   subscribe(listener: RoomListener): () => void {
@@ -94,6 +150,8 @@ export class RoomManager {
   }
 
   protected changed(code: string): void {
+    const room = this.rooms.get(code);
+    if (room !== undefined) this.store?.save(this.snapshot(room));
     for (const listener of this.listeners) listener(code);
   }
 
@@ -168,6 +226,8 @@ export class RoomManager {
       status: 'lobby',
       seats: [host],
       game: null,
+      turnTimerSec: null,
+      turnDeadline: null,
     };
     this.rooms.set(room.code, room);
     this.changed(room.code);
@@ -205,26 +265,35 @@ export class RoomManager {
     if (room.seats.length >= MAX_PLAYERS) {
       return fail('roomFull', `У кімнаті вже ${MAX_PLAYERS} гравців (R-1.2)`);
     }
+    room.seats.push(this.newBot(room));
+    this.changed(room.code);
+    return ok(null);
+  }
+
+  /** Новий бот з першим вільним іменем «Бот N». */
+  private newBot(room: Room): Member {
     const names = new Set(room.seats.map((m) => m.name));
     let n = 1;
     while (names.has(`Бот ${n}`)) n++;
-    room.seats.push({
+    const bot: Member = {
       id: this.random.id(),
       name: `Бот ${n}`,
       kind: 'bot',
       token: null,
       connected: true,
-    });
-    this.changed(room.code);
-    return ok(null);
+    };
+    this.bots.set(bot.id, createHeuristicBot());
+    return bot;
   }
 
   removeBot(code: string, playerId: string, seat: number): Result<null> {
     const lobby = this.lobby(code, playerId);
     if (!lobby.ok) return lobby;
     const room = lobby.data;
-    if (room.seats[seat]?.kind !== 'bot') return fail('badRequest', `На місці ${seat} немає бота`);
+    const bot = room.seats[seat];
+    if (bot?.kind !== 'bot') return fail('badRequest', `На місці ${seat} немає бота`);
     room.seats.splice(seat, 1);
+    this.bots.delete(bot.id);
     this.changed(room.code);
     return ok(null);
   }
@@ -242,6 +311,37 @@ export class RoomManager {
     return ok(null);
   }
 
+  /** Хост змінює налаштування кімнати до старту: таймер ходу (R-9.3). */
+  settings(code: string, playerId: string, turnTimerSec: number | null): Result<null> {
+    const lobby = this.lobby(code, playerId);
+    if (!lobby.ok) return lobby;
+    lobby.data.turnTimerSec = turnTimerSec;
+    this.changed(code);
+    return ok(null);
+  }
+
+  /** Хост віддає боту місце відключеного гравця (R-9.3); токен гравця більше не діє. */
+  replaceWithBot(code: string, playerId: string, seat: number): Result<null> {
+    const access = this.access(code, playerId, 'host');
+    if (!access.ok) return access;
+    const { room } = access.data;
+    if (room.status !== 'playing') return fail('notStarted', 'Гра не йде');
+    const member = room.seats[seat];
+    if (member?.kind !== 'human' || member.id === room.hostId) {
+      return fail('badRequest', `На місці ${seat} немає іншого гравця-людини`);
+    }
+    if (member.connected) {
+      return fail(
+        'playerConnected',
+        `${member.name} у грі: віддати боту можна лише місце відключеного`,
+      );
+    }
+    room.seats[seat] = this.newBot(room);
+    if (room.game?.turn === seat) this.scheduleTurn(room);
+    this.changed(code);
+    return ok(null);
+  }
+
   /** Хост запускає гру: потрібно від 3 до 6 гравців (R-1.2). */
   start(code: string, playerId: string): Result<null> {
     const lobby = this.lobby(code, playerId);
@@ -252,11 +352,8 @@ export class RoomManager {
     }
     room.game = createGame(this.random.int(UINT32), room.seats.length);
     room.status = 'playing';
-    for (const member of room.seats) {
-      if (member.kind === 'bot') this.bots.set(member.id, createHeuristicBot());
-    }
+    this.scheduleTurn(room);
     this.changed(code);
-    this.scheduleBot(room);
     return ok(null);
   }
 
@@ -283,10 +380,10 @@ export class RoomManager {
     return viewFor(room.game, seat);
   }
 
-  /** Скасовує заплановані ходи ботів (зупинка сервера). */
+  /** Скасовує заплановані ходи (зупинка сервера); стан лишається у сховищі. */
   close(): void {
-    for (const timer of this.botTimers.values()) clearTimeout(timer);
-    this.botTimers.clear();
+    for (const timer of this.turnTimers.values()) clearTimeout(timer);
+    this.turnTimers.clear();
   }
 
   /** Сервер авторитетний: дію гравця приймає лише рушій, місце береться з сесії. */
@@ -309,24 +406,41 @@ export class RoomManager {
   private applyAction(room: Room, action: Action): void {
     room.game = apply(room.game as GameState, action);
     if (room.game.status === 'finished') room.status = 'finished';
+    this.scheduleTurn(room);
     this.changed(room.code);
-    this.scheduleBot(room);
   }
 
-  /** Якщо зараз хід бота — планує його хід із затримкою. */
-  private scheduleBot(room: Room): void {
+  /**
+   * Планує поточний хід: бот ходить із затримкою; за людину, якщо ввімкнено таймер (R-9.3),
+   * легальний хід робить сервер, коли час сплив. Без таймера місце чекає на гравця.
+   */
+  private scheduleTurn(room: Room): void {
+    const pending = this.turnTimers.get(room.code);
+    if (pending !== undefined) clearTimeout(pending);
+    this.turnTimers.delete(room.code);
+    room.turnDeadline = null;
     const turn = room.game?.turn ?? null;
-    if (turn === null || this.botTimers.has(room.code)) return;
+    if (turn === null) return;
     const member = room.seats[turn] as Member;
-    if (member.kind !== 'bot') return;
+    let delay: number;
+    let bot: Bot;
+    if (member.kind === 'bot') {
+      delay = this.botDelayMs;
+      bot = this.bots.get(member.id) as Bot;
+    } else if (room.turnTimerSec !== null) {
+      delay = room.turnTimerSec * 1000;
+      room.turnDeadline = Date.now() + delay;
+      bot = createHeuristicBot();
+    } else {
+      return;
+    }
     const timer = setTimeout(() => {
-      this.botTimers.delete(room.code);
+      this.turnTimers.delete(room.code);
       const game = room.game as GameState;
       if (game.turn !== turn) return;
-      const bot = this.bots.get(member.id) as Bot;
       this.applyAction(room, bot.act(viewFor(game, turn)));
-    }, this.botDelayMs);
-    this.botTimers.set(room.code, timer);
+    }, delay);
+    this.turnTimers.set(room.code, timer);
   }
 
   /** Позначає, чи підключений гравець (є хоч одне активне зʼєднання). */
@@ -348,6 +462,8 @@ export class RoomManager {
       hostId: room.hostId,
       you: playerId,
       seats: room.seats.map(({ id, name, kind, connected }) => ({ id, name, kind, connected })),
+      turnTimerSec: room.turnTimerSec,
+      turnDeadline: room.turnDeadline,
     };
   }
 }
