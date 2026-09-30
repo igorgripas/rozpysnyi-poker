@@ -2,8 +2,10 @@ import { type Card, cardId, createSchedule } from '@poker/engine';
 import type { RoomState, WireAction, WirePlayerView } from '@poker/protocol';
 import { useRef, useState } from 'react';
 import { jokerCallLabel, phaseName, plural, trumpLabel, uk } from '../i18n';
+import type { ClientError } from '../net/connection';
 import { useClient } from '../net/react';
 import { CardFace } from '../ui/Card';
+import { Bidding } from './Bidding';
 import { Hand } from './Hand';
 
 export interface GameTableProps {
@@ -28,19 +30,26 @@ export function GameTable({ room, view }: GameTableProps) {
       ? new Set(plays.map((action) => cardId(action.card)))
       : null;
 
-  async function play(card: Card) {
-    // Джокер поки грається з першим допустимим оголошенням; діалог вибору — задача T44.
-    const action = plays.find((candidate) => cardId(candidate.card) === cardId(card));
-    // Повторний тап, поки сервер не відповів, не надсилає хід удруге.
-    if (action === undefined || pending.current) return;
+  /** Надсилає дію гравця; повторна дія, поки сервер не відповів, ігнорується. */
+  async function send(request: () => Promise<ClientError | null>) {
+    if (pending.current) return;
     pending.current = true;
     setError(null);
-    const failure = await client.send('game:play', {
-      card: action.card,
-      ...(action.call !== undefined && { call: action.call }),
-    });
+    const failure = await request();
     pending.current = false;
     if (failure !== null) setError(failure.message);
+  }
+
+  function play(card: Card) {
+    // Джокер поки грається з першим допустимим оголошенням; діалог вибору — задача T44.
+    const action = plays.find((candidate) => cardId(candidate.card) === cardId(card));
+    if (action === undefined) return;
+    void send(() =>
+      client.send('game:play', {
+        card: action.card,
+        ...(action.call !== undefined && { call: action.call }),
+      }),
+    );
   }
 
   // Суперники за годинниковою стрілкою від вас, ви — останні.
@@ -64,6 +73,7 @@ export function GameTable({ room, view }: GameTableProps) {
             {view.spec.cards} {plural(view.spec.cards, uk.plural.card)}
           </span>
           <strong>{uk.game.trump(trumpLabel(view.trump))}</strong>
+          {view.spec.bidding && <span>{uk.bidding.sum(view.bidSum, view.spec.cards)}</span>}
         </div>
         {view.revealed !== null && (
           <figure className="game__revealed">
@@ -102,6 +112,10 @@ export function GameTable({ room, view }: GameTableProps) {
         ))}
       </ul>
 
+      {view.status === 'bidding' && (
+        <Bidding view={view} onBid={(bid) => void send(() => client.send('game:bid', { bid }))} />
+      )}
+
       <section className="felt" aria-label={uk.game.table}>
         {showLast && view.lastTrick !== null && (
           <p className="felt__caption">{uk.game.lastTrick(nameOf(view.lastTrick.winner))}</p>
@@ -130,7 +144,7 @@ export function GameTable({ room, view }: GameTableProps) {
         </p>
       )}
 
-      <Hand cards={view.hand} legal={legal} onPlay={(card) => void play(card)} />
+      <Hand cards={view.hand} legal={legal} onPlay={play} />
     </div>
   );
 }

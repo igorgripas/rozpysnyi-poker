@@ -73,6 +73,13 @@ export const uk = {
     cardsLeft: (n: number) => `Карт: ${n}`,
     offline: 'не в мережі',
   },
+  bidding: {
+    title: 'Замовлення',
+    yours: 'Ваше замовлення',
+    sum: (sum: number, cards: number) => `Замовлено: ${sum} з ${cards}`,
+    forbidden: (bid: number, cards: number) =>
+      `Роздаючому не можна замовити ${bid}: сума замовлень не може дорівнювати кількості карт (${cards})`,
+  },
   jokerCall: {
     highTrump: 'старший козир',
     high: (suit: string) => `старша ${suit}`,
