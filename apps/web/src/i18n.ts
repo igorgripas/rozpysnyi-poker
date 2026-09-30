@@ -73,6 +73,13 @@ export const uk = {
     cardsLeft: (n: number) => `Карт: ${n}`,
     offline: 'не в мережі',
   },
+  bidding: {
+    title: 'Замовлення',
+    yours: 'Ваше замовлення',
+    sum: (sum: number, cards: number) => `Замовлено: ${sum} з ${cards}`,
+    forbidden: (bid: number, cards: number) =>
+      `Роздаючому не можна замовити ${bid}: сума замовлень не може дорівнювати кількості карт (${cards})`,
+  },
   jokerCall: {
     highTrump: 'старший козир',
     high: (suit: string) => `старша ${suit}`,
@@ -80,10 +87,42 @@ export const uk = {
     take: 'беру',
     discard: 'скидаю',
   },
+  jokerDialog: {
+    title: 'Оголошення джокера',
+    highTrump: 'Старший козир',
+    take: 'Беру',
+    discard: 'Скидаю',
+    high: 'Старша',
+    low: 'Маленька',
+    highTrumpHint: 'Усі кладуть свій найстарший козир; бере джокер.',
+    highHint: 'Усі кладуть найстаршу карту цієї масті; без неї — козир.',
+    lowHint: 'Джокер — карта цієї масті, молодша за шістку.',
+    takeHint: 'Джокер бʼє будь-яку карту.',
+    discardHint: 'Джокер не бере взятку.',
+    cancel: 'Скасувати',
+  },
+  sheet: {
+    title: 'Таблиця гри',
+    open: 'Таблиця',
+    close: 'Закрити',
+    deal: 'Роздача',
+    showAll: 'Показати взяті й підсумок',
+    columns: { bid: 'замовлення', taken: 'взяв', points: 'бали', total: 'разом' },
+    short: { bid: 'зам', taken: 'взяв', points: 'бал', total: 'Σ' },
+    marks: { noTrump: 'Б', misere: 'М', comeback: 'В' },
+    row: (n: number, phase: string, cards: string, trump: string, dealer: string) =>
+      `Роздача ${n}: ${phase}, ${cards}, козир ${trump}, роздає ${dealer}`,
+    jokers: 'Джокери × −10',
+    final: 'Рахунок',
+    legend:
+      '9♥ — карт у роздачі й козир, б/к — без козиря · Б — безкозирка · М — мізер · В — відіграш · ◯ — джокер (кружечок навколо замовлення) · ◤ — роздавав',
+    results: 'Результати',
+  },
   plural: {
     trick: ['взятка', 'взятки', 'взяток'],
     card: ['карта', 'карти', 'карт'],
     player: ['гравець', 'гравці', 'гравців'],
+    joker: ['джокер', 'джокери', 'джокерів'],
   },
 } as const satisfies Record<string, unknown>;
 
