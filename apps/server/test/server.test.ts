@@ -1,6 +1,7 @@
 import { PROTOCOL_VERSION, playerViewSchema, roomStateSchema } from '@poker/protocol';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type PokerServer, createPokerServer } from '../src/server.js';
+import { MemoryRoomStore } from '../src/store.js';
 import { TestClient } from './client.js';
 import { errorCode, testRandom, unwrap } from './support.js';
 
@@ -158,4 +159,57 @@ describe('гра через сокети', () => {
     }
     expect(host.view?.status ?? 'finished').toBe('finished');
   }, 60_000);
+});
+
+describe('перепідключення й рестарт (R-9.3)', () => {
+  it('R-9.3: сервер переживає рестарт посеред гри; гравець повертається за токеном і бачить свою руку', async () => {
+    const store = new MemoryRoomStore();
+    await server.close();
+    server = createPokerServer({ random: testRandom(4), store, botDelayMs: 0 });
+    url = await server.listen({ port: 0, host: '127.0.0.1' });
+
+    const host = client();
+    const session = unwrap(await host.request('room:create', { name: 'Оля' }));
+    unwrap(await host.request('room:addBot', {}));
+    unwrap(await host.request('room:addBot', {}));
+    unwrap(await host.request('room:start', {}));
+    await host.until((c) => (c.view?.legalActions.length ?? 0) > 0);
+    const view = host.view;
+    host.close();
+
+    await server.close();
+    server = createPokerServer({ random: testRandom(5), store, botDelayMs: 0 });
+    url = await server.listen({ port: 0, host: '127.0.0.1' });
+
+    const again = client();
+    expect(
+      unwrap(await again.request('room:resume', { code: session.code, token: session.token })),
+    ).toEqual(session);
+    await again.until((c) => c.view !== null && c.room?.seats[0]?.connected === true);
+    expect(again.view).toEqual(view);
+    const action = again.view?.legalActions[0];
+    expect(action?.type).toBe('bid');
+    unwrap(await again.request('game:bid', { bid: action?.type === 'bid' ? action.bid : 0 }));
+  });
+
+  it('R-9.3: хост налаштовує таймер і віддає боту місце відключеного гравця', async () => {
+    const host = client();
+    const guest = client();
+    const session = unwrap(await host.request('room:create', { name: 'Оля' }));
+    unwrap(await guest.request('room:join', { code: session.code, name: 'Петро' }));
+    expect(errorCode(await guest.request('room:settings', { turnTimerSec: 30 }))).toBe('notHost');
+    unwrap(await host.request('room:settings', { turnTimerSec: 30 }));
+    await guest.until((c) => c.room?.turnTimerSec === 30);
+    unwrap(await host.request('room:addBot', {}));
+    unwrap(await host.request('room:start', {}));
+    await host.until((c) => c.room?.turnDeadline !== null);
+
+    expect(errorCode(await host.request('room:replaceWithBot', { seat: 1 }))).toBe(
+      'playerConnected',
+    );
+    guest.close();
+    await host.until((c) => c.room?.seats[1]?.connected === false);
+    unwrap(await host.request('room:replaceWithBot', { seat: 1 }));
+    await host.until((c) => c.room?.seats[1]?.kind === 'bot');
+  });
 });

@@ -27,6 +27,18 @@ export const tokenSchema = z.string().min(16).max(128);
 
 export const playerIdSchema = z.string().min(1).max(64);
 
+/** Межі таймера ходу, секунди (R-9.3). */
+export const TURN_TIMER_MIN_SEC = 5;
+export const TURN_TIMER_MAX_SEC = 300;
+
+/** Таймер ходу (R-9.3): `null` — вимкнений (за замовчуванням), інакше секунди на хід. */
+export const turnTimerSchema = z
+  .number()
+  .int()
+  .min(TURN_TIMER_MIN_SEC)
+  .max(TURN_TIMER_MAX_SEC)
+  .nullable();
+
 // ── Клієнт → сервер ────────────────────────────────────────────────────────────
 
 export const createRoomRequestSchema = z.strictObject({ name: playerNameSchema });
@@ -37,6 +49,10 @@ export const joinRoomRequestSchema = z.strictObject({
 export const resumeRequestSchema = z.strictObject({ code: roomCodeSchema, token: tokenSchema });
 export const emptyRequestSchema = z.strictObject({});
 export const removeBotRequestSchema = z.strictObject({ seat: seatSchema });
+/** Хост віддає місце відключеного гравця боту (R-9.3). */
+export const replaceWithBotRequestSchema = z.strictObject({ seat: seatSchema });
+/** Налаштування кімнати, які хост змінює до старту (R-9.3). */
+export const roomSettingsRequestSchema = z.strictObject({ turnTimerSec: turnTimerSchema });
 /** Замовлення (R-4.3); місце визначає сервер за сесією. */
 export const bidRequestSchema = z.strictObject({ bid: z.number().int().min(0) });
 /** Хід картою; оголошення — лише для джокера (§6). Місце визначає сервер. */
@@ -53,7 +69,9 @@ export const clientMessageSchemas = {
   'room:addBot': emptyRequestSchema,
   'room:removeBot': removeBotRequestSchema,
   'room:shuffle': emptyRequestSchema,
+  'room:settings': roomSettingsRequestSchema,
   'room:start': emptyRequestSchema,
+  'room:replaceWithBot': replaceWithBotRequestSchema,
   'game:bid': bidRequestSchema,
   'game:play': playRequestSchema,
 } as const;
@@ -92,6 +110,10 @@ export const roomStateSchema = z.strictObject({
   /** Хто отримує цей стан. */
   you: playerIdSchema,
   seats: z.array(seatInfoSchema).max(MAX_PLAYERS),
+  /** Таймер ходу (R-9.3). */
+  turnTimerSec: turnTimerSchema,
+  /** Коли сплине час поточного ходу (мс від епохи Unix) або `null`, якщо таймер не йде. */
+  turnDeadline: z.number().int().nonnegative().nullable(),
 });
 
 export const ERROR_CODES = [
@@ -106,6 +128,7 @@ export const ERROR_CODES = [
   'notStarted',
   'notEnoughPlayers',
   'illegalAction',
+  'playerConnected',
 ] as const;
 
 export const errorCodeSchema = z.enum(ERROR_CODES);
@@ -134,7 +157,9 @@ export interface ClientResponses {
   'room:addBot': null;
   'room:removeBot': null;
   'room:shuffle': null;
+  'room:settings': null;
   'room:start': null;
+  'room:replaceWithBot': null;
   'game:bid': null;
   'game:play': null;
 }

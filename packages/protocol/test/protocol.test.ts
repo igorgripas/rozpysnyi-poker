@@ -12,6 +12,7 @@ import {
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
   CLIENT_EVENTS,
+  ERROR_CODES,
   PROTOCOL_VERSION,
   ROOM_CODE_LENGTH,
   actionSchema,
@@ -30,6 +31,9 @@ import {
   type WireJokerCall,
   roomStateSchema,
   sessionSchema,
+  TURN_TIMER_MAX_SEC,
+  TURN_TIMER_MIN_SEC,
+  turnTimerSchema,
 } from '../src/index.js';
 
 /** Грає гру випадковими легальними ходами й повертає всі проміжні стани. */
@@ -140,6 +144,47 @@ describe('повідомлення клієнта', () => {
   });
 });
 
+describe('перепідключення й таймер ходу', () => {
+  it('R-9.3: таймер ходу вимкнений (null) або в межах дозволених секунд', () => {
+    expect(turnTimerSchema.parse(null)).toBeNull();
+    expect(turnTimerSchema.parse(TURN_TIMER_MIN_SEC)).toBe(TURN_TIMER_MIN_SEC);
+    expect(turnTimerSchema.parse(TURN_TIMER_MAX_SEC)).toBe(TURN_TIMER_MAX_SEC);
+    expect(turnTimerSchema.safeParse(TURN_TIMER_MIN_SEC - 1).success).toBe(false);
+    expect(turnTimerSchema.safeParse(TURN_TIMER_MAX_SEC + 1).success).toBe(false);
+    expect(turnTimerSchema.safeParse(30.5).success).toBe(false);
+    expect(parseClientMessage('room:settings', { turnTimerSec: 30 })).toEqual({
+      ok: true,
+      data: { turnTimerSec: 30 },
+    });
+    expect(parseClientMessage('room:settings', {}).ok).toBe(false);
+  });
+
+  it('R-9.3: хост віддає боту місце за номером', () => {
+    expect(parseClientMessage('room:replaceWithBot', { seat: 2 })).toEqual({
+      ok: true,
+      data: { seat: 2 },
+    });
+    expect(parseClientMessage('room:replaceWithBot', { seat: -1 }).ok).toBe(false);
+    expect(ERROR_CODES).toContain('playerConnected');
+  });
+
+  it('R-9.3: стан кімнати містить налаштування таймера й дедлайн ходу', () => {
+    const room = {
+      code: 'ABCDE',
+      link: '/r/ABCDE',
+      status: 'playing',
+      hostId: 'p1',
+      you: 'p1',
+      seats: [{ id: 'p1', name: 'Оля', kind: 'human', connected: false }],
+      turnTimerSec: 30,
+      turnDeadline: 1_700_000_000_000,
+    };
+    expect(roomStateSchema.parse(room)).toEqual(room);
+    expect(roomStateSchema.safeParse({ ...room, turnTimerSec: undefined }).success).toBe(false);
+    expect(roomStateSchema.safeParse({ ...room, turnTimerSec: 1 }).success).toBe(false);
+  });
+});
+
 describe('повідомлення сервера', () => {
   it('сесія й стан кімнати проходять валідацію', () => {
     const session = { code: 'ABCDE', token: 't'.repeat(32), playerId: 'p1', link: '/r/ABCDE' };
@@ -154,6 +199,8 @@ describe('повідомлення сервера', () => {
         { id: 'p1', name: 'Оля', kind: 'human', connected: true },
         { id: 'b1', name: 'Бот 1', kind: 'bot', connected: true },
       ],
+      turnTimerSec: null,
+      turnDeadline: null,
     };
     expect(roomStateSchema.parse(room)).toEqual(room);
     expect(roomStateSchema.safeParse({ ...room, status: 'paused' }).success).toBe(false);
