@@ -56,7 +56,7 @@ describe('замовлення', () => {
     const info = screen.getByRole('region', { name: 'Роздача' });
     expect(info).toHaveTextContent(`Замовлено: ${view.bidSum} з ${state.hand.spec.cards}`);
     expect(screen.getByRole('region', { name: 'Замовлення' })).toHaveTextContent(
-      `Роздаючому не можна замовити ${defined(view.forbiddenBid)}`,
+      `Роздаючому не можна: ${defined(view.forbiddenBid)}`,
     );
     // Не мій хід — кнопок немає.
     expect(screen.queryByRole('group', { name: 'Ваше замовлення' })).toBeNull();

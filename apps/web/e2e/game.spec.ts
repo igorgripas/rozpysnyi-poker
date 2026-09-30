@@ -46,6 +46,49 @@ test('замовлення: кнопки 0…K, сума замовлень на
   expect(overflow).toBeLessThanOrEqual(0);
 });
 
+test('R-4.2: черга замовлень показує замовлення попередніх гравців у порядку ходу', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.getByLabel('Ваше імʼя').fill('Оля');
+  await page.getByRole('button', { name: 'Створити кімнату' }).click();
+  for (let i = 0; i < 5; i++) await page.getByRole('button', { name: 'Додати бота' }).click();
+  await expect(page.getByRole('list', { name: 'Гравці' }).getByRole('listitem')).toHaveCount(6);
+  await page.getByRole('button', { name: 'Почати гру' }).click();
+
+  await expect(page.getByRole('group', { name: 'Ваше замовлення' })).toBeVisible();
+  const items = page.getByRole('list', { name: 'Черга замовлень' }).getByRole('listitem');
+  await expect(items).toHaveCount(6);
+  // Роздаючий — останній у черзі (R-4.2).
+  await expect(items.last()).toHaveAttribute('data-dealer', 'true');
+  const names = await items.locator('.bid-queue__name').allTextContents();
+  const values = await items.locator('.bid-queue__value').allTextContents();
+  const mine = names.indexOf('Оля');
+  // Черга йде за годинниковою стрілкою: Оля (місце 1), далі Бот 1…Бот 5.
+  const seats = ['Оля', 'Бот 1', 'Бот 2', 'Бот 3', 'Бот 4', 'Бот 5'];
+  const first = seats.indexOf(names[0] ?? '');
+  expect(names).toEqual(seats.map((_, i) => seats[(first + i) % 6]));
+  values.forEach((value, i) => {
+    if (i < mine) expect(value).toMatch(/^\d+$/);
+    else if (i === mine) expect(value).toBe('?');
+    else expect(value).toBe('—');
+  });
+  await expect(items.nth(mine)).toHaveAttribute('aria-current', 'true');
+  await expect(page.getByRole('region', { name: 'Замовлення' })).toContainText(/Сума: \d з 1/);
+
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(0);
+  // Число в кожній клітинці видно повністю, у межах ширини екрана.
+  const width = await page.evaluate(() => document.documentElement.clientWidth);
+  for (const value of await items.locator('.bid-queue__value').all()) {
+    const box = await value.boundingBox();
+    expect(box?.width).toBeGreaterThan(0);
+    expect((box?.x ?? -1) >= 0 && (box?.x ?? 0) + (box?.width ?? 0) <= width).toBe(true);
+  }
+});
+
 test('таблиця гри відкривається під час гри й на 6 гравців вміщується без прокручування', async ({
   page,
 }) => {

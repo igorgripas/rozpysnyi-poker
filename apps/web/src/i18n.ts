@@ -85,7 +85,8 @@ export const uk = {
     finished: 'Гру завершено',
     dealer: 'роздає',
     you: 'ви',
-    bid: (bid: number | null) => `Замовлення: ${bid ?? '…'}`,
+    bid: 'замовлення',
+    noBid: 'ще не замовив',
     taken: (n: number) => `Взято: ${n}`,
     cardsLeft: (n: number) => `Карт: ${n}`,
     offline: 'не в мережі',
@@ -96,6 +97,12 @@ export const uk = {
     sum: (sum: number, cards: number) => `Замовлено: ${sum} з ${cards}`,
     forbidden: (bid: number, cards: number) =>
       `Роздаючому не можна замовити ${bid}: сума замовлень не може дорівнювати кількості карт (${cards})`,
+    queue: 'Черга замовлень',
+    queueSum: (sum: number, cards: number) => `Сума: ${sum} з ${cards}`,
+    dealerCannot: (bid: number) => `Роздаючому не можна: ${bid}`,
+    made: (bid: number) => `замовив ${bid}`,
+    turn: 'замовляє зараз',
+    waiting: 'ще чекає',
   },
   jokerCall: {
     highTrump: 'старший козир',
