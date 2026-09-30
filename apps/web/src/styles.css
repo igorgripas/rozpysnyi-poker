@@ -188,6 +188,17 @@ input {
   color: var(--muted);
 }
 
+/* Текст лише для екранних читачів. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .error {
   color: var(--danger);
 }
@@ -666,6 +677,207 @@ input {
   font-size: 0.8125rem;
 }
 
+/* ── Таблиця гри (розписка) ─────────────────────────────────────────────── */
+
+.game__sheet {
+  flex: none;
+  min-height: 36px;
+  padding: var(--space-1) var(--space-3);
+}
+
+.sheet {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.sheet__toggle {
+  justify-self: end;
+  min-height: 36px;
+  padding: var(--space-1) var(--space-3);
+  font-size: 0.875rem;
+}
+
+.sheet__toggle[aria-pressed='true'] {
+  border-color: var(--accent);
+}
+
+/* Фіксована розкладка: на телефоні таблиця вміщується в ширину без прокручування. */
+.sheet__scroll {
+  overflow-x: auto;
+}
+
+.sheet__table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.sheet__table th,
+.sheet__table td {
+  overflow: hidden;
+  padding: 3px 1px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Ліва колонка закріплена й має власну ширину — колонки гравців вона не перекриває. */
+.sheet__corner,
+.sheet__row {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  width: 3.25rem;
+  background: var(--surface);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.sheet__deal {
+  font-weight: 600;
+}
+
+/* Підписи підсумку переносяться, щоб ліва колонка лишалась вузькою. */
+tfoot .sheet__row {
+  font-size: 0.625rem;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: normal;
+}
+
+.sheet__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sheet__name,
+.sheet__sub--bid,
+.sheet__cell--bid,
+tfoot .sheet__cell {
+  border-left: 1px solid var(--border);
+}
+
+.sheet__sub {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 0.6875rem;
+}
+
+/* Кружечки навколо замовлення: один чи два за джокерів (R-8.3). */
+.sheet__bid {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.4em;
+  height: 1.4em;
+  border-radius: 50%;
+}
+
+.sheet__bid[data-circles='1'] {
+  box-shadow: 0 0 0 1px currentColor;
+}
+
+.sheet__bid[data-circles='2'] {
+  box-shadow:
+    0 0 0 1px currentColor,
+    0 0 0 2px var(--surface),
+    0 0 0 3px currentColor;
+}
+
+/* Роздаючий: трикутник у куті клітинки замовлення. */
+.sheet__cell[data-dealer] {
+  background-image: linear-gradient(135deg, var(--accent) 50%, transparent 50%);
+  background-repeat: no-repeat;
+  background-size: 7px 7px;
+}
+
+.sheet__penalty {
+  color: var(--danger);
+}
+
+.sheet__final {
+  font-weight: 700;
+}
+
+.sheet__legend {
+  margin: 0;
+  font-size: 0.75rem;
+}
+
+.sheet-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  justify-items: center;
+  overflow-y: auto;
+  background: rgb(0 0 0 / 0.45);
+}
+
+.sheet-dialog {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  width: 100%;
+  max-width: 1200px;
+  min-height: 100%;
+  padding: var(--space-2);
+  padding-bottom: max(var(--space-4), env(safe-area-inset-bottom));
+  background: var(--surface);
+}
+
+.sheet-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.sheet-dialog__title {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+/* ── Фінальний екран ────────────────────────────────────────────────────── */
+
+.results {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.results__title {
+  margin: 0 0 var(--space-2);
+  font-size: 1.25rem;
+}
+
+.results__list {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.results__item {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.results__item[data-you] {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.results__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── Адаптивність ───────────────────────────────────────────────────────── */
 
 @media (min-width: 600px) {
@@ -697,6 +909,13 @@ input {
   .joker-dialog {
     border-radius: var(--radius);
   }
+
+  .sheet-dialog {
+    width: calc(100% - 2 * var(--space-4));
+    min-height: 0;
+    margin: var(--space-4) 0;
+    border-radius: var(--radius);
+  }
 }
 
 @media (min-width: 1024px) {
@@ -719,6 +938,10 @@ input {
 
   .players {
     grid-template-columns: 1fr;
+  }
+
+  .sheet__table {
+    font-size: 0.875rem;
   }
 
   .hand {

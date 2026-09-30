@@ -266,7 +266,10 @@ describe('ігровий стіл', () => {
     renderAt(state, 0);
     const bot = seatItem('Бот 1');
     expect(bot).toHaveTextContent(`Карт: ${defined(state.hand.hands[1]).length}`);
-    expect(screen.getAllByRole('button').length).toBe(defined(state.hand.hands[0]).length);
+    // Кнопки — лише власні карти (і кнопка таблиці гри).
+    const sheetButton = screen.getByRole('button', { name: 'Таблиця' });
+    const buttons = screen.getAllByRole('button').filter((button) => button !== sheetButton);
+    expect(buttons.length).toBe(defined(state.hand.hands[0]).length);
   });
 
   it('після старту гри застосунок показує стіл із рукою гравця', async () => {

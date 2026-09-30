@@ -101,10 +101,28 @@ export const uk = {
     discardHint: 'Джокер не бере взятку.',
     cancel: 'Скасувати',
   },
+  sheet: {
+    title: 'Таблиця гри',
+    open: 'Таблиця',
+    close: 'Закрити',
+    deal: 'Роздача',
+    showAll: 'Показати взяті й підсумок',
+    columns: { bid: 'замовлення', taken: 'взяв', points: 'бали', total: 'разом' },
+    short: { bid: 'зам', taken: 'взяв', points: 'бал', total: 'Σ' },
+    marks: { noTrump: 'Б', misere: 'М', comeback: 'В' },
+    row: (n: number, phase: string, cards: string, trump: string, dealer: string) =>
+      `Роздача ${n}: ${phase}, ${cards}, козир ${trump}, роздає ${dealer}`,
+    jokers: 'Джокери × −10',
+    final: 'Рахунок',
+    legend:
+      '9♥ — карт у роздачі й козир, б/к — без козиря · Б — безкозирка · М — мізер · В — відіграш · ◯ — джокер (кружечок навколо замовлення) · ◤ — роздавав',
+    results: 'Результати',
+  },
   plural: {
     trick: ['взятка', 'взятки', 'взяток'],
     card: ['карта', 'карти', 'карт'],
     player: ['гравець', 'гравці', 'гравців'],
+    joker: ['джокер', 'джокери', 'джокерів'],
   },
 } as const satisfies Record<string, unknown>;
 

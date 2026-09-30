@@ -8,6 +8,8 @@ import { CardFace } from '../ui/Card';
 import { Bidding } from './Bidding';
 import { Hand } from './Hand';
 import { JokerDialog } from './JokerDialog';
+import { Results } from './Results';
+import { SheetDialog } from './SheetDialog';
 
 export interface GameTableProps {
   room: RoomState;
@@ -20,6 +22,7 @@ type PlayAction = Extract<WireAction, { type: 'play' }>;
 export function GameTable({ room, view }: GameTableProps) {
   const client = useClient();
   const [error, setError] = useState<string | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const pending = useRef(false);
   const names = room.seats.map((seat) => seat.name);
   const nameOf = (seat: number) => names[seat] ?? `#${seat + 1}`;
@@ -55,6 +58,8 @@ export function GameTable({ room, view }: GameTableProps) {
           cardId(action.card) === cardId(joker) && action.call !== undefined ? [action.call] : [],
         );
 
+  if (view.status === 'finished') return <Results view={view} names={names} />;
+
   // Суперники за годинниковою стрілкою від вас, ви — останні.
   const order = Array.from(
     { length: view.playerCount },
@@ -78,6 +83,14 @@ export function GameTable({ room, view }: GameTableProps) {
           <strong>{uk.game.trump(trumpLabel(view.trump))}</strong>
           {view.spec.bidding && <span>{uk.bidding.sum(view.bidSum, view.spec.cards)}</span>}
         </div>
+        <button
+          type="button"
+          className="button game__sheet"
+          aria-haspopup="dialog"
+          onClick={() => setSheetOpen(true)}
+        >
+          {uk.sheet.open}
+        </button>
         {view.revealed !== null && (
           <figure className="game__revealed">
             <CardFace card={view.revealed} className="card--small" />
@@ -152,6 +165,10 @@ export function GameTable({ room, view }: GameTableProps) {
         legal={legal}
         onPlay={(card) => (card.kind === 'joker' ? setJoker(card) : play(card))}
       />
+
+      {sheetOpen && (
+        <SheetDialog table={view.table} names={names} onClose={() => setSheetOpen(false)} />
+      )}
 
       {joker !== null && jokerCalls.length > 0 && (
         <JokerDialog
