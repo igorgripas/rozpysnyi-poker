@@ -123,8 +123,8 @@ export function GameTable({ room, view }: GameTableProps) {
                 <span className="badge badge--muted">{uk.game.offline}</span>
               )}
             </span>
+            {view.spec.bidding && <PlayerBid bid={view.bids[seat] ?? null} />}
             <span className="player__stats">
-              {view.spec.bidding && <span>{uk.game.bid(view.bids[seat] ?? null)}</span>}
               <span>{uk.game.taken(view.taken[seat] ?? 0)}</span>
               {seat !== view.seat && <span>{uk.game.cardsLeft(view.handSizes[seat] ?? 0)}</span>}
             </span>
@@ -133,7 +133,11 @@ export function GameTable({ room, view }: GameTableProps) {
       </ul>
 
       {view.status === 'bidding' && (
-        <Bidding view={view} onBid={(bid) => void send(() => client.send('game:bid', { bid }))} />
+        <Bidding
+          view={view}
+          nameOf={nameOf}
+          onBid={(bid) => void send(() => client.send('game:bid', { bid }))}
+        />
       )}
 
       <section className="felt" aria-label={uk.game.table}>
@@ -182,6 +186,19 @@ export function GameTable({ room, view }: GameTableProps) {
         />
       )}
     </div>
+  );
+}
+
+/** Замовлення в картці гравця: велика цифра; до замовлення — порожній стан, не схожий на нуль. */
+function PlayerBid({ bid }: { bid: number | null }) {
+  return (
+    <span className="player__bid" data-empty={bid === null || undefined}>
+      <span className="player__bid-label">{uk.game.bid}</span>
+      <span className="player__bid-value" aria-hidden={bid === null || undefined}>
+        {bid ?? '—'}
+      </span>
+      {bid === null && <span className="sr-only">{uk.game.noBid}</span>}
+    </span>
   );
 }
 

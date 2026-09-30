@@ -180,7 +180,7 @@ describe('ігровий стіл', () => {
     renderAt(state, 0);
     state.hand.bids.forEach((bid, seat) => {
       const item = seatItem(nameAt(seat));
-      expect(item).toHaveTextContent(`Замовлення: ${bid}`);
+      expect(item.querySelector('.player__bid-value')).toHaveTextContent(String(bid));
       expect(item).toHaveTextContent(`Взято: ${state.hand.taken[seat]}`);
     });
   });
@@ -195,7 +195,8 @@ describe('ігровий стіл', () => {
       trump: null,
       revealed: null,
     });
-    expect(seatItem('Оля')).not.toHaveTextContent('Замовлення');
+    expect(seatItem('Оля')).not.toHaveTextContent(/замовлення/i);
+    expect(seatItem('Оля').querySelector('.player__bid')).toBeNull();
     expect(seatItem('Оля')).toHaveTextContent('Взято: 0');
   });
 
