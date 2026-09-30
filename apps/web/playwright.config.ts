@@ -1,7 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
-// E2E веб-клієнта: вузький телефон (360px) і десктоп.
+// E2E веб-клієнта: вузький телефон (360px) і десктоп; сервер — справжній (apps/server).
 const WEB_PORT = 5174;
+const SERVER_PORT = 3101;
 
 export default defineConfig({
   testDir: 'e2e',
@@ -30,9 +31,18 @@ export default defineConfig({
   ],
   webServer: [
     {
+      // Сервер без DATA_DIR: кімнати лише в памʼяті.
+      command: 'node --import tsx --conditions=source src/main.ts',
+      cwd: '../server',
+      url: `http://localhost:${SERVER_PORT}/health`,
+      env: { PORT: String(SERVER_PORT), PUBLIC_URL: `http://localhost:${WEB_PORT}` },
+      reuseExistingServer: !process.env.CI,
+    },
+    {
       // Напряму, без обгортки pnpm: інакше Playwright не може зупинити сервер.
       command: `vite --port ${WEB_PORT} --strictPort`,
       url: `http://localhost:${WEB_PORT}`,
+      env: { POKER_SERVER_URL: `http://localhost:${SERVER_PORT}` },
       reuseExistingServer: !process.env.CI,
     },
   ],

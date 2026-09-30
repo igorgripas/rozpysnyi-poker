@@ -269,6 +269,126 @@ input {
   color: var(--muted);
 }
 
+/* ── Лобі й кімната очікування ─────────────────────────────────────────── */
+
+.lobby {
+  width: 100%;
+  max-width: 420px;
+  text-align: left;
+}
+
+.lobby__form {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.lobby__invite {
+  margin: 0 0 var(--space-3);
+  font-weight: 600;
+}
+
+.lobby__or {
+  margin: 0;
+  text-align: center;
+}
+
+.lobby__join {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: var(--space-2);
+}
+
+.waiting {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.waiting h2,
+.waiting h3 {
+  margin: 0 0 var(--space-2);
+}
+
+.waiting__link {
+  overflow-wrap: anywhere;
+}
+
+.waiting__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.seats {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.seat {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.seat__number {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--border);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.seat__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.seat__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.badge {
+  padding: 0 var(--space-2);
+  border-radius: 999px;
+  background: var(--border);
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+
+.badge--accent {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.badge--muted {
+  color: var(--muted);
+  background: transparent;
+  border: 1px dashed var(--border);
+}
+
+.icon-button--small {
+  min-width: 36px;
+  min-height: 36px;
+  font-size: 1rem;
+}
+
 /* ── Адаптивність ───────────────────────────────────────────────────────── */
 
 @media (min-width: 600px) {
@@ -282,6 +402,11 @@ input {
 
   .app__main {
     padding: var(--space-6);
+  }
+
+  .waiting {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
   }
 }
 
