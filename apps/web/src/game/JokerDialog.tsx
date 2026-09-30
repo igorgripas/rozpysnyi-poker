@@ -1,6 +1,7 @@
 import type { JokerCall } from '@poker/engine';
 import { useEffect, useId, useRef } from 'react';
-import { suitName, suitSymbol, uk } from '../i18n';
+import { suitName, uk } from '../i18n';
+import { SuitMark } from '../ui/SuitMark';
 
 export interface JokerDialogProps {
   /** Допустимі оголошення для цього ходу (з `legalActions`). */
@@ -66,7 +67,7 @@ export function JokerDialog({ calls, onChoose, onCancel }: JokerDialogProps) {
               aria-label={suitCallName(call)}
               onClick={() => onChoose(call)}
             >
-              {suitSymbol(call.suit)}
+              <SuitMark suit={call.suit} />
             </button>
           ))}
         </div>

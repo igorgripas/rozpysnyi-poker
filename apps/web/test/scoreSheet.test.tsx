@@ -99,8 +99,26 @@ describe('таблиця гри (розписка)', () => {
             ? 'М'
             : row.phase === 'comeback'
               ? 'В'
-              : `${row.cards}${row.trump === null ? 'б/к' : symbols[row.trump]}`;
+              : `${row.cards}${row.trump === null ? 'б/к' : `${symbols[row.trump]}\uFE0E`}`;
       expect(labels[i]).toBe(expected);
+    });
+    // Масть у колонці роздачі — спільний значок масті: ♦ ♥ червоні, ♠ ♣ — ні.
+    bodyRows().forEach((element, i) => {
+      const row = defined(rows[i]);
+      const mark = element.querySelector('.sheet__deal .suit-mark');
+      if (
+        row.trump === null ||
+        row.phase === 'noTrump' ||
+        row.phase === 'misere' ||
+        row.phase === 'comeback'
+      ) {
+        expect(mark).toBeNull();
+        return;
+      }
+      expect(mark).toHaveAttribute('data-suit', row.trump);
+      expect(mark?.getAttribute('data-color') === 'red').toBe(
+        row.trump === 'diamonds' || row.trump === 'hearts',
+      );
     });
     expect(labels[0]).toBe('1б/к');
     // Текстових назв етапів у таблиці немає — лише легенда.
@@ -109,6 +127,10 @@ describe('таблиця гри (розписка)', () => {
     expect(legend).toHaveTextContent('Б — безкозирка');
     expect(legend).toHaveTextContent('М — мізер');
     expect(legend).toHaveTextContent('В — відіграш');
+    expect(legend.querySelector('.suit-mark[data-suit="hearts"]')).toHaveAttribute(
+      'data-color',
+      'red',
+    );
   });
 
   it('R-8.2: для кожного гравця — замовлення, взято, бали й наростаючий підсумок', () => {

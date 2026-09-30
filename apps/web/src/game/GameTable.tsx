@@ -1,10 +1,11 @@
 import { type Card, type JokerCall, cardId, createSchedule } from '@poker/engine';
 import type { RoomState, WireAction, WirePlayerView } from '@poker/protocol';
 import { useLayoutEffect, useRef, useState } from 'react';
-import { jokerCallLabel, phaseName, plural, trumpLabel, uk } from '../i18n';
+import { phaseName, plural, uk } from '../i18n';
 import type { ClientError } from '../net/connection';
 import { useClient } from '../net/react';
 import { CardFace } from '../ui/Card';
+import { JokerCallLabel, TrumpLabel } from '../ui/SuitMark';
 import { useTurnVibration } from '../ui/vibration';
 import { Bidding } from './Bidding';
 import { Hand } from './Hand';
@@ -143,7 +144,9 @@ export function GameTable({ room, view: latest }: GameTableProps) {
           <span>
             {view.spec.cards} {plural(view.spec.cards, uk.plural.card)}
           </span>
-          <strong>{uk.game.trump(trumpLabel(view.trump))}</strong>
+          <strong className="game__trump">
+            {uk.game.trump} <TrumpLabel trump={view.trump} />
+          </strong>
           {view.spec.bidding && <span>{uk.bidding.sum(view.bidSum, view.spec.cards)}</span>}
         </div>
         <button
@@ -240,8 +243,11 @@ export function GameTable({ room, view: latest }: GameTableProps) {
                 <CardFace card={played} {...(lastTrick !== null && { className: 'card--small' })} />
                 <figcaption>
                   {nameOf(seat)}
+                  {played.kind === 'joker' && ' '}
                   {played.kind === 'joker' && (
-                    <span className="felt__call"> · {jokerCallLabel(played.call)}</span>
+                    <span className="felt__call">
+                      <JokerCallLabel call={played.call} />
+                    </span>
                   )}
                 </figcaption>
               </figure>

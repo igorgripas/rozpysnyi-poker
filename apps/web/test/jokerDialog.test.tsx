@@ -64,6 +64,17 @@ describe('діалоги джокера', () => {
       ...suits.map((s) => `Маленька ${SUIT_NAMES[s]}`),
       'Скасувати',
     ]);
+    // Масті в кнопках — спільним значком масті: ♦ ♥ червоні.
+    const dialog = screen.getByRole('dialog', { name: 'Оголошення джокера' });
+    for (const suit of suits) {
+      const mark = within(dialog)
+        .getByRole('button', { name: `Маленька ${SUIT_NAMES[suit]}` })
+        .querySelector('.suit-mark');
+      expect(mark).toHaveAttribute('data-suit', suit);
+      expect(mark?.getAttribute('data-color') === 'red').toBe(
+        suit === 'diamonds' || suit === 'hearts',
+      );
+    }
     await user.click(screen.getByRole('button', { name: `Маленька ${SUIT_NAMES[trump]}` }));
     expect(connection.requests).toEqual([
       {

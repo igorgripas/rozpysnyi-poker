@@ -73,7 +73,7 @@ export const uk = {
     dealing: 'Роздаємо карти…',
     hand: 'Роздача',
     handOf: (n: number, total: number) => `Роздача ${n} з ${total}`,
-    trump: (label: string) => `Козир: ${label}`,
+    trump: 'Козир:',
     revealed: 'Відкрита карта',
     table: 'Стіл',
     lastTrick: (name: string) => `Остання взятка: ${name}`,
@@ -110,8 +110,8 @@ export const uk = {
   },
   jokerCall: {
     highTrump: 'старший козир',
-    high: (suit: string) => `старша ${suit}`,
-    low: (suit: string) => `маленька ${suit}`,
+    high: 'старша',
+    low: 'маленька',
     take: 'беру',
     discard: 'скидаю',
   },
@@ -142,8 +142,9 @@ export const uk = {
       `Роздача ${n}: ${phase}, ${cards}, козир ${trump}, роздає ${dealer}`,
     jokers: 'Джокери × −10',
     final: 'Рахунок',
+    /** Легенда після зразка «9♥» (його малює значок масті). */
     legend:
-      '9♥ — карт у роздачі й козир, б/к — без козиря · Б — безкозирка · М — мізер · В — відіграш · ◯ — джокер (кружечок навколо замовлення) · ◤ — роздавав',
+      '— карт у роздачі й козир, б/к — без козиря · Б — безкозирка · М — мізер · В — відіграш · ◯ — джокер (кружечок навколо замовлення) · ◤ — роздавав',
     results: 'Результати',
   },
   plural: {
@@ -254,9 +255,9 @@ export function jokerCallLabel(call: JokerCall): string {
     case 'highTrump':
       return uk.jokerCall.highTrump;
     case 'high':
-      return uk.jokerCall.high(suitSymbol(call.suit));
+      return `${uk.jokerCall.high} ${suitSymbol(call.suit)}`;
     case 'low':
-      return uk.jokerCall.low(suitSymbol(call.suit));
+      return `${uk.jokerCall.low} ${suitSymbol(call.suit)}`;
     case 'take':
       return uk.jokerCall.take;
     case 'discard':
