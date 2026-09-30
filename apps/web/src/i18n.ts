@@ -1,4 +1,4 @@
-import type { Card, HandPhase, Rank, Suit } from '@poker/engine';
+import type { Card, HandPhase, JokerCall, Rank, Suit } from '@poker/engine';
 
 /** Форми іменника для 1, 2–4 і 5+ (українська множина). */
 export type PluralForms = readonly [one: string, few: string, many: string];
@@ -46,13 +46,40 @@ export const uk = {
     start: 'Почати гру',
     needPlayers: (min: number) => `Потрібно щонайменше ${min} гравці`,
     waitingHost: 'Чекаємо, поки хост почне гру',
-    started: 'Гра почалася',
   },
   card: {
     joker: 'Джокер',
     back: 'Сорочка карти',
   },
   noTrump: 'б/к',
+  game: {
+    dealing: 'Роздаємо карти…',
+    hand: 'Роздача',
+    handOf: (n: number, total: number) => `Роздача ${n} з ${total}`,
+    trump: (label: string) => `Козир: ${label}`,
+    revealed: 'Відкрита карта',
+    table: 'Стіл',
+    lastTrick: (name: string) => `Остання взятка: ${name}`,
+    players: 'Гравці за столом',
+    yourCards: 'Ваші карти',
+    yourTurn: 'Ваш хід',
+    yourBid: 'Ваш хід — замовлення',
+    turnOf: (name: string) => `Хід: ${name}`,
+    finished: 'Гру завершено',
+    dealer: 'роздає',
+    you: 'ви',
+    bid: (bid: number | null) => `Замовлення: ${bid ?? '…'}`,
+    taken: (n: number) => `Взято: ${n}`,
+    cardsLeft: (n: number) => `Карт: ${n}`,
+    offline: 'не в мережі',
+  },
+  jokerCall: {
+    highTrump: 'старший козир',
+    high: (suit: string) => `старша ${suit}`,
+    low: (suit: string) => `маленька ${suit}`,
+    take: 'беру',
+    discard: 'скидаю',
+  },
   plural: {
     trick: ['взятка', 'взятки', 'взяток'],
     card: ['карта', 'карти', 'карт'],
@@ -152,4 +179,20 @@ export function plural(n: number, [one, few, many]: PluralForms): string {
   if (mod10 === 1) return one;
   if (mod10 >= 2 && mod10 <= 4) return few;
   return many;
+}
+
+/** Оголошення джокера у взятці (§6): «беру», «старша ♠» тощо. */
+export function jokerCallLabel(call: JokerCall): string {
+  switch (call.type) {
+    case 'highTrump':
+      return uk.jokerCall.highTrump;
+    case 'high':
+      return uk.jokerCall.high(suitSymbol(call.suit));
+    case 'low':
+      return uk.jokerCall.low(suitSymbol(call.suit));
+    case 'take':
+      return uk.jokerCall.take;
+    case 'discard':
+      return uk.jokerCall.discard;
+  }
 }

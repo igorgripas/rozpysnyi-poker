@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { GameTable } from './game/GameTable';
 import { uk } from './i18n';
 import { Lobby } from './lobby/Lobby';
 import { WaitingRoom } from './lobby/WaitingRoom';
@@ -28,7 +29,7 @@ export function App({ client }: { client: PokerClient }) {
 
 /** Екран за станом: лобі, кімната очікування або гра. */
 function Screen({ client }: { client: PokerClient }) {
-  const { status, room } = useClientState();
+  const { status, room, view } = useClientState();
   const [inviteCode, setInviteCode] = useState(() => inviteCodeFromPath(window.location.pathname));
 
   // Повертаємося в кімнату за збереженим токеном; запрошення в іншу кімнату його не використовує.
@@ -43,7 +44,12 @@ function Screen({ client }: { client: PokerClient }) {
   }, [code]);
 
   if (room !== null) {
-    return room.status === 'lobby' ? <WaitingRoom room={room} /> : <p>{uk.room.started}</p>;
+    if (room.status === 'lobby') return <WaitingRoom room={room} />;
+    return view === null ? (
+      <p className="muted">{uk.game.dealing}</p>
+    ) : (
+      <GameTable room={room} view={view} />
+    );
   }
   if (status === 'resuming') return <p className="muted">{uk.lobby.resuming}</p>;
   return (

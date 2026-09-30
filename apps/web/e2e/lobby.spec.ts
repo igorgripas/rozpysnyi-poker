@@ -39,8 +39,10 @@ test('хост створює кімнату, гість входить за п�
   await expect(players(guest)).toHaveCount(3);
 
   await page.getByRole('button', { name: 'Почати гру' }).click();
-  await expect(page.getByRole('heading', { name: `Кімната ${code}` })).toBeHidden();
-  await expect(guest.getByRole('heading', { name: `Кімната ${code}` })).toBeHidden();
+  for (const player of [page, guest]) {
+    await expect(player.getByRole('list', { name: 'Ваші карти' })).toBeVisible();
+    await expect(player.getByRole('region', { name: 'Роздача' })).toContainText('Роздача 1 з 23');
+  }
   await guestContext.close();
 });
 

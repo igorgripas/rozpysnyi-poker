@@ -389,6 +389,197 @@ input {
   font-size: 1rem;
 }
 
+/* ── Ігровий стіл ───────────────────────────────────────────────────────── */
+
+.game {
+  display: grid;
+  grid-template-areas:
+    'info'
+    'turn'
+    'players'
+    'felt'
+    'alert'
+    'hand';
+  gap: var(--space-3);
+}
+
+.game__info {
+  grid-area: info;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+}
+
+.game__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  font-size: 0.9375rem;
+}
+
+.game__revealed {
+  display: grid;
+  justify-items: center;
+  margin: 0;
+  font-size: 0.75rem;
+}
+
+.card--small {
+  --card-w: 36px;
+}
+
+.game__turn {
+  grid-area: turn;
+  margin: 0;
+  font-weight: 600;
+  text-align: center;
+}
+
+.game > [role='alert'] {
+  grid-area: alert;
+  margin: 0;
+  text-align: center;
+}
+
+.players {
+  grid-area: players;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.player {
+  display: grid;
+  gap: 2px;
+  padding: var(--space-2);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 0.875rem;
+}
+
+.player[aria-current='true'] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.player__name {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.player__badges:empty {
+  display: none;
+}
+
+.player__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-2);
+  color: var(--muted);
+}
+
+.felt {
+  grid-area: felt;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: var(--space-2);
+  min-height: 150px;
+  padding: var(--space-3);
+  border: 4px solid var(--felt-edge);
+  border-radius: 24px;
+  background: var(--felt);
+  color: var(--felt-text);
+}
+
+.felt__caption {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.felt__trick {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.felt__trick--last {
+  opacity: 0.75;
+}
+
+.felt__card {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  margin: 0;
+  max-width: calc(var(--card-w) + 24px);
+  font-size: 0.75rem;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+/* Рука: карти перекриваються, щоб до 12 карт вміщалися в ширину екрана. */
+.hand {
+  grid-area: hand;
+  display: flex;
+  justify-content: center;
+  margin: 0;
+  padding: var(--space-3) 0 0;
+  list-style: none;
+  --overlap: min(
+    0px,
+    calc(
+      (100vw - 2 * var(--space-4) - var(--card-w)) / max(var(--hand-size) - 1, 1) - var(--card-w)
+    )
+  );
+}
+
+.hand__slot + .hand__slot {
+  margin-left: var(--overlap);
+}
+
+.hand__card {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+
+.hand__card:disabled {
+  cursor: default;
+}
+
+.hand__card[data-legal='false'] {
+  filter: grayscale(0.7) brightness(0.8);
+  opacity: 0.55;
+}
+
+.hand__card[aria-pressed='true'] {
+  transform: translateY(calc(-1 * var(--space-3)));
+}
+
+.hand__card[aria-pressed='true'] .card__paper {
+  stroke: var(--focus);
+  stroke-width: 3;
+}
+
 /* ── Адаптивність ───────────────────────────────────────────────────────── */
 
 @media (min-width: 600px) {
@@ -408,11 +599,41 @@ input {
     grid-template-columns: 1fr 1fr;
     align-items: start;
   }
+
+  .felt {
+    min-height: 200px;
+  }
 }
 
 @media (min-width: 1024px) {
   :root {
     --card-w: 76px;
+  }
+
+  /* Десктоп: гравці збоку від столу. */
+  .game {
+    grid-template-columns: 280px 1fr;
+    grid-template-areas:
+      'info info'
+      'players turn'
+      'players felt'
+      'players alert'
+      'hand hand';
+    align-items: start;
+  }
+
+  .players {
+    grid-template-columns: 1fr;
+  }
+
+  .hand {
+    --overlap: min(
+      0px,
+      calc(
+        (min(100vw, 1200px) - 2 * var(--space-6) - var(--card-w)) / max(var(--hand-size) - 1, 1) -
+          var(--card-w)
+      )
+    );
   }
 }
 
