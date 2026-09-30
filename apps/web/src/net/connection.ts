@@ -21,13 +21,18 @@ export interface ClientError {
 export type ClientResult<T> =
   { readonly ok: true; readonly data: T } | { readonly ok: false; readonly error: ClientError };
 
-/** Подія сервера: стан кімнати або погляд гравця на гру. */
+/**
+ * Стан зʼєднання: `connecting` — перше підключення, `online` — є звʼязок,
+ * `offline` — звʼязку немає (Socket.IO перепідключається сам), `outdated` — сервер
+ * відхилив версію протоколу, потрібно оновити сторінку.
+ */
+export type ConnectionStatus = 'connecting' | 'online' | 'offline' | 'outdated';
+
+/** Подія зʼєднання: стан кімнати, погляд гравця на гру або зміна стану звʼязку. */
 export type ServerUpdate =
   | { readonly type: 'room'; readonly room: RoomState }
-  | {
-      readonly type: 'view';
-      readonly view: WirePlayerView;
-    };
+  | { readonly type: 'view'; readonly view: WirePlayerView }
+  | { readonly type: 'status'; readonly status: ConnectionStatus };
 
 /** Зʼєднання з сервером; у тестах його підмінюють. */
 export interface Connection {
@@ -42,7 +47,7 @@ export interface Connection {
 /** Скільки чекати відповіді сервера, мс. */
 const REQUEST_TIMEOUT_MS = 10_000;
 
-const NETWORK_ERROR: ClientError = {
+export const NETWORK_ERROR: ClientError = {
   code: 'network',
   message: 'Немає звʼязку з сервером. Спробуйте ще раз.',
 };
@@ -67,6 +72,18 @@ export function createSocketConnection(url?: string): Connection {
     const parsed = serverMessageSchemas['game:view'].safeParse(payload);
     if (parsed.success) notify({ type: 'view', view: parsed.data });
     else console.error('Некоректний game:view', parsed.error);
+  });
+
+  // Стан звʼязку. Після обриву Socket.IO перепідключається сам, крім розриву сервером.
+  socket.on('connect', () => notify({ type: 'status', status: 'online' }));
+  socket.on('disconnect', (reason) => {
+    notify({ type: 'status', status: 'offline' });
+    if (reason === 'io server disconnect') socket.connect();
+  });
+  socket.on('connect_error', (error) => {
+    const data = (error as Error & { data?: { code?: unknown } }).data;
+    const outdated = data?.code === 'versionMismatch';
+    notify({ type: 'status', status: outdated ? 'outdated' : 'offline' });
   });
 
   return {

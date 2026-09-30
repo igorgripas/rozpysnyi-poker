@@ -7,7 +7,13 @@ import {
   playerNameSchema,
   roomCodeSchema,
 } from '@poker/protocol';
-import type { ClientError, ClientResult, Connection } from './connection';
+import {
+  type ClientError,
+  type ClientResult,
+  type Connection,
+  type ConnectionStatus,
+  NETWORK_ERROR,
+} from './connection';
 
 export const SESSION_STORAGE_KEY = 'poker.session';
 export const NAME_STORAGE_KEY = 'poker.name';
@@ -21,6 +27,8 @@ export interface StoredSession {
 export interface ClientState {
   /** `resuming` — повертаємося в кімнату за збереженим токеном. */
   readonly status: 'idle' | 'resuming';
+  /** Стан звʼязку з сервером. */
+  readonly connection: ConnectionStatus;
   readonly room: RoomState | null;
   readonly view: WirePlayerView | null;
 }
@@ -29,7 +37,7 @@ type RoomEvent = Exclude<ClientEvent, 'room:create' | 'room:join' | 'room:resume
 
 /** Стан клієнта поверх зʼєднання: сесія, кімната й погляд на гру. */
 export class PokerClient {
-  private state: ClientState = { status: 'idle', room: null, view: null };
+  private state: ClientState = { status: 'idle', connection: 'connecting', room: null, view: null };
   private readonly listeners = new Set<() => void>();
 
   constructor(
@@ -38,8 +46,22 @@ export class PokerClient {
   ) {
     connection.subscribe((update) => {
       if (update.type === 'room') this.set({ room: update.room });
-      else this.set({ view: update.view });
+      else if (update.type === 'view') this.set({ view: update.view });
+      else this.changeConnection(update.status);
     });
+  }
+
+  /** Після перепідключення сервер уже не знає, хто ми: повертаємося в кімнату за токеном. */
+  private changeConnection(connection: ConnectionStatus): void {
+    const reconnected = connection === 'online' && this.state.connection !== 'online';
+    this.set({ connection });
+    if (reconnected && this.state.room !== null) void this.rejoin(this.state.room.code);
+  }
+
+  private async rejoin(code: string): Promise<void> {
+    await this.resume(code);
+    // Кімнати чи місця вже немає (сесію забуто) — повертаємося в лобі.
+    if (this.storedSession()?.code !== code) this.set({ room: null, view: null });
   }
 
   getState = (): ClientState => this.state;
@@ -107,6 +129,10 @@ export class PokerClient {
     event: E,
     payload: ClientMessageInput<E>,
   ): Promise<ClientError | null> {
+    // Без звʼязку дію не буферизуємо: після перепідключення стан гри вже інший.
+    if (this.state.connection === 'offline' || this.state.connection === 'outdated') {
+      return NETWORK_ERROR;
+    }
     const result = await this.connection.request(event, payload);
     return result.ok ? null : result.error;
   }
