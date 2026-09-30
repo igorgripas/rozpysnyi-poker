@@ -1,4 +1,4 @@
-import { type Card, cardId, createSchedule } from '@poker/engine';
+import { type Card, type JokerCall, cardId, createSchedule } from '@poker/engine';
 import type { RoomState, WireAction, WirePlayerView } from '@poker/protocol';
 import { useRef, useState } from 'react';
 import { jokerCallLabel, phaseName, plural, trumpLabel, uk } from '../i18n';
@@ -7,6 +7,7 @@ import { useClient } from '../net/react';
 import { CardFace } from '../ui/Card';
 import { Bidding } from './Bidding';
 import { Hand } from './Hand';
+import { JokerDialog } from './JokerDialog';
 
 export interface GameTableProps {
   room: RoomState;
@@ -40,17 +41,19 @@ export function GameTable({ room, view }: GameTableProps) {
     if (failure !== null) setError(failure.message);
   }
 
-  function play(card: Card) {
-    // Джокер поки грається з першим допустимим оголошенням; діалог вибору — задача T44.
-    const action = plays.find((candidate) => cardId(candidate.card) === cardId(card));
-    if (action === undefined) return;
-    void send(() =>
-      client.send('game:play', {
-        card: action.card,
-        ...(action.call !== undefined && { call: action.call }),
-      }),
-    );
+  function play(card: Card, call?: JokerCall) {
+    setJoker(null);
+    void send(() => client.send('game:play', { card, ...(call !== undefined && { call }) }));
   }
+
+  // Джокер спершу відкриває діалог оголошення (§6).
+  const [joker, setJoker] = useState<Card | null>(null);
+  const jokerCalls =
+    legal === null || joker === null
+      ? []
+      : plays.flatMap((action) =>
+          cardId(action.card) === cardId(joker) && action.call !== undefined ? [action.call] : [],
+        );
 
   // Суперники за годинниковою стрілкою від вас, ви — останні.
   const order = Array.from(
@@ -144,7 +147,19 @@ export function GameTable({ room, view }: GameTableProps) {
         </p>
       )}
 
-      <Hand cards={view.hand} legal={legal} onPlay={play} />
+      <Hand
+        cards={view.hand}
+        legal={legal}
+        onPlay={(card) => (card.kind === 'joker' ? setJoker(card) : play(card))}
+      />
+
+      {joker !== null && jokerCalls.length > 0 && (
+        <JokerDialog
+          calls={jokerCalls}
+          onChoose={(call) => play(joker, call)}
+          onCancel={() => setJoker(null)}
+        />
+      )}
     </div>
   );
 }

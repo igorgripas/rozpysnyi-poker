@@ -609,6 +609,63 @@ input {
   stroke-width: 3;
 }
 
+/* ── Діалог джокера ─────────────────────────────────────────────────────── */
+
+/* На телефоні — аркуш знизу екрана, на ширших екранах — по центру. */
+.joker-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  align-items: end;
+  justify-items: center;
+  background: rgb(0 0 0 / 0.45);
+}
+
+.joker-dialog {
+  display: grid;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 420px;
+  max-height: 100dvh;
+  overflow-y: auto;
+  padding-bottom: max(var(--space-4), env(safe-area-inset-bottom));
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.joker-dialog__title {
+  margin: 0;
+  font-size: 1.125rem;
+}
+
+.joker-dialog__option {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.joker-dialog__label {
+  font-weight: 600;
+}
+
+.joker-dialog__suits {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.joker-dialog__suit {
+  flex: 1;
+  font-size: 1.375rem;
+}
+
+.joker-dialog__suit[data-suit='diamonds'],
+.joker-dialog__suit[data-suit='hearts'] {
+  color: var(--suit-red);
+}
+
+.joker-dialog__hint {
+  font-size: 0.8125rem;
+}
+
 /* ── Адаптивність ───────────────────────────────────────────────────────── */
 
 @media (min-width: 600px) {
@@ -631,6 +688,14 @@ input {
 
   .felt {
     min-height: 200px;
+  }
+
+  .joker-dialog__backdrop {
+    align-items: center;
+  }
+
+  .joker-dialog {
+    border-radius: var(--radius);
   }
 }
 

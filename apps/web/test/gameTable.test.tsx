@@ -125,27 +125,6 @@ describe('ігровий стіл', () => {
     expect(connection.requests).toEqual([]);
   });
 
-  it('джокер грається з першим допустимим оголошенням (діалоги — окрема задача)', async () => {
-    const state = findState(
-      3,
-      (s) =>
-        s.status === 'playing' &&
-        legalActions(s).some((a) => a.type === 'play' && a.card.kind === 'joker'),
-    );
-    const seat = state.turn as number;
-    const { connection, user } = renderAt(state, seat);
-    const jokerAction = legalActions(state).find(
-      (a) => a.type === 'play' && a.card.kind === 'joker',
-    );
-    if (jokerAction?.type !== 'play') throw new Error('немає джокера');
-    const [button] = screen.getAllByRole('button', { name: 'Джокер' });
-    await user.click(defined(button));
-    await user.click(defined(button));
-    expect(connection.requests).toEqual([
-      { event: 'game:play', payload: { card: jokerAction.card, call: jokerAction.call } },
-    ]);
-  });
-
   it('R-3.1: показані козир і відкрита карта', () => {
     const state = findState(
       3,
