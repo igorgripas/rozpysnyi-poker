@@ -3,12 +3,15 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { PokerClient } from './net/client';
 import { createSocketConnection } from './net/connection';
+import { serverUrl } from './net/serverUrl';
 import { registerServiceWorker } from './pwa';
 import './styles.css';
 
-// Адреса сервера: VITE_SERVER_URL або той самий хост (dev-проксі Vite).
-const serverUrl = import.meta.env.VITE_SERVER_URL as string | undefined;
-const client = new PokerClient(createSocketConnection(serverUrl || undefined));
+const url = serverUrl(window.location.search, {
+  dev: import.meta.env.DEV,
+  configured: import.meta.env.VITE_SERVER_URL as string | undefined,
+});
+const client = new PokerClient(createSocketConnection(url));
 
 registerServiceWorker();
 
