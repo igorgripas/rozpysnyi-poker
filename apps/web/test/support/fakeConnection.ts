@@ -6,7 +6,12 @@ import type {
   SeatInfo,
   WirePlayerView,
 } from '@poker/protocol';
-import type { ClientResult, Connection, ServerUpdate } from '../../src/net/connection';
+import type {
+  ClientResult,
+  Connection,
+  ConnectionStatus,
+  ServerUpdate,
+} from '../../src/net/connection';
 
 type Handler = (payload: unknown) => ClientResult<unknown>;
 
@@ -50,6 +55,11 @@ export class FakeConnection implements Connection {
 
   pushView(view: WirePlayerView): void {
     this.push({ type: 'view', view });
+  }
+
+  /** Імітує зміну стану зʼєднання (обрив, перепідключення). */
+  pushStatus(status: ConnectionStatus): void {
+    this.push({ type: 'status', status });
   }
 
   close(): void {}

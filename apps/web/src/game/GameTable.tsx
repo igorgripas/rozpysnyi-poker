@@ -5,6 +5,7 @@ import { jokerCallLabel, phaseName, plural, trumpLabel, uk } from '../i18n';
 import type { ClientError } from '../net/connection';
 import { useClient } from '../net/react';
 import { CardFace } from '../ui/Card';
+import { useTurnVibration } from '../ui/vibration';
 import { Bidding } from './Bidding';
 import { Hand } from './Hand';
 import { JokerDialog } from './JokerDialog';
@@ -27,6 +28,9 @@ export function GameTable({ room, view }: GameTableProps) {
   const names = room.seats.map((seat) => seat.name);
   const nameOf = (seat: number) => names[seat] ?? `#${seat + 1}`;
   const total = createSchedule(view.playerCount).length;
+
+  const yourTurn = view.status !== 'finished' && view.turn === view.seat;
+  useTurnVibration(yourTurn);
 
   const plays = view.legalActions.filter((action): action is PlayAction => action.type === 'play');
   const legal =

@@ -6,7 +6,9 @@ import { WaitingRoom } from './lobby/WaitingRoom';
 import { type PokerClient, inviteCodeFromPath } from './net/client';
 import { ClientProvider, useClientState } from './net/react';
 import { CardFace } from './ui/Card';
+import { ConnectionBanner, ConnectionIndicator } from './ui/ConnectionStatus';
 import { ThemeProvider, ThemeToggle } from './ui/theme';
+import { VibrationToggle } from './ui/vibration';
 
 /** Каркас застосунку: шапка й основна область. */
 export function App({ client }: { client: PokerClient }) {
@@ -16,8 +18,13 @@ export function App({ client }: { client: PokerClient }) {
         <div className="app">
           <header className="app__header">
             <h1 className="app__title">{uk.appTitle}</h1>
-            <ThemeToggle />
+            <div className="app__tools">
+              <ConnectionIndicator />
+              <VibrationToggle />
+              <ThemeToggle />
+            </div>
           </header>
+          <ConnectionBanner />
           <main className="app__main">
             <Screen client={client} />
           </main>
