@@ -8,6 +8,7 @@ import {
   MAX_PLAYERS,
   MIN_PLAYERS,
   type PlayerView,
+  UnsupportedLogVersionError,
   apply,
   createGame,
   gameLog,
@@ -102,6 +103,8 @@ export class RoomManager {
   private readonly onStoreError: (error: unknown) => void;
   /** Остання черга записів кожної кімнати: записи однієї кімнати йдуть послідовно. */
   private readonly writes = new Map<string, Promise<boolean>>();
+  /** Збережені ігри, які цей рушій не може продовжити: код → пояснення для гравців. */
+  private readonly unplayable = new Map<string, string>();
   /** Кімнати, що зараз підвантажуються зі сховища. */
   private readonly loading = new Map<string, Promise<Room | undefined>>();
   /** Менеджер зупинено (`close`): ходи ботів і таймери більше не плануються. */
@@ -157,8 +160,14 @@ export class RoomManager {
         game = replay(snapshot.game.seed, snapshot.game.log);
         if (game.playerCount !== snapshot.seats.length) return undefined;
       }
-    } catch {
+    } catch (error) {
       // Знімок, який не відтворюється, пропускаємо: це не має валити сервер.
+      if (error instanceof UnsupportedLogVersionError) {
+        this.unplayable.set(
+          snapshot.code,
+          `${error.message}. Продовжити цю гру неможливо — створіть нову кімнату.`,
+        );
+      }
       return undefined;
     }
     const room: Room = {
@@ -294,6 +303,12 @@ export class RoomManager {
     };
   }
 
+  /** Помилка «кімнати немає»; для гри несумісної версії — з поясненням. */
+  private missing(code: string): Result<never> {
+    const reason = this.unplayable.get(code.toUpperCase());
+    return fail('roomNotFound', reason ?? `Кімнати ${code} немає`);
+  }
+
   /** Знаходить кімнату й учасника; для `host` — ще й перевіряє, що це хост. */
   protected access(
     code: string,
@@ -301,7 +316,7 @@ export class RoomManager {
     role: 'member' | 'host' = 'member',
   ): Result<{ room: Room; member: Member }> {
     const room = this.rooms.get(code);
-    if (room === undefined) return fail('roomNotFound', `Кімнати ${code} немає`);
+    if (room === undefined) return this.missing(code);
     const member = room.seats.find((m) => m.id === playerId);
     if (member === undefined) return fail('notInRoom', 'Гравця немає в цій кімнаті');
     if (role === 'host' && room.hostId !== playerId) {
@@ -340,7 +355,7 @@ export class RoomManager {
   /** Вхід за кодом: новий гравець сідає на наступне місце (R-9.1). Кімнату спершу підвантажує `load`. */
   join(code: string, name: string): Result<Session> {
     const room = this.rooms.get(code.toUpperCase());
-    if (room === undefined) return fail('roomNotFound', `Кімнати ${code} немає`);
+    if (room === undefined) return this.missing(code);
     if (room.status !== 'lobby') return fail('alreadyStarted', 'Гра вже почалася');
     if (room.seats.length >= MAX_PLAYERS) {
       return fail('roomFull', `У кімнаті вже ${MAX_PLAYERS} гравців (R-1.2)`);
@@ -354,7 +369,7 @@ export class RoomManager {
   /** Повернення в кімнату за токеном. Кімнату спершу підвантажує `load`. */
   resume(code: string, token: string): Result<Session> {
     const room = this.rooms.get(code.toUpperCase());
-    if (room === undefined) return fail('roomNotFound', `Кімнати ${code} немає`);
+    if (room === undefined) return this.missing(code);
     const member = room.seats.find((m) => m.token === token);
     if (member === undefined) return fail('badToken', 'Невідомий токен');
     return ok(this.session(room, member));

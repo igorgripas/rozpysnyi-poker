@@ -1,7 +1,7 @@
 import { biddingOrder, forbiddenDealerBid, legalBids } from './bidding.js';
 import { type Card, type Suit, assertPlayerCount, cardId, createDeck, isJoker } from './cards.js';
 import { deal } from './deal.js';
-import { ENGINE_LOG_VERSION } from './log.js';
+import { ENGINE_LOG_VERSION, migrateLog } from './log.js';
 import { createRng, shuffle } from './rng.js';
 import { type HandSpec, chooseFirstDealer, createSchedule, dealerForHand } from './schedule.js';
 import { type HandRecord, type ScoreTable, buildScoreTable } from './score.js';
@@ -293,14 +293,13 @@ export function gameLog(state: GameState): GameLog {
   return { version: ENGINE_LOG_VERSION, playerCount: state.playerCount, actions: state.actions };
 }
 
-/** Відтворює гру з seed і логу дій (R-2.3): той самий лог дає той самий стан. */
+/**
+ * Відтворює гру з seed і логу дій (R-2.3): той самий лог дає той самий стан.
+ * Лог старої версії спершу мігрується; несумісний — `UnsupportedLogVersionError`.
+ */
 export function replay(seed: number, log: GameLog): GameState {
-  if (log.version !== ENGINE_LOG_VERSION) {
-    throw new RangeError(
-      `Непідтримувана версія логу ${log.version}, очікується ${ENGINE_LOG_VERSION}`,
-    );
-  }
-  return log.actions.reduce(apply, createGame(seed, log.playerCount));
+  const { playerCount, actions } = migrateLog(log);
+  return actions.reduce(apply, createGame(seed, playerCount));
 }
 
 /** Таблиця гри (R-8.1–R-8.4): завершені роздачі й поточна, якщо гра триває. */
