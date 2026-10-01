@@ -141,18 +141,21 @@ describe('ігровий стіл', () => {
     expect(mark?.getAttribute('data-color') === 'red').toBe(
       trump === 'diamonds' || trump === 'hearts',
     );
-    expect(within(info).getByRole('img', { name: cardName(revealed) })).toBeInTheDocument();
+    // Відкрита карта — прямо на столі, щоб на телефоні її було видно разом із рукою.
+    const table = screen.getByRole('region', { name: 'Стіл' });
+    expect(within(table).getByRole('img', { name: cardName(revealed) })).toBeInTheDocument();
+    expect(within(info).queryByRole('img', { name: cardName(revealed) })).toBeNull();
   });
 
-  it('R-3.1: відкрита карта без видимого підпису, але з доступною назвою й не зменшена', () => {
+  it('R-3.1: відкрита карта на столі без видимого підпису, але з доступною назвою й не зменшена', () => {
     const state = findState(
       3,
       (s) => s.hand.spec.phase === 'ascending' && s.hand.revealed?.kind === 'standard',
     );
     renderAt(state, 0);
-    const info = screen.getByRole('region', { name: 'Роздача' });
-    expect(info).not.toHaveTextContent('Відкрита карта');
-    const figure = within(info).getByRole('figure', { name: 'Відкрита карта' });
+    const table = screen.getByRole('region', { name: 'Стіл' });
+    expect(table).not.toHaveTextContent('Відкрита карта');
+    const figure = within(table).getByRole('figure', { name: 'Відкрита карта' });
     const card = within(figure).getByRole('img', { name: cardName(defined(state.hand.revealed)) });
     // Розмір — як у карти в руці (спільна --card-w), а не окремо зменшений.
     expect(card).not.toHaveClass('card--small');
@@ -171,7 +174,7 @@ describe('ігровий стіл', () => {
     );
   });
 
-  it('R-3.3: у роздачі «масті» без відкритої карти на її місці — великий значок козиря', () => {
+  it('R-3.3: у роздачі «масті» без відкритої карти на столі — великий значок козиря', () => {
     const view = wireView(createGame(1, 3), 0);
     renderTable(gameRoom(3, 0), {
       ...view,
@@ -179,13 +182,13 @@ describe('ігровий стіл', () => {
       trump: 'hearts',
       revealed: null,
     });
-    const info = screen.getByRole('region', { name: 'Роздача' });
-    const slot = within(info).getByRole('img', { name: 'Козир: чирва' });
+    const table = screen.getByRole('region', { name: 'Стіл' });
+    const slot = within(table).getByRole('img', { name: 'Козир: чирва' });
     expect(slot).toHaveClass('game__revealed');
     expect(slot.querySelector('.suit-mark')).toHaveAttribute('data-color', 'red');
   });
 
-  it('R-3.4: у безкозирці на місці відкритої карти — «Без козиря»', () => {
+  it('R-3.4: у безкозирці на столі — «Без козиря»', () => {
     const view = wireView(createGame(1, 3), 0);
     renderTable(gameRoom(3, 0), {
       ...view,
@@ -193,8 +196,8 @@ describe('ігровий стіл', () => {
       trump: null,
       revealed: null,
     });
-    const info = screen.getByRole('region', { name: 'Роздача' });
-    const slot = defined(info.querySelector('.game__revealed'));
+    const table = screen.getByRole('region', { name: 'Стіл' });
+    const slot = defined(table.querySelector('.game__revealed'));
     expect(slot).toHaveTextContent('Без козиря');
   });
 
@@ -207,7 +210,8 @@ describe('ігровий стіл', () => {
     });
     const info = screen.getByRole('region', { name: 'Роздача' });
     expect(info).toHaveTextContent('Козир: б/к');
-    expect(within(info).getByRole('img', { name: 'Джокер' })).toBeInTheDocument();
+    const table = screen.getByRole('region', { name: 'Стіл' });
+    expect(within(table).getByRole('img', { name: 'Джокер' })).toBeInTheDocument();
   });
 
   it('R-3.4: у безкозирці козиря й відкритої карти немає', () => {
@@ -289,7 +293,9 @@ describe('ігровий стіл', () => {
     const state = findState(3, (s) => s.status === 'playing' && s.hand.trick.length === 2);
     renderAt(state, 0);
     const table = screen.getByRole('region', { name: 'Стіл' });
-    const played = within(table).getAllByRole('figure');
+    const played = within(within(table).getByRole('group', { name: 'Взятка' })).getAllByRole(
+      'figure',
+    );
     expect(played).toHaveLength(2);
     const leader = nameAt(state.hand.leader);
     expect(played[0]).toHaveTextContent(leader);
@@ -311,7 +317,9 @@ describe('ігровий стіл', () => {
     const table = screen.getByRole('region', { name: 'Стіл' });
     const winner = nameAt(defined(state.lastTrick).winner);
     expect(table).toHaveTextContent(`Остання взятка: ${winner}`);
-    expect(within(table).getAllByRole('figure')).toHaveLength(3);
+    expect(
+      within(within(table).getByRole('group', { name: 'Взятка' })).getAllByRole('figure'),
+    ).toHaveLength(3);
   });
 
   it('R-6.2: оголошення джокера на столі показує масть значком масті', () => {

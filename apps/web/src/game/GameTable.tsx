@@ -44,8 +44,9 @@ function pausedView(shown: WirePlayerView, pause: TrickPause, handOver: boolean)
 }
 
 /**
- * Місце відкритої карти в заголовку роздачі (R-3.1): сама карта розміром як у руці, а без неї —
- * великий значок козиря (R-3.3) чи «Без козиря» (R-3.4), щоб макет не стрибав між роздачами.
+ * Місце відкритої карти в кутку столу (R-3.1), щоб на телефоні козир було видно разом із рукою:
+ * сама карта розміром як у руці, а без неї — великий значок козиря (R-3.3) чи «Без козиря» (R-3.4),
+ * щоб макет не стрибав між роздачами.
  */
 function TrumpSlot({ revealed, trump }: { revealed: Card | null; trump: Suit | null }) {
   if (revealed !== null) {
@@ -195,7 +196,6 @@ export function GameTable({ room, view: latest }: GameTableProps) {
         >
           {uk.sheet.open}
         </button>
-        <TrumpSlot revealed={view.revealed} trump={view.trump} />
       </section>
 
       <p role="status" className="game__turn">
@@ -244,48 +244,58 @@ export function GameTable({ room, view: latest }: GameTableProps) {
       )}
 
       <section className="felt" aria-label={uk.game.table}>
-        {caption !== null && (
-          <p
-            className={['felt__caption', pause !== null && 'felt__caption--takes']
+        <TrumpSlot revealed={view.revealed} trump={view.trump} />
+        <div className="felt__play">
+          {caption !== null && (
+            <p
+              className={['felt__caption', pause !== null && 'felt__caption--takes']
+                .filter(Boolean)
+                .join(' ')}
+            >
+              {caption}
+            </p>
+          )}
+          <div
+            ref={trickRef}
+            role="group"
+            aria-label={uk.game.trick}
+            className={[
+              'felt__trick',
+              lastTrick !== null && 'felt__trick--last',
+              pause !== null && 'felt__trick--taken',
+              pause?.phase === 'collect' && 'felt__trick--collect',
+            ]
               .filter(Boolean)
               .join(' ')}
           >
-            {caption}
-          </p>
-        )}
-        <div
-          ref={trickRef}
-          className={[
-            'felt__trick',
-            lastTrick !== null && 'felt__trick--last',
-            pause !== null && 'felt__trick--taken',
-            pause?.phase === 'collect' && 'felt__trick--collect',
-          ]
-            .filter(Boolean)
-            .join(' ')}
-        >
-          {trick.map((played, position) => {
-            const seat = (trickLeader + position) % view.playerCount;
-            const winner = pause !== null && seat === pause.trick.winner;
-            return (
-              <figure
-                key={cardId(played)}
-                className={['felt__card', winner && 'felt__card--winner'].filter(Boolean).join(' ')}
-                data-winner={winner || undefined}
-              >
-                <CardFace card={played} {...(lastTrick !== null && { className: 'card--small' })} />
-                <figcaption>
-                  {nameOf(seat)}
-                  {played.kind === 'joker' && ' '}
-                  {played.kind === 'joker' && (
-                    <span className="felt__call">
-                      <JokerCallLabel call={played.call} />
-                    </span>
-                  )}
-                </figcaption>
-              </figure>
-            );
-          })}
+            {trick.map((played, position) => {
+              const seat = (trickLeader + position) % view.playerCount;
+              const winner = pause !== null && seat === pause.trick.winner;
+              return (
+                <figure
+                  key={cardId(played)}
+                  className={['felt__card', winner && 'felt__card--winner']
+                    .filter(Boolean)
+                    .join(' ')}
+                  data-winner={winner || undefined}
+                >
+                  <CardFace
+                    card={played}
+                    {...(lastTrick !== null && { className: 'card--small' })}
+                  />
+                  <figcaption>
+                    {nameOf(seat)}
+                    {played.kind === 'joker' && ' '}
+                    {played.kind === 'joker' && (
+                      <span className="felt__call">
+                        <JokerCallLabel call={played.call} />
+                      </span>
+                    )}
+                  </figcaption>
+                </figure>
+              );
+            })}
+          </div>
         </div>
       </section>
 
