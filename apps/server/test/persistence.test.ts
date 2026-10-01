@@ -1,4 +1,11 @@
-import { type Action, type GameState, gameLog, replay } from '@poker/engine';
+import {
+  type Action,
+  ENGINE_LOG_VERSION,
+  type GameLog,
+  type GameState,
+  gameLog,
+  replay,
+} from '@poker/engine';
 import { roomStateSchema } from '@poker/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PostgresRoomStore } from '../src/postgres.js';
@@ -224,6 +231,51 @@ describe.each(STORES)('персистентність: %s', (_name, makeStore) =
       },
     });
     expect(await manager(store, 2).load(code)).toBeUndefined();
+  });
+
+  it('R-2.3: гра, збережена несумісною версією рушія, — зрозуміле повідомлення гравцям', async () => {
+    const before = manager(store);
+    const { code, players } = await startedRoom(before, 2, 1);
+    await shutdown(before);
+    const snapshot = (await store.load(code)) as RoomSnapshot;
+    const log = (snapshot.game as { log: GameLog }).log;
+    await store.save({
+      ...snapshot,
+      game: { seed: 1, log: { ...log, version: ENGINE_LOG_VERSION + 1 } },
+    });
+
+    const after = manager(store, 2);
+    expect(await after.load(code)).toBeUndefined();
+    const token = players[1]?.token as string;
+    for (const result of [after.resume(code, token), after.join(code, 'Новий')]) {
+      expect(errorCode(result)).toBe('roomNotFound');
+      expect(result.ok ? '' : result.error.message).toMatch(/новішою версією.*нову кімнату/);
+    }
+    after.close();
+  });
+
+  it('R-2.3: пояснення про несумісну гру забувається, коли сховище прибрало її знімок', async () => {
+    const before = manager(store);
+    const { code, players } = await startedRoom(before, 2, 1);
+    await shutdown(before);
+    const snapshot = (await store.load(code)) as RoomSnapshot;
+    const log = (snapshot.game as { log: GameLog }).log;
+    await store.save({
+      ...snapshot,
+      status: 'finished',
+      game: { seed: 1, log: { ...log, version: ENGINE_LOG_VERSION + 1 } },
+    });
+
+    const after = manager(store, 2);
+    expect(await after.load(code)).toBeUndefined();
+    const token = players[1]?.token as string;
+    expect(errorCode(after.resume(code, token))).toBe('roomNotFound');
+    vi.advanceTimersByTime(30 * 24 * 60 * 60 * 1000 + 1);
+    expect(await after.cleanup()).toBe(1);
+    const result = after.resume(code, token);
+    expect(errorCode(result)).toBe('roomNotFound');
+    expect(result.ok ? '' : result.error.message).toBe(`Кімнати ${code} немає`);
+    after.close();
   });
 
   it('очищення сховища: завершені ігри старші 30 днів, лобі старші 7 днів', async () => {

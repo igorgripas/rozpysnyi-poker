@@ -1,4 +1,10 @@
-export { ENGINE_LOG_VERSION } from './log.js';
+export {
+  ENGINE_LOG_VERSION,
+  LOG_MIGRATIONS,
+  UnsupportedLogVersionError,
+  migrateLog,
+} from './log.js';
+export type { LogMigration, MigratableLog, VersionedLog } from './log.js';
 export { formatScore } from './formatScore.js';
 export {
   DECK_SIZE,

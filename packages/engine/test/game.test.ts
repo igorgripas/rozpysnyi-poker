@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ENGINE_LOG_VERSION,
   IllegalActionError,
+  UnsupportedLogVersionError,
   apply,
   biddingOrder,
   cardId,
@@ -11,11 +12,12 @@ import {
   gameLog,
   isJoker,
   legalActions,
+  migrateLog,
   replay,
   scoreTable,
   viewFor,
 } from '../src/index.js';
-import type { Action, Card, GameState, Rng } from '../src/index.js';
+import type { Action, Card, GameState, LogMigration, Rng } from '../src/index.js';
 
 /** Випадковий легальний хід — детермінований через окремий seed RNG. */
 function randomAction(state: GameState, rng: Rng): Action {
@@ -334,7 +336,60 @@ describe('replay', () => {
   });
 
   it('rejects a log of an unknown version', () => {
-    expect(() => replay(1, { version: 999, playerCount: 3, actions: [] })).toThrow(RangeError);
+    expect(() => replay(1, { version: 999, playerCount: 3, actions: [] })).toThrow(
+      UnsupportedLogVersionError,
+    );
+  });
+
+  it('R-2.3: a log of a newer engine version is rejected with a readable message', () => {
+    const log = { version: ENGINE_LOG_VERSION + 1, playerCount: 3, actions: [] };
+    expect(() => migrateLog(log)).toThrow(UnsupportedLogVersionError);
+    try {
+      replay(1, log);
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(UnsupportedLogVersionError);
+      expect((error as UnsupportedLogVersionError).version).toBe(ENGINE_LOG_VERSION + 1);
+      expect((error as Error).message).toContain(`версії ${ENGINE_LOG_VERSION + 1}`);
+    }
+  });
+
+  it('R-2.3: a log of the current version is not migrated', () => {
+    const log = gameLog(playUntil(createGame(5, 3), createRng(2), (s) => s.actions.length >= 10));
+    expect(migrateLog(log)).toBe(log);
+  });
+
+  it('R-2.3: an old log is migrated step by step to the current version and replayed', () => {
+    const state = playUntil(createGame(9, 4), createRng(3), (s) => s.actions.length >= 20);
+    // Уявна стара версія, де місце гравця звалося `player`; міграції повертають `seat`.
+    const old = {
+      version: ENGINE_LOG_VERSION - 2,
+      playerCount: 4,
+      actions: state.actions.map(({ seat, ...rest }) => ({ ...rest, player: seat })),
+    };
+    const migrations: Record<number, LogMigration> = {
+      [ENGINE_LOG_VERSION - 2]: (log) => ({ ...log, version: ENGINE_LOG_VERSION - 1 }),
+      [ENGINE_LOG_VERSION - 1]: (log) => ({
+        ...log,
+        version: ENGINE_LOG_VERSION,
+        actions: (log.actions as typeof old.actions).map(({ player, ...rest }) => ({
+          ...rest,
+          seat: player,
+        })),
+      }),
+    };
+    const migrated = migrateLog(old, migrations);
+    expect(migrated.version).toBe(ENGINE_LOG_VERSION);
+    expect(replay(9, migrated)).toEqual(state);
+  });
+
+  it('R-2.3: an old log without a migration path is rejected', () => {
+    const old = { version: ENGINE_LOG_VERSION - 1, playerCount: 3, actions: [] };
+    expect(() => migrateLog(old, {})).toThrow(UnsupportedLogVersionError);
+    expect(() => migrateLog(old, { [old.version]: (log) => log })).toThrow(
+      UnsupportedLogVersionError,
+    );
+    expect(() => migrateLog({ ...old, version: 1.5 })).toThrow(UnsupportedLogVersionError);
   });
 
   it('rejects a log containing an illegal action', () => {

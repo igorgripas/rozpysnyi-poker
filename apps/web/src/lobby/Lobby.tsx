@@ -1,7 +1,7 @@
 import { type FormEvent, useState } from 'react';
 import { uk } from '../i18n';
 import { parseName, parseRoomCode } from '../net/client';
-import { useClient } from '../net/react';
+import { useClient, useClientState } from '../net/react';
 
 export interface LobbyProps {
   /** Код із посилання-запрошення. */
@@ -12,6 +12,8 @@ export interface LobbyProps {
 /** Вхід: імʼя, створення кімнати або вхід за кодом чи посиланням. */
 export function Lobby({ inviteCode, onForgetInvite }: LobbyProps) {
   const client = useClient();
+  // Чому не вдалося повернутися в попередню кімнату — доки гравець не спробує щось інше.
+  const { resumeError } = useClientState();
   const [name, setName] = useState(() => client.savedName());
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -29,6 +31,8 @@ export function Lobby({ inviteCode, onForgetInvite }: LobbyProps) {
     setBusy(false);
     if (failure !== null) setError(failure.message);
   }
+
+  const alert = error ?? resumeError;
 
   const create = () => run((validName) => client.create(validName));
 
@@ -97,9 +101,9 @@ export function Lobby({ inviteCode, onForgetInvite }: LobbyProps) {
             </button>
           </>
         )}
-        {error !== null && (
+        {alert !== null && (
           <p role="alert" className="error">
-            {error}
+            {alert}
           </p>
         )}
       </form>

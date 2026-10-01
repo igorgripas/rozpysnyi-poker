@@ -34,13 +34,21 @@ export interface ClientState {
   readonly connection: ConnectionStatus;
   readonly room: RoomState | null;
   readonly view: WirePlayerView | null;
+  /** Чому не вдалося повернутися в кімнату (напр., гру збережено несумісною версією). */
+  readonly resumeError: string | null;
 }
 
 type RoomEvent = Exclude<ClientEvent, 'room:create' | 'room:join' | 'room:resume'>;
 
 /** Стан клієнта поверх зʼєднання: сесія, кімната й погляд на гру. */
 export class PokerClient {
-  private state: ClientState = { status: 'idle', connection: 'connecting', room: null, view: null };
+  private state: ClientState = {
+    status: 'idle',
+    connection: 'connecting',
+    room: null,
+    view: null,
+    resumeError: null,
+  };
   private readonly listeners = new Set<() => void>();
 
   constructor(
@@ -107,6 +115,7 @@ export class PokerClient {
 
   private enter(result: ClientResult<Session>): ClientError | null {
     if (!result.ok) return result.error;
+    this.set({ resumeError: null });
     const { code, token } = result.data;
     this.storage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ code, token }));
     return null;
@@ -124,7 +133,7 @@ export class PokerClient {
 
   /**
    * Повертається в кімнату за збереженим токеном. Якщо задано `code`, лише в цю кімнату.
-   * Недійсну сесію забуває. Повертає, чи вдалося повернутися.
+   * Недійсну сесію забуває, а пояснення зберігає в `resumeError`. Повертає, чи вдалося повернутися.
    */
   async resume(code?: string): Promise<boolean> {
     const stored = this.storedSession();
@@ -132,12 +141,18 @@ export class PokerClient {
     if (this.state.status === 'resuming') return false;
     this.set({ status: 'resuming' });
     const result = await this.connection.request('room:resume', stored);
-    this.set({ status: 'idle' });
-    if (result.ok) return true;
-    // Мережа чи сервер, що перезапускається, — тимчасово: сесію не забуваємо.
-    if (result.error.code !== 'network' && result.error.code !== 'unavailable') {
-      this.storage.removeItem(SESSION_STORAGE_KEY);
+    if (result.ok) {
+      this.set({ status: 'idle', resumeError: null });
+      return true;
     }
+    // Мережа чи сервер, що перезапускається, — тимчасово: сесію не забуваємо.
+    if (result.error.code === 'network' || result.error.code === 'unavailable') {
+      this.set({ status: 'idle' });
+      return false;
+    }
+    // Повернутися не вийде: сесію забуваємо, а пояснення сервера показуємо в лобі.
+    this.storage.removeItem(SESSION_STORAGE_KEY);
+    this.set({ status: 'idle', resumeError: result.error.message });
     return false;
   }
 
