@@ -77,6 +77,7 @@ export const uk = {
     handOf: (n: number, total: number) => `Роздача ${n} з ${total}`,
     trump: 'Козир:',
     revealed: 'Відкрита карта',
+    noTrump: 'Без козиря',
     table: 'Стіл',
     lastTrick: (name: string) => `Остання взятка: ${name}`,
     takes: (name: string) => `Бере: ${name}`,

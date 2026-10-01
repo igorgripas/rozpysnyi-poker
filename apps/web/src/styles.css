@@ -476,11 +476,31 @@ input {
   font-size: 0.9375rem;
 }
 
+/* Місце відкритої карти: розміром як карта в руці; без карти — великий значок козиря чи «Без козиря». */
 .game__revealed {
   display: grid;
-  justify-items: center;
+  flex: none;
+  place-items: center;
+  width: var(--card-w);
+  aspect-ratio: 5 / 7;
   margin: 0;
-  font-size: 0.75rem;
+}
+
+.game__revealed--suit,
+.game__revealed--none {
+  border: 2px dashed var(--card-edge);
+  border-radius: 6px;
+  font-weight: 700;
+  line-height: 1.1;
+  text-align: center;
+}
+
+.game__revealed--suit {
+  font-size: calc(var(--card-w) * 0.6);
+}
+
+.game__revealed--none {
+  font-size: calc(var(--card-w) * 0.2);
 }
 
 /* Значок масті поза картою: розмір як у тексту поруч, ♦ ♥ — червоні, ♠ ♣ — кольору тексту. */
@@ -496,6 +516,13 @@ input {
 /* «Козир: ♥ чирва» не розривається між мастю й назвою. */
 .game__trump {
   white-space: nowrap;
+}
+
+/* Значок козиря в заголовку — більший за текст, щоб козир було видно з першого погляду. */
+.game__trump-mark {
+  font-size: 1.75em;
+  line-height: 1;
+  vertical-align: -0.15em;
 }
 
 .card--small {

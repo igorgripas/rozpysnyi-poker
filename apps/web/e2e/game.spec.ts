@@ -24,6 +24,43 @@ test('ігровий стіл: рука, гравці й стіл вміщуют
   expect(overflow).toBeLessThanOrEqual(0);
 });
 
+test('R-3.1: відкрита карта-козир не менша за карту в руці, значок козиря більший за текст', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.getByLabel('Ваше імʼя').fill('Оля');
+  await page.getByRole('button', { name: 'Створити кімнату' }).click();
+  await page.getByRole('button', { name: 'Додати бота' }).click();
+  await page.getByRole('button', { name: 'Додати бота' }).click();
+  await page.getByRole('button', { name: 'Почати гру' }).click();
+
+  const info = page.getByRole('region', { name: 'Роздача' });
+  // Перша роздача — «Зростання»: відкрита карта є, але без видимого підпису.
+  const revealed = info.getByRole('figure', { name: 'Відкрита карта' }).locator('.card');
+  await expect(revealed).toBeVisible();
+  await expect(info).not.toContainText('Відкрита карта');
+  const handCard = page.getByRole('list', { name: 'Ваші карти' }).locator('.card').first();
+  await expect(handCard).toBeVisible();
+  const [own, open] = await Promise.all([handCard.boundingBox(), revealed.boundingBox()]);
+  expect(open?.width ?? 0).toBeGreaterThanOrEqual(own?.width ?? Infinity);
+  expect(open?.height ?? 0).toBeGreaterThanOrEqual(own?.height ?? Infinity);
+
+  // Значок козиря (якщо відкрито не джокера) — щонайменше в 1.5 раза більший за текст.
+  const mark = info.locator('.game__trump .suit-mark');
+  if ((await mark.count()) > 0) {
+    const ratio = await mark.evaluate((element) => {
+      const size = (node: Element) => parseFloat(getComputedStyle(node).fontSize);
+      return size(element) / size(element.closest('.game__trump') as Element);
+    });
+    expect(ratio).toBeGreaterThanOrEqual(1.5);
+  }
+
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(0);
+});
+
 test('замовлення: кнопки 0…K, сума замовлень на екрані', async ({ page }) => {
   await page.goto('/');
   await page.getByLabel('Ваше імʼя').fill('Оля');

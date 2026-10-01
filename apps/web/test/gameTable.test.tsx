@@ -144,6 +144,60 @@ describe('ігровий стіл', () => {
     expect(within(info).getByRole('img', { name: cardName(revealed) })).toBeInTheDocument();
   });
 
+  it('R-3.1: відкрита карта без видимого підпису, але з доступною назвою й не зменшена', () => {
+    const state = findState(
+      3,
+      (s) => s.hand.spec.phase === 'ascending' && s.hand.revealed?.kind === 'standard',
+    );
+    renderAt(state, 0);
+    const info = screen.getByRole('region', { name: 'Роздача' });
+    expect(info).not.toHaveTextContent('Відкрита карта');
+    const figure = within(info).getByRole('figure', { name: 'Відкрита карта' });
+    const card = within(figure).getByRole('img', { name: cardName(defined(state.hand.revealed)) });
+    // Розмір — як у карти в руці (спільна --card-w), а не окремо зменшений.
+    expect(card).not.toHaveClass('card--small');
+  });
+
+  it('R-3.1: значок козиря в заголовку роздачі збільшений', () => {
+    const state = findState(
+      3,
+      (s) => s.hand.spec.phase === 'ascending' && s.hand.revealed?.kind === 'standard',
+    );
+    renderAt(state, 0);
+    const info = screen.getByRole('region', { name: 'Роздача' });
+    expect(info.querySelector('.game__trump .game__trump-mark .suit-mark')).toHaveAttribute(
+      'data-suit',
+      defined(state.hand.trump),
+    );
+  });
+
+  it('R-3.3: у роздачі «масті» без відкритої карти на її місці — великий значок козиря', () => {
+    const view = wireView(createGame(1, 3), 0);
+    renderTable(gameRoom(3, 0), {
+      ...view,
+      spec: { ...view.spec, phase: 'suits', trump: { kind: 'fixed', suit: 'hearts' } },
+      trump: 'hearts',
+      revealed: null,
+    });
+    const info = screen.getByRole('region', { name: 'Роздача' });
+    const slot = within(info).getByRole('img', { name: 'Козир: чирва' });
+    expect(slot).toHaveClass('game__revealed');
+    expect(slot.querySelector('.suit-mark')).toHaveAttribute('data-color', 'red');
+  });
+
+  it('R-3.4: у безкозирці на місці відкритої карти — «Без козиря»', () => {
+    const view = wireView(createGame(1, 3), 0);
+    renderTable(gameRoom(3, 0), {
+      ...view,
+      spec: { ...view.spec, phase: 'noTrump', trump: { kind: 'none' } },
+      trump: null,
+      revealed: null,
+    });
+    const info = screen.getByRole('region', { name: 'Роздача' });
+    const slot = defined(info.querySelector('.game__revealed'));
+    expect(slot).toHaveTextContent('Без козиря');
+  });
+
   it('R-3.2: відкритий джокер — роздача без козиря («б/к»)', () => {
     const view = wireView(createGame(1, 3), 0);
     renderTable(gameRoom(3, 0), {

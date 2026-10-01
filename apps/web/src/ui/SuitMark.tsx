@@ -1,5 +1,5 @@
 import type { JokerCall, Suit } from '@poker/engine';
-import { suitName, suitSymbol, uk } from '../i18n';
+import { suitSymbol, uk } from '../i18n';
 
 const RED_SUITS: ReadonlySet<Suit> = new Set(['diamonds', 'hearts']);
 
@@ -22,16 +22,6 @@ export function SuitMark({ suit }: { suit: Suit }) {
     <span className="suit-mark" data-suit={suit} data-color={isRedSuit(suit) ? 'red' : 'black'}>
       {suitGlyph(suit)}
     </span>
-  );
-}
-
-/** Козир роздачі: «♦ бубна» або «б/к» (R-3.2, R-3.4). */
-export function TrumpLabel({ trump }: { trump: Suit | null }) {
-  if (trump === null) return uk.noTrump;
-  return (
-    <>
-      <SuitMark suit={trump} /> {suitName(trump)}
-    </>
   );
 }
 
