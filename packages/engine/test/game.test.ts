@@ -17,7 +17,7 @@ import {
   scoreTable,
   viewFor,
 } from '../src/index.js';
-import type { Action, Card, GameLog, GameState, LogMigration, Rng } from '../src/index.js';
+import type { Action, Card, GameState, LogMigration, Rng } from '../src/index.js';
 
 /** Випадковий легальний хід — детермінований через окремий seed RNG. */
 function randomAction(state: GameState, rng: Rng): Action {
@@ -369,16 +369,16 @@ describe('replay', () => {
     };
     const migrations: Record<number, LogMigration> = {
       [ENGINE_LOG_VERSION - 2]: (log) => ({ ...log, version: ENGINE_LOG_VERSION - 1 }),
-      [ENGINE_LOG_VERSION - 1]: (log) => {
-        const { actions } = log as unknown as typeof old;
-        return {
-          ...log,
-          version: ENGINE_LOG_VERSION,
-          actions: actions.map(({ player, ...rest }) => ({ ...rest, seat: player })),
-        };
-      },
+      [ENGINE_LOG_VERSION - 1]: (log) => ({
+        ...log,
+        version: ENGINE_LOG_VERSION,
+        actions: (log.actions as typeof old.actions).map(({ player, ...rest }) => ({
+          ...rest,
+          seat: player,
+        })),
+      }),
     };
-    const migrated = migrateLog(old, migrations) as unknown as GameLog;
+    const migrated = migrateLog(old, migrations);
     expect(migrated.version).toBe(ENGINE_LOG_VERSION);
     expect(replay(9, migrated)).toEqual(state);
   });

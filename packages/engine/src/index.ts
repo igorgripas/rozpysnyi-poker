@@ -4,7 +4,7 @@ export {
   UnsupportedLogVersionError,
   migrateLog,
 } from './log.js';
-export type { LogMigration, VersionedLog } from './log.js';
+export type { LogMigration, MigratableLog, VersionedLog } from './log.js';
 export { formatScore } from './formatScore.js';
 export {
   DECK_SIZE,

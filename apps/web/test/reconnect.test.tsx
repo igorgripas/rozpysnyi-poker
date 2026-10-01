@@ -2,7 +2,7 @@ import { act, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App';
 import { PokerClient, RESUME_RETRY_MS, SESSION_STORAGE_KEY } from '../src/net/client';
-import { FakeConnection, TOKEN, roomState } from './support/fakeConnection';
+import { FakeConnection, TOKEN, roomState, session } from './support/fakeConnection';
 
 function setup() {
   const connection = new FakeConnection();
@@ -63,6 +63,49 @@ describe('стан зʼєднання й перепідключення', () => 
     expect(client.getState().room).toBeNull();
     expect(client.getState().view).toBeNull();
     expect(localStorage.getItem(SESSION_STORAGE_KEY)).toBeNull();
+  });
+
+  it('R-2.3: гра несумісної версії після передеплою — гравець бачить пояснення в лобі', async () => {
+    const { connection, client } = inRoom();
+    const message =
+      'Гру збережено новішою версією рушія (лог версії 2, підтримується до 1). Продовжити цю гру неможливо — створіть нову кімнату.';
+    connection.on('room:resume', () => ({ ok: false, error: { code: 'roomNotFound', message } }));
+    render(<App client={client} />);
+    await act(async () => {
+      connection.pushStatus('offline');
+      connection.pushStatus('online');
+      await new Promise((resolve) => setTimeout(resolve));
+    });
+    expect(client.getState().room).toBeNull();
+    expect(screen.getByRole('alert')).toHaveTextContent(message);
+  });
+
+  it('пояснення невдалого повернення показується й під час автоповернення при запуску', async () => {
+    const { connection, client } = setup();
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ code: 'ABCDE', token: TOKEN }));
+    connection.on('room:resume', () => ({
+      ok: false,
+      error: { code: 'roomNotFound', message: 'Кімнати ABCDE немає' },
+    }));
+    connection.pushStatus('online');
+    await act(async () => {
+      render(<App client={client} />);
+      await new Promise((resolve) => setTimeout(resolve));
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent('Кімнати ABCDE немає');
+  });
+
+  it('пояснення невдалого повернення зникає, коли гравець входить у нову кімнату', async () => {
+    const { connection, client } = inRoom();
+    connection.on('room:resume', () => ({
+      ok: false,
+      error: { code: 'roomNotFound', message: 'Кімнати ABCDE немає' },
+    }));
+    expect(await client.resume()).toBe(false);
+    expect(client.getState().resumeError).toBe('Кімнати ABCDE немає');
+    connection.on('room:create', () => ({ ok: true, data: session('QWERT') }));
+    await client.create('Оля');
+    expect(client.getState().resumeError).toBeNull();
   });
 
   it('без звʼязку дії в кімнаті не надсилаються, а повертають мережеву помилку', async () => {

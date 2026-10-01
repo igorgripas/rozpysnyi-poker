@@ -141,6 +141,7 @@ export class RoomManager {
           const snapshot = await store.load(code);
           // Поки читали, кімнату могли завантажити або створити.
           const existing = this.rooms.get(code);
+          if (snapshot === null) this.unplayable.delete(code);
           if (existing !== undefined || snapshot === null) return existing;
           return this.restore(snapshot);
         } finally {
@@ -250,7 +251,14 @@ export class RoomManager {
 
   /** Очищує сховище від старих завершених ігор і покинутих лобі. */
   async cleanup(): Promise<number> {
-    return (await this.store?.cleanup()) ?? 0;
+    const store = this.store;
+    if (store === null) return 0;
+    const removed = await store.cleanup();
+    // Пояснення про несумісну гру потрібне, лише поки її знімок лежить у сховищі.
+    for (const code of [...this.unplayable.keys()]) {
+      if (!(await store.has(code))) this.unplayable.delete(code);
+    }
+    return removed;
   }
 
   /** Посилання-запрошення в кімнату. */
@@ -348,6 +356,7 @@ export class RoomManager {
     };
     this.rooms.set(room.code, room);
     this.reserved.delete(code);
+    this.unplayable.delete(code);
     this.changed(room.code);
     return ok(this.session(room, host));
   }
