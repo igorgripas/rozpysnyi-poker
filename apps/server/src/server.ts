@@ -22,6 +22,7 @@ import {
 import type { RandomSource } from './random.js';
 import { type QueuedBugReport, RoomManager, fail } from './rooms.js';
 import type { RoomStore } from './store.js';
+import { VoiceRooms } from './voice.js';
 
 export interface PokerServerOptions {
   random?: RandomSource;
@@ -133,9 +134,49 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
     });
   });
 
+  /** Голосовий чат (T63): хто в голосі кожної кімнати. */
+  const voice = new VoiceRooms<PokerSocket>();
+
+  /** Виводить зʼєднання з голосу й повідомляє інших учасників. */
+  function leaveVoice(socket: PokerSocket): void {
+    const session = socket.data.session;
+    if (session === null || !voice.leave(session.code, session.playerId, socket)) return;
+    for (const [, other] of voice.others(session.code, session.playerId)) {
+      other.emit('voice:left', { playerId: session.playerId });
+    }
+  }
+
+  function joinVoice(
+    socket: PokerSocket,
+    session: NonNullable<SocketData['session']>,
+  ): Result<ClientResponses['voice:join']> {
+    const { peers, replaced } = voice.join(session.code, session.playerId, socket);
+    // Інша вкладка того самого гравця: стара втрачає голос, інші перепідключаються до нової.
+    replaced?.emit('voice:left', { playerId: session.playerId });
+    for (const [, other] of voice.others(session.code, session.playerId)) {
+      other.emit('voice:joined', { playerId: session.playerId });
+    }
+    return { ok: true, data: { peers } };
+  }
+
+  function voiceSignal(
+    socket: PokerSocket,
+    session: NonNullable<SocketData['session']>,
+    { to, signal }: ClientMessage<'voice:signal'>,
+  ): Result<null> {
+    if (to === session.playerId) return fail('badRequest', 'Сигнал самому собі');
+    const target = voice.socketOf(session.code, to);
+    if (voice.socketOf(session.code, session.playerId) !== socket || target === null) {
+      return fail('notInRoom', 'Гравця немає в голосовому чаті');
+    }
+    target.emit('voice:signal', { from: session.playerId, signal });
+    return { ok: true, data: null };
+  }
+
   function unbind(socket: PokerSocket): void {
     const session = socket.data.session;
     if (session === null) return;
+    leaveVoice(socket);
     socket.data.session = null;
     const k = key(session.code, session.playerId);
     const sockets = connections.get(k);
@@ -256,6 +297,21 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
     }
   }
 
+  /** Обробник, якому потрібні і сесія, і саме зʼєднання (голос привʼязаний до вкладки). */
+  function withSocket<E extends ClientEvent>(
+    handler: (
+      socket: PokerSocket,
+      session: NonNullable<SocketData['session']>,
+      payload: ClientMessage<E>,
+    ) => Result<ClientResponses[E]> | Promise<Result<ClientResponses[E]>>,
+  ): Handler<E> {
+    return (socket, payload) => {
+      const session = socket.data.session;
+      if (session === null) return fail('notInRoom', 'Спершу створіть кімнату або увійдіть у неї');
+      return handler(socket, session, payload);
+    };
+  }
+
   const handlers: { [E in ClientEvent]: Handler<E> } = {
     'room:create': entering(({ name }) => rooms.create(name)),
     // Після рестарту кімнати ще немає в памʼяті: підвантажуємо її з бази за кодом.
@@ -283,11 +339,15 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
     'game:play': withSession(({ code, playerId }, { card, call }) =>
       rooms.play(code, playerId, card, call),
     ),
-    'game:reportBug': (socket, { description }) => {
-      const session = socket.data.session;
-      if (session === null) return fail('notInRoom', 'Спершу створіть кімнату або увійдіть у неї');
-      return reportBug(socket, session, description);
-    },
+    'game:reportBug': withSocket((socket, session, { description }) =>
+      reportBug(socket, session, description),
+    ),
+    'voice:join': withSocket(joinVoice),
+    'voice:leave': withSocket((socket) => {
+      leaveVoice(socket);
+      return { ok: true, data: null };
+    }),
+    'voice:signal': withSocket(voiceSignal),
   };
 
   io.use((_socket, next) => {
