@@ -20,9 +20,14 @@ export class TestClient {
   restarting = false;
   private readonly waiters: (() => void)[] = [];
 
-  constructor(url: string, protocolVersion: number = PROTOCOL_VERSION) {
+  constructor(
+    url: string,
+    protocolVersion: number = PROTOCOL_VERSION,
+    extraHeaders?: Record<string, string>,
+  ) {
     this.socket = io(url, {
       auth: { protocolVersion },
+      ...(extraHeaders !== undefined && { extraHeaders }),
       transports: ['websocket'],
       forceNew: true,
       reconnection: false,

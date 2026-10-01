@@ -60,6 +60,12 @@ export const playRequestSchema = z.strictObject({
   card: cardSchema,
   call: jokerCallSchema.optional(),
 });
+/** Найбільша довжина опису бага від гравця. */
+export const BUG_DESCRIPTION_MAX_LENGTH = 2000;
+/** Звіт про баг (AUTOPILOT §6): опис гравця; replay гри сервер додає сам. */
+export const bugReportRequestSchema = z.strictObject({
+  description: z.string().trim().min(1).max(BUG_DESCRIPTION_MAX_LENGTH),
+});
 
 /** Схеми корисного навантаження всіх подій клієнта. */
 export const clientMessageSchemas = {
@@ -74,6 +80,7 @@ export const clientMessageSchemas = {
   'room:replaceWithBot': replaceWithBotRequestSchema,
   'game:bid': bidRequestSchema,
   'game:play': playRequestSchema,
+  'game:reportBug': bugReportRequestSchema,
 } as const;
 
 export type ClientEvent = keyof typeof clientMessageSchemas;
@@ -98,6 +105,12 @@ export const seatInfoSchema = z.strictObject({
   kind: z.enum(['human', 'bot']),
   connected: z.boolean(),
 });
+
+/**
+ * Відповідь на звіт про баг: адреса створеного issue або `null`, якщо гра ще йде —
+ * тоді звіт опублікується після її завершення (replay розкрив би чужі карти).
+ */
+export const bugReportResponseSchema = z.strictObject({ url: z.string().min(1).nullable() });
 
 export const roomStatusSchema = z.enum(['lobby', 'playing', 'finished']);
 
@@ -131,6 +144,8 @@ export const ERROR_CODES = [
   'playerConnected',
   /** Сервер не зміг зберегти дію в базу (T54). */
   'unavailable',
+  /** Забагато запитів (напр., звітів про баги) від гравця. */
+  'rateLimited',
 ] as const;
 
 export const errorCodeSchema = z.enum(ERROR_CODES);
@@ -150,6 +165,7 @@ export type Session = z.infer<typeof sessionSchema>;
 export type SeatInfo = z.infer<typeof seatInfoSchema>;
 export type RoomStatus = z.infer<typeof roomStatusSchema>;
 export type RoomState = z.infer<typeof roomStateSchema>;
+export type BugReportResponse = z.infer<typeof bugReportResponseSchema>;
 
 /** Дані успішної відповіді на кожну подію клієнта. */
 export interface ClientResponses {
@@ -164,6 +180,7 @@ export interface ClientResponses {
   'room:replaceWithBot': null;
   'game:bid': null;
   'game:play': null;
+  'game:reportBug': BugReportResponse;
 }
 
 /** Схеми подій сервера. */

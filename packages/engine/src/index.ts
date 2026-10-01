@@ -65,3 +65,5 @@ export type {
   HandState,
   PlayerView,
 } from './game.js';
+export { REPLAY_FILE_FORMAT, parseReplayFile, toReplayFile } from './replayFile.js';
+export type { ReplayFile } from './replayFile.js';

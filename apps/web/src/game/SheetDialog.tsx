@@ -7,10 +7,12 @@ export interface SheetDialogProps {
   table: WirePlayerView['table'];
   names: readonly string[];
   onClose: () => void;
+  /** Відкрити звіт про баг (T52): таблиця закривається, відкривається діалог звіту. */
+  onReportBug: () => void;
 }
 
 /** Таблиця гри поверх столу (R-8.5): відкривається в будь-який момент гри. */
-export function SheetDialog({ table, names, onClose }: SheetDialogProps) {
+export function SheetDialog({ table, names, onClose, onReportBug }: SheetDialogProps) {
   const close = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -35,6 +37,9 @@ export function SheetDialog({ table, names, onClose }: SheetDialogProps) {
           </button>
         </div>
         <ScoreSheet table={table} names={names} />
+        <button type="button" className="button bug-report-button" onClick={onReportBug}>
+          {uk.bugReport.open}
+        </button>
       </div>
     </div>
   );

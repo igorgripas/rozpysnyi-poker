@@ -1,7 +1,9 @@
+import { parseReplayFile, replay } from '@poker/engine';
 import { PROTOCOL_VERSION, playerViewSchema, roomStateSchema } from '@poker/protocol';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { type PokerServer, createPokerServer } from '../src/server.js';
-import { MemoryRoomStore } from '../src/store.js';
+import { BUG_REPORTS_PER_PLAYER, type BugReport } from '../src/bugReport.js';
+import { type PokerServer, type PokerServerOptions, createPokerServer } from '../src/server.js';
+import { ABANDONED_TTL_MS, MemoryRoomStore } from '../src/store.js';
 import { TestClient } from './client.js';
 import { GatedStore, errorCode, testRandom, unwrap } from './support.js';
 
@@ -332,4 +334,241 @@ describe('зупинка сервера (T55)', () => {
     expect((await store.load(session.code))?.seats.map((m) => m.kind)).toEqual(['human', 'bot']);
     // Закритий сервер можна закрити ще раз (afterEach).
   });
+});
+
+describe('звіт про баг (T52)', () => {
+  /** Перезапускає сервер із підробленим репортером, що памʼятає створені issues. */
+  async function withReporter({
+    fail = false,
+    ...options
+  }: { fail?: boolean } & PokerServerOptions = {}) {
+    const reports: BugReport[] = [];
+    await server.close();
+    server = createPokerServer({
+      random: testRandom(4),
+      botDelayMs: 0,
+      trickPauseMs: 0,
+      bugReportLimits: { perHour: 100, perIpPerHour: 100 },
+      ...options,
+      bugReporter: {
+        async report(report) {
+          if (fail) throw new Error('GitHub недоступний');
+          reports.push(report);
+          return { url: `https://github.com/o/r/issues/${reports.length}` };
+        },
+      },
+    });
+    url = await server.listen({ port: 0, host: '127.0.0.1' });
+    return reports;
+  }
+
+  /** Кімната хоста з двома ботами, гра почалася. */
+  async function startWithBots() {
+    const host = client();
+    unwrap(await host.request('room:create', { name: 'Оля' }));
+    unwrap(await host.request('room:addBot', {}));
+    unwrap(await host.request('room:addBot', {}));
+    unwrap(await host.request('room:start', {}));
+    await host.until((c) => (c.view?.legalActions.length ?? 0) > 0);
+    return host;
+  }
+
+  /** Хост ходить першою легальною дією, доки гра не завершиться. */
+  async function playToEnd(host: TestClient) {
+    const finished = () => host.room?.status === 'finished';
+    while (!finished()) {
+      await waitFor(() => finished() || (host.view?.legalActions.length ?? 0) > 0);
+      const action = host.view?.legalActions[0];
+      if (action === undefined) continue;
+      host.view = null;
+      unwrap(
+        action.type === 'bid'
+          ? await host.request('game:bid', { bid: action.bid })
+          : await host.request('game:play', {
+              card: action.card,
+              ...(action.call !== undefined && { call: action.call }),
+            }),
+      );
+    }
+  }
+
+  it('AUTOPILOT §6: звіт посеред гри не публікується до її кінця — інакше seed розкрив би чужі карти', async () => {
+    const reports = await withReporter();
+    const host = client();
+    unwrap(await host.request('room:create', { name: 'Оля' }));
+    expect(errorCode(await host.request('game:reportBug', { description: 'баг' }))).toBe(
+      'notStarted',
+    );
+    unwrap(await host.request('room:addBot', {}));
+    unwrap(await host.request('room:addBot', {}));
+    unwrap(await host.request('room:start', {}));
+    await host.until((c) => (c.view?.legalActions.length ?? 0) > 0);
+    const code = host.room?.code ?? '';
+    const reportedAt = server.rooms.get(code)?.game?.actions.length;
+
+    // Посилання немає: issue ще не створено.
+    expect(unwrap(await host.request('game:reportBug', { description: 'Не той козир' }))).toEqual({
+      url: null,
+    });
+    expect(reports).toHaveLength(0);
+
+    await playToEnd(host);
+    await waitFor(() => reports.length === 1);
+    const report = reports[0];
+    expect(report?.body).toContain('Не той козир');
+    expect(report?.body).toContain(`дій у лозі на момент звіту: ${reportedAt}`);
+    const file = parseReplayFile(report?.body ?? '');
+    const game = server.rooms.get(code)?.game;
+    expect(game?.status).toBe('finished');
+    expect(replay(file.seed, file.log)).toEqual(game);
+  }, 60_000);
+
+  it('AUTOPILOT §6: після завершення гри звіт публікується одразу й гравець отримує посилання', async () => {
+    const reports = await withReporter();
+    const host = await startWithBots();
+    await playToEnd(host);
+    expect(
+      unwrap(await host.request('game:reportBug', { description: 'Не той підсумок' })),
+    ).toEqual({ url: 'https://github.com/o/r/issues/1' });
+    expect(reports).toHaveLength(1);
+    const file = parseReplayFile(reports[0]?.body ?? '');
+    expect(replay(file.seed, file.log)).toEqual(server.rooms.get(host.room?.code ?? '')?.game);
+  }, 60_000);
+
+  it('звітів від одного гравця не більше ліміту — далі rateLimited', async () => {
+    const reports = await withReporter();
+    const host = await startWithBots();
+    // Відкладені звіти (гра ще йде) теж рахуються.
+    for (let i = 0; i < BUG_REPORTS_PER_PLAYER; i++) {
+      unwrap(await host.request('game:reportBug', { description: `баг ${i}` }));
+    }
+    expect(errorCode(await host.request('game:reportBug', { description: 'ще' }))).toBe(
+      'rateLimited',
+    );
+    await playToEnd(host);
+    await waitFor(() => reports.length === BUG_REPORTS_PER_PLAYER);
+    expect(errorCode(await host.request('game:reportBug', { description: 'ще' }))).toBe(
+      'rateLimited',
+    );
+    expect(reports).toHaveLength(BUG_REPORTS_PER_PLAYER);
+  });
+
+  it('без налаштованого репортера чи при збої GitHub — unavailable', async () => {
+    const host = client();
+    unwrap(await host.request('room:create', { name: 'Оля' }));
+    unwrap(await host.request('room:addBot', {}));
+    unwrap(await host.request('room:addBot', {}));
+    unwrap(await host.request('room:start', {}));
+    expect(errorCode(await host.request('game:reportBug', { description: 'баг' }))).toBe(
+      'unavailable',
+    );
+
+    // Після гри звіт публікується одразу: збій GitHub видно гравцеві.
+    await withReporter({ fail: true });
+    const again = await startWithBots();
+    await playToEnd(again);
+    expect(errorCode(await again.request('game:reportBug', { description: 'баг' }))).toBe(
+      'unavailable',
+    );
+  }, 60_000);
+
+  it('AUTOPILOT §6: звіт посеред гри переживає перезапуск сервера з тим самим сховищем', async () => {
+    const store = new MemoryRoomStore();
+    await withReporter({ store });
+    const host = await startWithBots();
+    const code = host.room?.code ?? '';
+    const reportedAt = server.rooms.get(code)?.game?.actions.length;
+    const { id, token } = server.rooms.get(code)?.seats[0] ?? { id: '', token: null };
+    unwrap(await host.request('game:reportBug', { description: 'Не той козир' }));
+    host.close();
+
+    const reports = await withReporter({ store });
+    expect(reports).toHaveLength(0);
+    const again = client();
+    unwrap(await again.request('room:resume', { code, token: token ?? '' }));
+    await playToEnd(again);
+    await waitFor(() => reports.length === 1);
+    expect(reports[0]?.body).toContain('Не той козир');
+    expect(reports[0]?.body).toContain(`дій у лозі на момент звіту: ${reportedAt}`);
+    const file = parseReplayFile(reports[0]?.body ?? '');
+    expect(replay(file.seed, file.log)).toEqual(server.rooms.get(code)?.game);
+    // Ліміт гравця теж пережив рестарт, а опублікований звіт прибрано з черги.
+    await server.rooms.persisted(code);
+    const snapshot = await store.load(code);
+    expect(snapshot?.bugReports).toEqual([]);
+    expect(snapshot?.bugReportsSent).toEqual({ [id]: 1 });
+  }, 60_000);
+
+  it('AUTOPILOT §6: звіт із покинутої гри публікується під час очищення', async () => {
+    let time = Date.now();
+    const store = new MemoryRoomStore(() => time);
+    await withReporter({ store, cleanupIntervalMs: 20 });
+    const host = await startWithBots();
+    const code = host.room?.code ?? '';
+    const game = server.rooms.get(code)?.game;
+    unwrap(await host.request('game:reportBug', { description: 'Гра зависла' }));
+    host.close();
+    const reports = await withReporter({ store, cleanupIntervalMs: 20 });
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    // Гру ще можуть продовжити: seed не публікується.
+    expect(reports).toHaveLength(0);
+
+    time += ABANDONED_TTL_MS + 1;
+    await waitFor(() => reports.length === 1);
+    const file = parseReplayFile(reports[0]?.body ?? '');
+    expect(replay(file.seed, file.log)).toEqual(game);
+    expect(reports[0]?.body).toContain('Гра зависла');
+    expect((await store.load(code))?.bugReports).toEqual([]);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(reports).toHaveLength(1);
+  }, 60_000);
+
+  it('AUTOPILOT §6: глобальний ліміт звітів на сервер і на IP-адресу — rateLimited', async () => {
+    let time = 0;
+    const reports = await withReporter({
+      bugReportLimits: { perHour: 2, perIpPerHour: 100 },
+      now: () => time,
+    });
+    // Кожна нова кімната дає новий ліміт гравця, але не обходить ліміт сервера.
+    for (let i = 0; i < 2; i++) {
+      const host = await startWithBots();
+      unwrap(await host.request('game:reportBug', { description: `баг ${i}` }));
+    }
+    const third = await startWithBots();
+    expect(errorCode(await third.request('game:reportBug', { description: 'ще' }))).toBe(
+      'rateLimited',
+    );
+    time += 60 * 60 * 1000 + 1;
+    unwrap(await third.request('game:reportBug', { description: 'через годину' }));
+    expect(reports).toHaveLength(0);
+
+    await withReporter({
+      bugReportLimits: { perHour: 100, perIpPerHour: 1 },
+      trustProxy: true,
+      now: () => time,
+    });
+    const first = await startWithBots();
+    unwrap(await first.request('game:reportBug', { description: 'баг' }));
+    const sameIp = await startWithBots();
+    expect(errorCode(await sameIp.request('game:reportBug', { description: 'баг' }))).toBe(
+      'rateLimited',
+    );
+    // За проксі IP — останній запис X-Forwarded-For; підробити його клієнт не може.
+    const spoofed = new TestClient(url, undefined, { 'x-forwarded-for': '1.2.3.4, 127.0.0.1' });
+    clients.push(spoofed);
+    unwrap(await spoofed.request('room:create', { name: 'Оля' }));
+    unwrap(await spoofed.request('room:addBot', {}));
+    unwrap(await spoofed.request('room:addBot', {}));
+    unwrap(await spoofed.request('room:start', {}));
+    expect(errorCode(await spoofed.request('game:reportBug', { description: 'баг' }))).toBe(
+      'rateLimited',
+    );
+    const other = new TestClient(url, undefined, { 'x-forwarded-for': '1.2.3.4' });
+    clients.push(other);
+    unwrap(await other.request('room:create', { name: 'Оля' }));
+    unwrap(await other.request('room:addBot', {}));
+    unwrap(await other.request('room:addBot', {}));
+    unwrap(await other.request('room:start', {}));
+    unwrap(await other.request('game:reportBug', { description: 'баг' }));
+  }, 60_000);
 });

@@ -11,12 +11,15 @@ import {
 } from '@poker/engine';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import {
+  BUG_DESCRIPTION_MAX_LENGTH,
   CLIENT_EVENTS,
   ERROR_CODES,
   PROTOCOL_VERSION,
   ROOM_CODE_LENGTH,
   actionSchema,
   bidRequestSchema,
+  bugReportRequestSchema,
+  bugReportResponseSchema,
   cardSchema,
   clientMessageSchemas,
   handshakeSchema,
@@ -126,6 +129,22 @@ describe('повідомлення клієнта', () => {
         seat: 2,
       }).success,
     ).toBe(false);
+  });
+
+  it('звіт про баг: опис гравця обрізається й обмежений за довжиною', () => {
+    expect(parseClientMessage('game:reportBug', { description: '  карта зникла  ' })).toEqual({
+      ok: true,
+      data: { description: 'карта зникла' },
+    });
+    expect(bugReportRequestSchema.safeParse({ description: '   ' }).success).toBe(false);
+    expect(
+      bugReportRequestSchema.safeParse({ description: 'x'.repeat(BUG_DESCRIPTION_MAX_LENGTH + 1) })
+        .success,
+    ).toBe(false);
+    expect(bugReportResponseSchema.parse({ url: 'https://github.com/o/r/issues/1' })).toEqual({
+      url: 'https://github.com/o/r/issues/1',
+    });
+    expect(ERROR_CODES).toContain('rateLimited');
   });
 
   it('кожна подія клієнта має схему', () => {

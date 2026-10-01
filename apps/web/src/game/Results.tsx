@@ -6,10 +6,12 @@ import { ScoreSheet } from './ScoreSheet';
 export interface ResultsProps {
   view: WirePlayerView;
   names: readonly string[];
+  /** Відкрити звіт про баг (T52). */
+  onReportBug: () => void;
 }
 
 /** Фінальний екран: підсумки гравців від найбільшого (R-8.4) і вся таблиця гри. */
-export function Results({ view, names }: ResultsProps) {
+export function Results({ view, names, onReportBug }: ResultsProps) {
   const ranking = view.table.summary
     .map((summary, seat) => ({ seat, final: summary.final }))
     .sort((a, b) => b.final - a.final);
@@ -28,6 +30,9 @@ export function Results({ view, names }: ResultsProps) {
         </ul>
       </section>
       <ScoreSheet table={view.table} names={names} />
+      <button type="button" className="button bug-report-button" onClick={onReportBug}>
+        {uk.bugReport.open}
+      </button>
     </div>
   );
 }
