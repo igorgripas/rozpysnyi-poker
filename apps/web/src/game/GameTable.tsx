@@ -1,11 +1,11 @@
-import { type Card, type JokerCall, cardId, createSchedule } from '@poker/engine';
+import { type Card, type JokerCall, type Suit, cardId, createSchedule } from '@poker/engine';
 import type { RoomState, WireAction, WirePlayerView } from '@poker/protocol';
 import { useLayoutEffect, useRef, useState } from 'react';
-import { phaseName, plural, uk } from '../i18n';
+import { phaseName, plural, suitName, uk } from '../i18n';
 import type { ClientError } from '../net/connection';
 import { useClient } from '../net/react';
 import { CardFace } from '../ui/Card';
-import { JokerCallLabel, TrumpLabel } from '../ui/SuitMark';
+import { JokerCallLabel, SuitMark } from '../ui/SuitMark';
 import { useTurnVibration } from '../ui/vibration';
 import { Bidding } from './Bidding';
 import { Hand } from './Hand';
@@ -41,6 +41,32 @@ function pausedView(shown: WirePlayerView, pause: TrickPause, handOver: boolean)
       ? before.taken
       : before.taken.map((n, seat) => (seat === trick.winner ? n + 1 : n));
   return { ...base, taken, trick: [] };
+}
+
+/**
+ * Місце відкритої карти в заголовку роздачі (R-3.1): сама карта розміром як у руці, а без неї —
+ * великий значок козиря (R-3.3) чи «Без козиря» (R-3.4), щоб макет не стрибав між роздачами.
+ */
+function TrumpSlot({ revealed, trump }: { revealed: Card | null; trump: Suit | null }) {
+  if (revealed !== null) {
+    return (
+      <figure className="game__revealed" aria-label={uk.game.revealed}>
+        <CardFace card={revealed} />
+      </figure>
+    );
+  }
+  if (trump !== null) {
+    return (
+      <span
+        className="game__revealed game__revealed--suit"
+        role="img"
+        aria-label={`${uk.game.trump} ${suitName(trump)}`}
+      >
+        <SuitMark suit={trump} />
+      </span>
+    );
+  }
+  return <span className="game__revealed game__revealed--none">{uk.game.noTrump}</span>;
 }
 
 /** Ігровий стіл: роздача, гравці, взятка на столі й рука. */
@@ -147,7 +173,17 @@ export function GameTable({ room, view: latest }: GameTableProps) {
             {view.spec.cards} {plural(view.spec.cards, uk.plural.card)}
           </span>
           <strong className="game__trump">
-            {uk.game.trump} <TrumpLabel trump={view.trump} />
+            {uk.game.trump}{' '}
+            {view.trump === null ? (
+              uk.noTrump
+            ) : (
+              <>
+                <span className="game__trump-mark">
+                  <SuitMark suit={view.trump} />
+                </span>{' '}
+                {suitName(view.trump)}
+              </>
+            )}
           </strong>
           {view.spec.bidding && <span>{uk.bidding.sum(view.bidSum, view.spec.cards)}</span>}
         </div>
@@ -159,12 +195,7 @@ export function GameTable({ room, view: latest }: GameTableProps) {
         >
           {uk.sheet.open}
         </button>
-        {view.revealed !== null && (
-          <figure className="game__revealed">
-            <CardFace card={view.revealed} className="card--small" />
-            <figcaption className="muted">{uk.game.revealed}</figcaption>
-          </figure>
-        )}
+        <TrumpSlot revealed={view.revealed} trump={view.trump} />
       </section>
 
       <p role="status" className="game__turn">
