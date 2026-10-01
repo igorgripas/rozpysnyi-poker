@@ -1,0 +1,65 @@
+# Render Blueprint (T51): сервер гри (web service, free) + клієнт (static site, CDN, не засинає).
+# Кімнати зберігаються в Neon Postgres (DATABASE_URL задає власник під час створення Blueprint).
+# Деплой — лише після зелених перевірок GitHub на коміті в main (autoDeployTrigger: checksPass).
+services:
+  - name: rozpysnyi-poker-api
+    type: web
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npx --yes pnpm@12.6.0 install --frozen-lockfile && npx --yes pnpm@12.6.0 --filter "@poker/server..." build
+    startCommand: node apps/server/dist/main.js
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
+    buildFilter:
+      paths:
+        - apps/server/**
+        - packages/**
+        - package.json
+        - pnpm-lock.yaml
+        - pnpm-workspace.yaml
+        - render.yaml
+    envVars:
+      - key: NODE_VERSION
+        value: '24'
+      - key: DATABASE_URL
+        sync: false
+      # Адреса клієнта для посилань-запрошень у кімнату.
+      - key: PUBLIC_URL
+        value: https://rozpysnyi-poker.onrender.com
+
+  - name: rozpysnyi-poker
+    type: web
+    runtime: static
+    buildCommand: npx --yes pnpm@12.6.0 install --frozen-lockfile && npx --yes pnpm@12.6.0 --filter @poker/web build
+    staticPublishPath: apps/web/dist
+    autoDeployTrigger: checksPass
+    buildFilter:
+      paths:
+        - apps/web/**
+        - packages/**
+        - package.json
+        - pnpm-lock.yaml
+        - pnpm-workspace.yaml
+        - render.yaml
+    envVars:
+      - key: NODE_VERSION
+        value: '24'
+      - key: VITE_SERVER_URL
+        value: https://rozpysnyi-poker-api.onrender.com
+    # Посилання /r/КОД відкривають застосунок (SPA).
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    # Service worker і index.html завжди свіжі, щоб після деплою клієнт оновлювався.
+    headers:
+      - path: /sw.js
+        name: Cache-Control
+        value: no-cache
+      - path: /index.html
+        name: Cache-Control
+        value: no-cache
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
