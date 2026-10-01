@@ -10,3 +10,10 @@ export { PostgresRoomStore } from './postgres.js';
 export type { PostgresRoomStoreOptions } from './postgres.js';
 export { isTransientError, withRetry } from './retry.js';
 export type { RetryOptions } from './retry.js';
+export {
+  BUG_REPORTS_PER_PLAYER,
+  BUG_REPORT_LABELS,
+  GitHubBugReporter,
+  buildBugReport,
+} from './bugReport.js';
+export type { BugContext, BugReport, BugReporter, GitHubBugReporterOptions } from './bugReport.js';

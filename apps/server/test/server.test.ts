@@ -1,5 +1,7 @@
+import { parseReplayFile, replay } from '@poker/engine';
 import { PROTOCOL_VERSION, playerViewSchema, roomStateSchema } from '@poker/protocol';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { BUG_REPORTS_PER_PLAYER, type BugReport } from '../src/bugReport.js';
 import { type PokerServer, createPokerServer } from '../src/server.js';
 import { MemoryRoomStore } from '../src/store.js';
 import { TestClient } from './client.js';
@@ -331,5 +333,86 @@ describe('зупинка сервера (T55)', () => {
     await closing;
     expect((await store.load(session.code))?.seats.map((m) => m.kind)).toEqual(['human', 'bot']);
     // Закритий сервер можна закрити ще раз (afterEach).
+  });
+});
+
+describe('звіт про баг (T52)', () => {
+  /** Перезапускає сервер із підробленим репортером, що памʼятає створені issues. */
+  async function withReporter(fail = false) {
+    const reports: BugReport[] = [];
+    await server.close();
+    server = createPokerServer({
+      random: testRandom(4),
+      botDelayMs: 0,
+      trickPauseMs: 0,
+      bugReporter: {
+        async report(report) {
+          if (fail) throw new Error('GitHub недоступний');
+          reports.push(report);
+          return { url: `https://github.com/o/r/issues/${reports.length}` };
+        },
+      },
+    });
+    url = await server.listen({ port: 0, host: '127.0.0.1' });
+    return reports;
+  }
+
+  it('R-2.3: гравець повідомляє про баг — сервер створює issue з replay-файлом гри', async () => {
+    const reports = await withReporter();
+    const host = client();
+    unwrap(await host.request('room:create', { name: 'Оля' }));
+    expect(errorCode(await host.request('game:reportBug', { description: 'баг' }))).toBe(
+      'notStarted',
+    );
+    unwrap(await host.request('room:addBot', {}));
+    unwrap(await host.request('room:addBot', {}));
+    unwrap(await host.request('room:start', {}));
+    await host.until((c) => (c.view?.legalActions.length ?? 0) > 0);
+
+    expect(unwrap(await host.request('game:reportBug', { description: 'Не той козир' }))).toEqual({
+      url: 'https://github.com/o/r/issues/1',
+    });
+    expect(reports).toHaveLength(1);
+    expect(reports[0]?.body).toContain('Не той козир');
+    const file = parseReplayFile(reports[0]?.body ?? '');
+    const code = host.room?.code ?? '';
+    expect(replay(file.seed, file.log)).toEqual(server.rooms.get(code)?.game);
+  });
+
+  it('звітів від одного гравця не більше ліміту — далі rateLimited', async () => {
+    const reports = await withReporter();
+    const host = client();
+    unwrap(await host.request('room:create', { name: 'Оля' }));
+    unwrap(await host.request('room:addBot', {}));
+    unwrap(await host.request('room:addBot', {}));
+    unwrap(await host.request('room:start', {}));
+    for (let i = 0; i < BUG_REPORTS_PER_PLAYER; i++) {
+      unwrap(await host.request('game:reportBug', { description: `баг ${i}` }));
+    }
+    expect(errorCode(await host.request('game:reportBug', { description: 'ще' }))).toBe(
+      'rateLimited',
+    );
+    expect(reports).toHaveLength(BUG_REPORTS_PER_PLAYER);
+  });
+
+  it('без налаштованого репортера чи при збої GitHub — unavailable', async () => {
+    const host = client();
+    unwrap(await host.request('room:create', { name: 'Оля' }));
+    unwrap(await host.request('room:addBot', {}));
+    unwrap(await host.request('room:addBot', {}));
+    unwrap(await host.request('room:start', {}));
+    expect(errorCode(await host.request('game:reportBug', { description: 'баг' }))).toBe(
+      'unavailable',
+    );
+
+    await withReporter(true);
+    const again = client();
+    unwrap(await again.request('room:create', { name: 'Оля' }));
+    unwrap(await again.request('room:addBot', {}));
+    unwrap(await again.request('room:addBot', {}));
+    unwrap(await again.request('room:start', {}));
+    expect(errorCode(await again.request('game:reportBug', { description: 'баг' }))).toBe(
+      'unavailable',
+    );
   });
 });

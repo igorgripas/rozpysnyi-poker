@@ -24,6 +24,7 @@ import {
   type RoomStatus,
   type Session,
 } from '@poker/protocol';
+import type { BugContext } from './bugReport.js';
 import { type RandomSource, cryptoRandom } from './random.js';
 import { ROOM_SNAPSHOT_VERSION, type RoomSnapshot, type RoomStore } from './store.js';
 
@@ -505,6 +506,20 @@ export class RoomManager {
     const seat = room?.seats.findIndex((m) => m.id === playerId) ?? -1;
     if (room?.game == null || seat < 0) return null;
     return viewFor(room.game, seat);
+  }
+
+  /** Що потрібно для звіту про баг (T52): гра й місце гравця; до старту гри — `notStarted`. */
+  bugContext(code: string, playerId: string): Result<BugContext> {
+    const access = this.access(code, playerId);
+    if (!access.ok) return access;
+    const { room, member } = access.data;
+    if (room.game === null) return fail('notStarted', 'Гра ще не почалася');
+    return ok({
+      code: room.code,
+      seat: room.seats.indexOf(member),
+      kinds: room.seats.map((m) => m.kind),
+      game: room.game,
+    });
   }
 
   /** Скасовує заплановані ходи (зупинка сервера); стан лишається у сховищі. */

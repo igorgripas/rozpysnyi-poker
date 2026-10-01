@@ -8,6 +8,7 @@ import { CardFace } from '../ui/Card';
 import { JokerCallLabel, SuitMark } from '../ui/SuitMark';
 import { useTurnVibration } from '../ui/vibration';
 import { Bidding } from './Bidding';
+import { BugReportDialog } from './BugReportDialog';
 import { Hand } from './Hand';
 import { JokerDialog } from './JokerDialog';
 import { Results } from './Results';
@@ -79,6 +80,7 @@ export function GameTable({ room, view: latest }: GameTableProps) {
   const client = useClient();
   const [error, setError] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [bugReportOpen, setBugReportOpen] = useState(false);
   const pending = useRef(false);
   const names = room.seats.map((seat) => seat.name);
   const nameOf = (seat: number) => names[seat] ?? `#${seat + 1}`;
@@ -135,7 +137,16 @@ export function GameTable({ room, view: latest }: GameTableProps) {
     }
   }, [pause]);
 
-  if (view.status === 'finished') return <Results view={view} names={names} />;
+  const bugReport = bugReportOpen && <BugReportDialog onClose={() => setBugReportOpen(false)} />;
+
+  if (view.status === 'finished') {
+    return (
+      <>
+        <Results view={view} names={names} onReportBug={() => setBugReportOpen(true)} />
+        {bugReport}
+      </>
+    );
+  }
 
   // Суперники за годинниковою стрілкою від вас, ви — останні.
   const order = Array.from(
@@ -313,8 +324,18 @@ export function GameTable({ room, view: latest }: GameTableProps) {
       />
 
       {sheetOpen && (
-        <SheetDialog table={view.table} names={names} onClose={() => setSheetOpen(false)} />
+        <SheetDialog
+          table={view.table}
+          names={names}
+          onClose={() => setSheetOpen(false)}
+          onReportBug={() => {
+            setSheetOpen(false);
+            setBugReportOpen(true);
+          }}
+        />
       )}
+
+      {bugReport}
 
       {joker !== null && jokerCalls.length > 0 && (
         <JokerDialog

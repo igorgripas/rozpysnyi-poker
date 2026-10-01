@@ -1,3 +1,4 @@
+import { GitHubBugReporter } from './bugReport.js';
 import { PostgresRoomStore } from './postgres.js';
 import { createPokerServer } from './server.js';
 
@@ -11,10 +12,20 @@ const store =
         onError: (error) => console.error('Postgres: обрив зʼєднання', error),
       })
     : undefined;
+// BUG_REPORT_TOKEN — токен GitHub лише на запис issues: з ним працює кнопка «Повідомити про баг».
+const bugReportToken = process.env.BUG_REPORT_TOKEN;
+const bugReporter =
+  bugReportToken !== undefined && bugReportToken !== ''
+    ? new GitHubBugReporter({
+        token: bugReportToken,
+        repo: process.env.BUG_REPORT_REPO ?? 'igorgripas/rozpysnyi-poker',
+      })
+    : undefined;
 const server = createPokerServer({
   publicUrl: process.env.PUBLIC_URL ?? '',
   logger: true,
   ...(store !== undefined && { store }),
+  ...(bugReporter !== undefined && { bugReporter }),
 });
 await server.listen({
   port: Number(process.env.PORT ?? 3000),

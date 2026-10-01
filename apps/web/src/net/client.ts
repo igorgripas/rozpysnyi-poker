@@ -1,4 +1,5 @@
 import {
+  type BugReportResponse,
   type ClientEvent,
   type ClientMessageInput,
   type RoomState,
@@ -38,7 +39,10 @@ export interface ClientState {
   readonly resumeError: string | null;
 }
 
-type RoomEvent = Exclude<ClientEvent, 'room:create' | 'room:join' | 'room:resume'>;
+type RoomEvent = Exclude<
+  ClientEvent,
+  'room:create' | 'room:join' | 'room:resume' | 'game:reportBug'
+>;
 
 /** Стан клієнта поверх зʼєднання: сесія, кімната й погляд на гру. */
 export class PokerClient {
@@ -167,6 +171,14 @@ export class PokerClient {
     }
     const result = await this.connection.request(event, payload);
     return result.ok ? null : result.error;
+  }
+
+  /** Звіт про баг (AUTOPILOT §6): сервер створює issue з replay гри й повертає його адресу. */
+  async reportBug(description: string): Promise<ClientResult<BugReportResponse>> {
+    if (this.state.connection !== 'online' && this.state.connection !== 'connecting') {
+      return { ok: false, error: NETWORK_ERROR };
+    }
+    return this.connection.request('game:reportBug', { description });
   }
 }
 

@@ -13,6 +13,7 @@ import {
 } from '@poker/protocol';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { Server, type Socket } from 'socket.io';
+import { BUG_REPORTS_PER_PLAYER, type BugReporter, buildBugReport } from './bugReport.js';
 import type { RandomSource } from './random.js';
 import { RoomManager, fail } from './rooms.js';
 import type { RoomStore } from './store.js';
@@ -32,6 +33,8 @@ export interface PokerServerOptions {
   store?: RoomStore;
   /** Як часто чистити сховище від старих ігор, мс (перше очищення — під час старту). */
   cleanupIntervalMs?: number;
+  /** Куди надсилати звіти гравців про баги; без нього звіти недоступні. */
+  bugReporter?: BugReporter;
 }
 
 /** Очищення сховища за замовчуванням — раз на 6 годин. */
@@ -161,6 +164,34 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
     };
   }
 
+  /** Скільки звітів про баги надіслав кожен гравець: `code/playerId` → кількість. */
+  const bugReports = new Map<string, number>();
+
+  async function reportBug(
+    session: NonNullable<SocketData['session']>,
+    description: string,
+  ): Promise<Result<ClientResponses['game:reportBug']>> {
+    const context = rooms.bugContext(session.code, session.playerId);
+    if (!context.ok) return context;
+    const reporter = options.bugReporter;
+    if (reporter === undefined) {
+      return fail('unavailable', 'Звіти про баги на цьому сервері не налаштовані');
+    }
+    const k = key(session.code, session.playerId);
+    const sent = bugReports.get(k) ?? 0;
+    if (sent >= BUG_REPORTS_PER_PLAYER) {
+      return fail('rateLimited', 'Ви вже надіслали кілька звітів з цієї гри, дякуємо!');
+    }
+    bugReports.set(k, sent + 1);
+    try {
+      return { ok: true, data: await reporter.report(buildBugReport(context.data, description)) };
+    } catch (error) {
+      bugReports.set(k, sent);
+      app.log.error({ err: error }, 'Не вдалося створити звіт про баг');
+      return fail('unavailable', 'Не вдалося надіслати звіт, спробуйте пізніше');
+    }
+  }
+
   const handlers: { [E in ClientEvent]: Handler<E> } = {
     'room:create': entering(({ name }) => rooms.create(name)),
     // Після рестарту кімнати ще немає в памʼяті: підвантажуємо її з бази за кодом.
@@ -188,6 +219,11 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
     'game:play': withSession(({ code, playerId }, { card, call }) =>
       rooms.play(code, playerId, card, call),
     ),
+    'game:reportBug': (socket, { description }) => {
+      const session = socket.data.session;
+      if (session === null) return fail('notInRoom', 'Спершу створіть кімнату або увійдіть у неї');
+      return reportBug(session, description);
+    },
   };
 
   io.use((_socket, next) => {

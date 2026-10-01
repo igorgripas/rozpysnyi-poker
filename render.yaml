@@ -27,6 +27,11 @@ services:
       # Адреса клієнта для посилань-запрошень у кімнату (ім'я rozpysnyi-poker на Render зайняте — суфікс -pzgu).
       - key: PUBLIC_URL
         value: https://rozpysnyi-poker-pzgu.onrender.com
+      # Кнопка «Повідомити про баг» (T52): fine-grained PAT лише на цей репозиторій, право Issues (read/write).
+      - key: BUG_REPORT_TOKEN
+        sync: false
+      - key: BUG_REPORT_REPO
+        value: igorgripas/rozpysnyi-poker
 
   - name: rozpysnyi-poker
     type: web
