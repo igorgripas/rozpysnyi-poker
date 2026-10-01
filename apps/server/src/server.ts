@@ -180,6 +180,9 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
     'room:settings': withSession(({ code, playerId }, { turnTimerSec }) =>
       rooms.settings(code, playerId, turnTimerSec),
     ),
+    'room:options': withSession(({ code, playerId }, options) =>
+      rooms.options(code, playerId, options),
+    ),
     'room:start': withSession(({ code, playerId }) => rooms.start(code, playerId)),
     'room:replaceWithBot': withSession(({ code, playerId }, { seat }) =>
       rooms.replaceWithBot(code, playerId, seat),

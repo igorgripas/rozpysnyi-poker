@@ -33,6 +33,19 @@ export function forbiddenDealerBid(cards: number, othersSum: number): number | n
   return forbidden >= 0 && forbidden <= cards ? forbidden : null;
 }
 
+/** Скільки нулів поспіль можна замовити з опцією R-10.3. */
+export const MAX_ZERO_STREAK = 3;
+
+/**
+ * Чи заборонене гравцеві замовлення 0 за R-10.3: у трьох попередніх роздачах із замовленням
+ * він замовив 0. `previousBids` — його замовлення в попередніх роздачах гри по порядку;
+ * `null` — роздача без замовлень (мізер, відіграш), вона послідовність не змінює.
+ */
+export function zeroBidForbidden(previousBids: readonly (number | null)[]): boolean {
+  const bids = previousBids.filter((bid): bid is number => bid !== null);
+  return bids.length >= MAX_ZERO_STREAK && bids.slice(-MAX_ZERO_STREAK).every((bid) => bid === 0);
+}
+
 function isInRange(cards: number, bid: number): boolean {
   return Number.isInteger(bid) && bid >= 0 && bid <= cards;
 }
@@ -41,12 +54,13 @@ function isInRange(cards: number, bid: number): boolean {
  * Легальні замовлення для наступного гравця за порядком R-4.2.
  * `previousBids` — замовлення, вже зроблені в цій роздачі, у порядку черги.
  * Діапазон 0…K (R-4.3); для роздаючого (останнього) виключається заборонене значення (R-4.4),
- * крім роздач з 1–3 картами (R-4.6).
+ * крім роздач з 1–3 картами (R-4.6). `zeroForbidden` — 0 заборонений за R-10.3.
  */
 export function legalBids(
   cards: number,
   previousBids: readonly number[],
   playerCount: number,
+  zeroForbidden = false,
 ): number[] {
   assertPlayerCount(playerCount);
   if (!Number.isInteger(cards) || cards < 1) {
@@ -68,7 +82,7 @@ export function legalBids(
       )
     : null;
   const bids: number[] = [];
-  for (let bid = 0; bid <= cards; bid++) {
+  for (let bid = zeroForbidden ? 1 : 0; bid <= cards; bid++) {
     if (bid !== forbidden) bids.push(bid);
   }
   return bids;

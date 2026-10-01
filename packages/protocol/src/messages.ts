@@ -1,6 +1,12 @@
 import { MAX_PLAYERS } from '@poker/engine';
 import { z } from 'zod';
-import { cardSchema, jokerCallSchema, playerViewSchema, seatSchema } from './game.js';
+import {
+  cardSchema,
+  gameOptionsSchema,
+  jokerCallSchema,
+  playerViewSchema,
+  seatSchema,
+} from './game.js';
 import { PROTOCOL_VERSION } from './version.js';
 
 /** Рукостискання: клієнт передає його в `auth` під час підключення Socket.IO. */
@@ -53,6 +59,8 @@ export const removeBotRequestSchema = z.strictObject({ seat: seatSchema });
 export const replaceWithBotRequestSchema = z.strictObject({ seat: seatSchema });
 /** Налаштування кімнати, які хост змінює до старту (R-9.3). */
 export const roomSettingsRequestSchema = z.strictObject({ turnTimerSec: turnTimerSchema });
+/** Опції кімнати (§10), які хост вмикає до старту (R-10.1). */
+export const roomOptionsRequestSchema = gameOptionsSchema;
 /** Замовлення (R-4.3); місце визначає сервер за сесією. */
 export const bidRequestSchema = z.strictObject({ bid: z.number().int().min(0) });
 /** Хід картою; оголошення — лише для джокера (§6). Місце визначає сервер. */
@@ -70,6 +78,7 @@ export const clientMessageSchemas = {
   'room:removeBot': removeBotRequestSchema,
   'room:shuffle': emptyRequestSchema,
   'room:settings': roomSettingsRequestSchema,
+  'room:options': roomOptionsRequestSchema,
   'room:start': emptyRequestSchema,
   'room:replaceWithBot': replaceWithBotRequestSchema,
   'game:bid': bidRequestSchema,
@@ -114,6 +123,8 @@ export const roomStateSchema = z.strictObject({
   turnTimerSec: turnTimerSchema,
   /** Коли сплине час поточного ходу (мс від епохи Unix) або `null`, якщо таймер не йде. */
   turnDeadline: z.number().int().nonnegative().nullable(),
+  /** Опції кімнати видно всім (R-10.1). */
+  options: gameOptionsSchema,
 });
 
 export const ERROR_CODES = [
@@ -160,6 +171,7 @@ export interface ClientResponses {
   'room:removeBot': null;
   'room:shuffle': null;
   'room:settings': null;
+  'room:options': null;
   'room:start': null;
   'room:replaceWithBot': null;
   'game:bid': null;

@@ -52,6 +52,39 @@ describe('евристичний бот: замовлення', () => {
   });
 });
 
+describe('евристичний бот: опції кімнати (§10)', () => {
+  it('R-10.2: у «Темній» замовляє наосліп — за середньою часткою взяток', () => {
+    const seen = scenario({
+      phase: 'dark',
+      trump: 'spades',
+      hand: 'S14 S13 S12 S11 S10 S9 S8 S7 S6',
+    });
+    const view = { ...seen, blind: true, hand: [] };
+    const action = bot.act(view);
+    expect(view.legalActions).toContainEqual(action);
+    // 9 карт на 4 гравців: у середньому 2,25 взятки — не пас і не «всі».
+    expect(action.type === 'bid' && action.bid).toBeGreaterThanOrEqual(1);
+    expect(action.type === 'bid' && action.bid).toBeLessThanOrEqual(3);
+  });
+
+  it('R-10.3: коли 0 заборонений, замовляє інше легальне значення', () => {
+    const view = scenario({ trump: 'spades', hand: 'H6 H7 D6 D8 C6 C9' });
+    const legalActions = view.legalActions.filter((a) => a.type === 'bid' && a.bid !== 0);
+    const action = bot.act({ ...view, zeroForbidden: true, legalActions });
+    expect(action).toEqual({ type: 'bid', seat: 0, bid: 1 });
+  });
+
+  it('R-10.1–R-10.3: боти грають повну гру з увімкненими опціями', () => {
+    for (let players = MIN_PLAYERS; players <= MAX_PLAYERS; players++) {
+      const bots = Array.from({ length: players }, () => createHeuristicBot());
+      const state = playGame(players, bots, { dark: true, zeroLimit: true });
+      expect(state.status).toBe('finished');
+      expect(state.options).toEqual({ dark: true, zeroLimit: true });
+      expect(state.history.some((record) => record.spec.phase === 'dark')).toBe(true);
+    }
+  });
+});
+
 describe('евристичний бот: розіграш на замовлення', () => {
   it('R-5.4: коли треба брати і ходить останнім, бере найменшою картою, що перебиває', () => {
     const view = scenario({

@@ -57,12 +57,13 @@ export const actionSchema = z.discriminatedUnion('type', [
   }),
 ]);
 
-/** Етапи гри R-2.1. */
+/** Етапи гри R-2.1; «Темна» — з опцією R-10.2. */
 export const handPhaseSchema = z.enum([
   'ascending',
   'maximum',
   'suits',
   'noTrump',
+  'dark',
   'misere',
   'comeback',
 ]);
@@ -119,30 +120,49 @@ export const completedTrickSchema = z.strictObject({
   winner: seatSchema,
 });
 
+/** Опції кімнати (§10): за замовчуванням вимкнені, фіксуються на старті гри (R-10.1). */
+export const gameOptionsSchema = z.strictObject({
+  /** «Темна» (R-10.2). */
+  dark: z.boolean(),
+  /** «Не більше трьох нулів поспіль» (R-10.3). */
+  zeroLimit: z.boolean(),
+});
+
 export const gameStatusSchema = z.enum(['bidding', 'playing', 'finished']);
 
-/** Погляд гравця (`viewFor`): лише власна рука й публічні дані. */
-export const playerViewSchema = z.strictObject({
-  seat: seatSchema,
-  playerCount: playerCountSchema,
-  status: gameStatusSchema,
-  turn: seatSchema.nullable(),
-  spec: handSpecSchema,
-  dealer: seatSchema,
-  trump: suitSchema.nullable(),
-  revealed: cardSchema.nullable(),
-  hand: z.array(cardSchema),
-  handSizes: z.array(countSchema),
-  bids: z.array(countSchema.nullable()),
-  bidSum: countSchema,
-  forbiddenBid: countSchema.nullable(),
-  taken: z.array(countSchema),
-  leader: seatSchema,
-  trick: z.array(trickCardSchema),
-  lastTrick: completedTrickSchema.nullable(),
-  table: scoreTableSchema,
-  legalActions: z.array(actionSchema),
-});
+/**
+ * Погляд гравця (`viewFor`): лише власна рука й публічні дані.
+ * Під час замовлень наосліп у «Темній» рука порожня (R-10.2).
+ */
+export const playerViewSchema = z
+  .strictObject({
+    seat: seatSchema,
+    playerCount: playerCountSchema,
+    options: gameOptionsSchema,
+    status: gameStatusSchema,
+    turn: seatSchema.nullable(),
+    spec: handSpecSchema,
+    dealer: seatSchema,
+    trump: suitSchema.nullable(),
+    revealed: cardSchema.nullable(),
+    blind: z.boolean(),
+    hand: z.array(cardSchema),
+    handSizes: z.array(countSchema),
+    bids: z.array(countSchema.nullable()),
+    bidSum: countSchema,
+    forbiddenBid: countSchema.nullable(),
+    zeroForbidden: z.boolean(),
+    taken: z.array(countSchema),
+    leader: seatSchema,
+    trick: z.array(trickCardSchema),
+    lastTrick: completedTrickSchema.nullable(),
+    table: scoreTableSchema,
+    legalActions: z.array(actionSchema),
+  })
+  .refine((view) => !view.blind || view.hand.length === 0, {
+    message: 'Під час замовлень наосліп рука гравцеві не надсилається (R-10.2)',
+    path: ['hand'],
+  });
 
 export type WireCard = z.infer<typeof cardSchema>;
 export type WireJokerCall = z.infer<typeof jokerCallSchema>;

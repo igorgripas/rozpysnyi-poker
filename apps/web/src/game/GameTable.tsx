@@ -8,7 +8,7 @@ import { CardFace } from '../ui/Card';
 import { JokerCallLabel, SuitMark } from '../ui/SuitMark';
 import { useTurnVibration } from '../ui/vibration';
 import { Bidding } from './Bidding';
-import { Hand } from './Hand';
+import { BlindHand, Hand } from './Hand';
 import { JokerDialog } from './JokerDialog';
 import { Results } from './Results';
 import { SheetDialog } from './SheetDialog';
@@ -81,7 +81,7 @@ export function GameTable({ room, view: latest }: GameTableProps) {
   const pending = useRef(false);
   const names = room.seats.map((seat) => seat.name);
   const nameOf = (seat: number) => names[seat] ?? `#${seat + 1}`;
-  const total = createSchedule(view.playerCount).length;
+  const total = createSchedule(view.playerCount, view.options).length;
 
   const yourTurn = view.status !== 'finished' && view.turn === view.seat;
   useTurnVibration(yourTurn);
@@ -295,12 +295,16 @@ export function GameTable({ room, view: latest }: GameTableProps) {
         </p>
       )}
 
-      <Hand
-        cards={view.hand}
-        legal={legal}
-        resetKey={handReset}
-        onPlay={(card) => (card.kind === 'joker' ? setJoker(card) : play(card))}
-      />
+      {view.blind ? (
+        <BlindHand count={view.handSizes[view.seat] ?? 0} />
+      ) : (
+        <Hand
+          cards={view.hand}
+          legal={legal}
+          resetKey={handReset}
+          onPlay={(card) => (card.kind === 'joker' ? setJoker(card) : play(card))}
+        />
+      )}
 
       {sheetOpen && (
         <SheetDialog table={view.table} names={names} onClose={() => setSheetOpen(false)} />

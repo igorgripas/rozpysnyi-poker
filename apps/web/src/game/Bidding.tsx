@@ -14,15 +14,25 @@ type QueueState = 'bid' | 'turn' | 'waiting';
  * Замовлення (R-4.2–R-4.5): черга замовлень у порядку ходу з уже зробленими замовленнями,
  * сума й заборонене для роздаючого значення; на своєму ході — кнопки 0…K, де заборонене
  * значення вимкнене й пояснене. У роздачах з 1–3 картами заборони немає (R-4.6).
+ * Четвертий нуль поспіль (опція R-10.3) теж вимкнений і пояснений.
  */
 export function Bidding({ view, nameOf, onBid }: BiddingProps) {
   const hintId = useId();
+  const zeroHintId = useId();
   const cards = view.spec.cards;
   const legal = new Set(
     view.legalActions.flatMap((action) => (action.type === 'bid' ? [action.bid] : [])),
   );
   const myTurn = view.turn === view.seat && legal.size > 0;
   const forbidden = view.turn === view.dealer ? view.forbiddenBid : null;
+
+  /** Пояснення вимкненого значення: R-4.4 для роздаючого, R-10.3 для нуля. */
+  function describedBy(bid: number): string | undefined {
+    const ids = [bid === forbidden && hintId, bid === 0 && view.zeroForbidden && zeroHintId].filter(
+      Boolean,
+    );
+    return ids.length > 0 ? ids.join(' ') : undefined;
+  }
 
   // R-4.2: першим замовляє лівий сусіда роздаючого, роздаючий — останній.
   const queue = Array.from(
@@ -71,6 +81,11 @@ export function Bidding({ view, nameOf, onBid }: BiddingProps) {
           {uk.bidding.forbidden(forbidden, cards)}
         </p>
       )}
+      {myTurn && view.zeroForbidden && (
+        <p id={zeroHintId} className="bidding__hint">
+          {uk.bidding.zeroForbidden}
+        </p>
+      )}
       {myTurn && (
         <div role="group" aria-label={uk.bidding.yours} className="bidding__options">
           {Array.from({ length: cards + 1 }, (_, bid) => (
@@ -79,7 +94,7 @@ export function Bidding({ view, nameOf, onBid }: BiddingProps) {
               type="button"
               className="button bidding__option"
               disabled={!legal.has(bid)}
-              aria-describedby={bid === forbidden ? hintId : undefined}
+              aria-describedby={describedBy(bid)}
               onClick={() => onBid(bid)}
             >
               {bid}

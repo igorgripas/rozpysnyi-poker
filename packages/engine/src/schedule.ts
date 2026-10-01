@@ -2,9 +2,22 @@ import { SUITS, type Suit, assertPlayerCount, maxCardsPerHand } from './cards.js
 import type { Rng } from './rng.js';
 
 /**
- * Етап гри (R-2.1): «Зростання», «Максимум», «Масті», «Безкозирка», «Мізер», «Відіграш».
+ * Етап гри (R-2.1): «Зростання», «Максимум», «Масті», «Безкозирка», «Темна» (R-10.2),
+ * «Мізер», «Відіграш».
  */
-export type HandPhase = 'ascending' | 'maximum' | 'suits' | 'noTrump' | 'misere' | 'comeback';
+export type HandPhase =
+  'ascending' | 'maximum' | 'suits' | 'noTrump' | 'dark' | 'misere' | 'comeback';
+
+/** Опції кімнати (§10): фіксуються разом із грою (R-10.1). */
+export interface GameOptions {
+  /** «Темна» (R-10.2): роздача наосліп перед мізером, бали ×2. */
+  readonly dark: boolean;
+  /** «Не більше трьох нулів поспіль» (R-10.3). */
+  readonly zeroLimit: boolean;
+}
+
+/** За замовчуванням усі опції вимкнені (R-10.1). */
+export const DEFAULT_OPTIONS: GameOptions = { dark: false, zeroLimit: false };
 
 /**
  * Як визначається козир у роздачі:
@@ -28,8 +41,11 @@ export interface HandSpec {
   readonly bidding: boolean;
 }
 
-/** Генерує фіксовану послідовність роздач для N гравців (R-2.1). */
-export function createSchedule(playerCount: number): HandSpec[] {
+/** Генерує фіксовану послідовність роздач для N гравців (R-2.1, R-10.2). */
+export function createSchedule(
+  playerCount: number,
+  options: GameOptions = DEFAULT_OPTIONS,
+): HandSpec[] {
   const max = maxCardsPerHand(playerCount);
   const specs: Omit<HandSpec, 'index'>[] = [];
   const revealed: TrumpRule = { kind: 'revealed' };
@@ -46,6 +62,10 @@ export function createSchedule(playerCount: number): HandSpec[] {
   }
   for (let i = 0; i < playerCount; i++) {
     specs.push({ phase: 'noTrump', cards: max, trump: none, bidding: true });
+  }
+  if (options.dark) {
+    // R-10.2: козир — з відкритої карти колоди, як у R-3.1.
+    specs.push({ phase: 'dark', cards: max, trump: revealed, bidding: true });
   }
   specs.push({ phase: 'misere', cards: max, trump: none, bidding: false });
   specs.push({ phase: 'comeback', cards: max, trump: none, bidding: false });

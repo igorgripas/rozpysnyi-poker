@@ -127,4 +127,39 @@ describe('кімната очікування', () => {
     expect(writeText).toHaveBeenCalledWith(`${window.location.origin}/r/ABCDE`);
     expect(await screen.findByRole('status')).toHaveTextContent('Посилання скопійовано');
   });
+
+  it('R-10.1: опції за замовчуванням вимкнені; хост вмикає «Темну», надсилаючи обидві опції', async () => {
+    const { connection, user } = await inRoom(roomState());
+    const dark = screen.getByRole('switch', { name: /Темна/ });
+    const zeros = screen.getByRole('switch', { name: /трьох нулів/ });
+    expect(dark).not.toBeChecked();
+    expect(zeros).not.toBeChecked();
+    await user.click(dark);
+    expect(connection.requests).toEqual([
+      { event: 'room:options', payload: { dark: true, zeroLimit: false } },
+    ]);
+    act(() => connection.pushRoom(roomState({ options: { dark: true, zeroLimit: false } })));
+    expect(screen.getByRole('switch', { name: /Темна/ })).toBeChecked();
+    await user.click(screen.getByRole('switch', { name: /трьох нулів/ }));
+    expect(connection.requests.at(-1)).toEqual({
+      event: 'room:options',
+      payload: { dark: true, zeroLimit: true },
+    });
+  });
+
+  it('R-10.1: гість бачить, які опції ввімкнено, але не може їх змінити', async () => {
+    await inRoom(
+      roomState({
+        you: 'p2',
+        seats: [human('p1', 'Оля'), human('p2', 'Петро')],
+        options: { dark: false, zeroLimit: true },
+      }),
+    );
+    const dark = screen.getByRole('switch', { name: /Темна/ });
+    const zeros = screen.getByRole('switch', { name: /трьох нулів/ });
+    expect(dark).not.toBeChecked();
+    expect(zeros).toBeChecked();
+    expect(dark).toBeDisabled();
+    expect(zeros).toBeDisabled();
+  });
 });

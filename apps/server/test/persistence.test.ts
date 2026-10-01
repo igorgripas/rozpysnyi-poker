@@ -494,3 +494,87 @@ describe('таймер ходу (R-9.3)', () => {
     after.close();
   });
 });
+
+describe('опції кімнати (§10)', () => {
+  it('R-10.1: опції за замовчуванням вимкнені; хост вмикає їх до старту, їх бачать усі', async () => {
+    const rooms = manager(new MemoryRoomStore());
+    const host = unwrap(await rooms.create('Оля'));
+    const guest = unwrap(rooms.join(host.code, 'Петро'));
+    const off = { dark: false, zeroLimit: false };
+    const on = { dark: true, zeroLimit: true };
+    expect(rooms.roomState(host.code, guest.playerId).options).toEqual(off);
+    expect(errorCode(rooms.options(host.code, guest.playerId, on))).toBe('notHost');
+    unwrap(rooms.options(host.code, host.playerId, on));
+    const state = rooms.roomState(host.code, guest.playerId);
+    expect(roomStateSchema.parse(state)).toEqual(state);
+    expect(state.options).toEqual(on);
+    unwrap(rooms.options(host.code, host.playerId, { dark: true, zeroLimit: false }));
+    unwrap(rooms.addBot(host.code, host.playerId));
+    unwrap(rooms.start(host.code, host.playerId));
+    // Опції фіксуються разом із грою й під час гри не змінюються.
+    expect(rooms.get(host.code)?.game?.options).toEqual({ dark: true, zeroLimit: false });
+    expect(rooms.view(host.code, guest.playerId)?.options).toEqual({
+      dark: true,
+      zeroLimit: false,
+    });
+    expect(errorCode(rooms.options(host.code, host.playerId, off))).toBe('alreadyStarted');
+    expect(rooms.roomState(host.code, guest.playerId).options).toEqual({
+      dark: true,
+      zeroLimit: false,
+    });
+    rooms.close();
+  });
+
+  it('R-10.1: опції лобі й гри переживають рестарт: гра відтворюється з ними', async () => {
+    const store = new MemoryRoomStore();
+    const before = manager(store);
+    const host = unwrap(await before.create('Оля'));
+    unwrap(before.join(host.code, 'Петро'));
+    unwrap(before.join(host.code, 'Марта'));
+    unwrap(before.options(host.code, host.playerId, { dark: true, zeroLimit: true }));
+    await shutdown(before);
+
+    const lobby = manager(store, 2);
+    await lobby.load(host.code);
+    expect(lobby.roomState(host.code, host.playerId).options).toEqual({
+      dark: true,
+      zeroLimit: true,
+    });
+    unwrap(lobby.start(host.code, host.playerId));
+    playHumans(lobby, host.code, 30);
+    const game = lobby.get(host.code)?.game as GameState;
+    expect(gameLog(game).options).toEqual({ dark: true, zeroLimit: true });
+    await shutdown(lobby);
+
+    const after = manager(store, 3);
+    await after.load(host.code);
+    expect(after.get(host.code)?.game).toEqual(game);
+    expect(after.roomState(host.code, host.playerId).options).toEqual({
+      dark: true,
+      zeroLimit: true,
+    });
+    after.close();
+  });
+
+  it('R-10.2: у «Темній» сервер не віддає гравцеві руку, доки не замовить роздаючий', async () => {
+    const rooms = manager(new MemoryRoomStore());
+    const host = unwrap(await rooms.create('Оля'));
+    const others = [unwrap(rooms.join(host.code, 'Петро')), unwrap(rooms.join(host.code, 'Марта'))];
+    unwrap(rooms.options(host.code, host.playerId, { dark: true, zeroLimit: false }));
+    unwrap(rooms.start(host.code, host.playerId));
+    const game = () => rooms.get(host.code)?.game as GameState;
+    while (game().hand.spec.phase !== 'dark') playHumans(rooms, host.code, 1);
+    for (let bid = 0; bid < 3; bid++) {
+      for (const p of [host, ...others]) {
+        const view = rooms.view(host.code, p.playerId);
+        expect(view).toMatchObject({ blind: true, hand: [] });
+      }
+      playHumans(rooms, host.code, 1);
+    }
+    expect(game().status).toBe('playing');
+    for (const p of [host, ...others]) {
+      expect(rooms.view(host.code, p.playerId)?.hand).toHaveLength(12);
+    }
+    rooms.close();
+  });
+});

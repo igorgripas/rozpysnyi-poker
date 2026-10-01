@@ -1,9 +1,16 @@
-import { biddingOrder, forbiddenDealerBid, legalBids } from './bidding.js';
+import { biddingOrder, forbiddenDealerBid, legalBids, zeroBidForbidden } from './bidding.js';
 import { type Card, type Suit, assertPlayerCount, cardId, createDeck, isJoker } from './cards.js';
 import { deal } from './deal.js';
 import { ENGINE_LOG_VERSION, migrateLog } from './log.js';
 import { createRng, shuffle } from './rng.js';
-import { type HandSpec, chooseFirstDealer, createSchedule, dealerForHand } from './schedule.js';
+import {
+  DEFAULT_OPTIONS,
+  type GameOptions,
+  type HandSpec,
+  chooseFirstDealer,
+  createSchedule,
+  dealerForHand,
+} from './schedule.js';
 import { type HandRecord, type ScoreTable, buildScoreTable } from './score.js';
 import {
   type JokerCall,
@@ -32,6 +39,8 @@ export type Action =
 export interface GameLog {
   readonly version: number;
   readonly playerCount: number;
+  /** Опції кімнати (R-10.1); у логах, збережених до §10, їх немає — тоді всі вимкнені. */
+  readonly options?: GameOptions;
   readonly actions: readonly Action[];
 }
 
@@ -68,6 +77,8 @@ export type GameStatus = 'bidding' | 'playing' | 'finished';
 export interface GameState {
   readonly seed: number;
   readonly playerCount: number;
+  /** Опції кімнати, зафіксовані на старті гри (R-10.1). */
+  readonly options: GameOptions;
   readonly firstDealer: number;
   /** Seed тасування кожної роздачі, виведені з головного seed (R-2.3). */
   readonly handSeeds: readonly number[];
@@ -101,7 +112,7 @@ function startHand(
   index: number,
 ): Pick<GameState, 'hand' | 'status' | 'turn'> {
   const { playerCount } = state;
-  const spec = createSchedule(playerCount)[index] as HandSpec;
+  const spec = createSchedule(playerCount, state.options)[index] as HandSpec;
   const dealer = dealerForHand(state.firstDealer, index, playerCount);
   const deck = shuffle(createDeck(), createRng(state.handSeeds[index] as number));
   const { hands, rest } = deal(deck, playerCount, spec.cards);
@@ -126,15 +137,32 @@ function startHand(
   };
 }
 
-/** Нова гра: seed визначає першого роздаючого (R-2.2) і тасування всіх роздач (R-2.3). */
-export function createGame(seed: number, playerCount: number): GameState {
+/** Опції з усіма полями: відсутні вважаються вимкненими (R-10.1). */
+function normalizeOptions(options: Partial<GameOptions> | undefined): GameOptions {
+  return {
+    dark: options?.dark ?? DEFAULT_OPTIONS.dark,
+    zeroLimit: options?.zeroLimit ?? DEFAULT_OPTIONS.zeroLimit,
+  };
+}
+
+/**
+ * Нова гра: seed визначає першого роздаючого (R-2.2) і тасування всіх роздач (R-2.3).
+ * Опції кімнати фіксуються разом із грою й далі не змінюються (R-10.1).
+ */
+export function createGame(
+  seed: number,
+  playerCount: number,
+  options: Partial<GameOptions> = DEFAULT_OPTIONS,
+): GameState {
   assertPlayerCount(playerCount);
+  const fixed = normalizeOptions(options);
   const rng = createRng(seed);
   const firstDealer = chooseFirstDealer(rng, playerCount);
-  const handSeeds = createSchedule(playerCount).map(() => rng.nextInt(UINT32));
+  const handSeeds = createSchedule(playerCount, fixed).map(() => rng.nextInt(UINT32));
   const base = {
     seed,
     playerCount,
+    options: fixed,
     firstDealer,
     handSeeds,
     history: [],
@@ -148,15 +176,29 @@ function replaceAt<T>(list: readonly T[], index: number, value: T): T[] {
   return list.map((item, i) => (i === index ? value : item));
 }
 
-function applyBid(state: GameState, seat: number, bid: number): GameState {
+/** Чи заборонено гравцеві `seat` замовити 0 за R-10.3 (лише з цією опцією). */
+function isZeroForbidden(state: GameState, seat: number): boolean {
+  if (!state.options.zeroLimit) return false;
+  return zeroBidForbidden(state.history.map((record) => record.bids[seat] ?? null));
+}
+
+/** Легальні замовлення гравця `seat`, чия зараз черга замовляти (R-4.2–R-4.6, R-10.3). */
+function bidsFor(state: GameState, seat: number): number[] {
   const { hand, playerCount } = state;
   const order = biddingOrder(hand.dealer, playerCount);
   const previous = order.slice(0, order.indexOf(seat)).map((s) => hand.bids[s] as number);
-  if (!Number.isInteger(bid) || !legalBids(hand.spec.cards, previous, playerCount).includes(bid)) {
-    throw new IllegalActionError(`Замовлення ${bid} недопустиме (R-4.3, R-4.4)`);
+  return legalBids(hand.spec.cards, previous, playerCount, isZeroForbidden(state, seat));
+}
+
+function applyBid(state: GameState, seat: number, bid: number): GameState {
+  const { hand, playerCount } = state;
+  if (!Number.isInteger(bid) || !bidsFor(state, seat).includes(bid)) {
+    throw new IllegalActionError(`Замовлення ${bid} недопустиме (R-4.3, R-4.4, R-10.3)`);
   }
+  const order = biddingOrder(hand.dealer, playerCount);
+  const previous = order.indexOf(seat);
   const bids = replaceAt(hand.bids, seat, bid);
-  const next = previous.length + 1 < playerCount ? (order[previous.length + 1] as number) : null;
+  const next = previous + 1 < playerCount ? (order[previous + 1] as number) : null;
   return {
     ...state,
     // R-5.1: після замовлень першу взятку починає гравець ліворуч від роздаючого.
@@ -265,11 +307,9 @@ export function apply(state: GameState, action: Action): GameState {
 export function legalActions(state: GameState): Action[] {
   if (state.turn === null) return [];
   const seat = state.turn;
-  const { hand, playerCount } = state;
+  const { hand } = state;
   if (state.status === 'bidding') {
-    const order = biddingOrder(hand.dealer, playerCount);
-    const previous = order.slice(0, order.indexOf(seat)).map((s) => hand.bids[s] as number);
-    return legalBids(hand.spec.cards, previous, playerCount).map((bid) => ({
+    return bidsFor(state, seat).map((bid) => ({
       type: 'bid',
       seat,
       bid,
@@ -290,7 +330,12 @@ export function legalActions(state: GameState): Action[] {
 
 /** Лог гри для збереження й відтворення. */
 export function gameLog(state: GameState): GameLog {
-  return { version: ENGINE_LOG_VERSION, playerCount: state.playerCount, actions: state.actions };
+  return {
+    version: ENGINE_LOG_VERSION,
+    playerCount: state.playerCount,
+    options: state.options,
+    actions: state.actions,
+  };
 }
 
 /**
@@ -298,8 +343,8 @@ export function gameLog(state: GameState): GameLog {
  * Лог старої версії спершу мігрується; несумісний — `UnsupportedLogVersionError`.
  */
 export function replay(seed: number, log: GameLog): GameState {
-  const { playerCount, actions } = migrateLog(log);
-  return actions.reduce(apply, createGame(seed, playerCount));
+  const { playerCount, options, actions } = migrateLog(log);
+  return actions.reduce(apply, createGame(seed, playerCount, options));
 }
 
 /** Таблиця гри (R-8.1–R-8.4): завершені роздачі й поточна, якщо гра триває. */
@@ -324,13 +369,20 @@ export function scoreTable(state: GameState): ScoreTable {
 export interface PlayerView {
   readonly seat: number;
   readonly playerCount: number;
+  /** Опції кімнати видно всім (R-10.1). */
+  readonly options: GameOptions;
   readonly status: GameStatus;
   readonly turn: number | null;
   readonly spec: HandSpec;
   readonly dealer: number;
   readonly trump: Suit | null;
   readonly revealed: Card | null;
-  /** Власна рука гравця. */
+  /**
+   * Замовлення наосліп (R-10.2): у «Темній», доки не замовить роздаючий, рука гравцеві
+   * не видна — `hand` порожня, розмір руки — у `handSizes`.
+   */
+  readonly blind: boolean;
+  /** Власна рука гравця; порожня, коли `blind`. */
   readonly hand: readonly Card[];
   /** Скільки карт у руці кожного гравця. */
   readonly handSizes: readonly number[];
@@ -340,6 +392,8 @@ export interface PlayerView {
   readonly bidSum: number;
   /** Заборонене для роздаючого значення (R-4.4, R-4.5) або `null` (зокрема в роздачах з 1–3 картами, R-4.6). */
   readonly forbiddenBid: number | null;
+  /** Чи заборонено гравцеві замовити 0 у цій роздачі (R-10.3). */
+  readonly zeroForbidden: boolean;
   readonly taken: readonly number[];
   readonly leader: number;
   readonly trick: readonly TrickCard[];
@@ -358,20 +412,25 @@ export function viewFor(state: GameState, seat: number): PlayerView {
   const dealerBid = hand.bids[hand.dealer];
   const forbiddenBid =
     hand.spec.bidding && dealerBid === null ? forbiddenDealerBid(hand.spec.cards, bidSum) : null;
+  const blind = hand.spec.phase === 'dark' && state.status === 'bidding';
   return {
     seat,
     playerCount: state.playerCount,
+    options: state.options,
     status: state.status,
     turn: state.turn,
     spec: hand.spec,
     dealer: hand.dealer,
     trump: hand.trump,
     revealed: hand.revealed,
-    hand: hand.hands[seat] as readonly Card[],
+    blind,
+    hand: blind ? [] : (hand.hands[seat] as readonly Card[]),
     handSizes: hand.hands.map((cards) => cards.length),
     bids: hand.bids,
     bidSum,
     forbiddenBid,
+    zeroForbidden:
+      state.status === 'bidding' && hand.bids[seat] === null && isZeroForbidden(state, seat),
     taken: hand.taken,
     leader: hand.leader,
     trick: hand.trick,

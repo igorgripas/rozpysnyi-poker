@@ -2,6 +2,8 @@ import { type Bot, createHeuristicBot } from '@poker/bots';
 import {
   type Action,
   type Card,
+  DEFAULT_OPTIONS,
+  type GameOptions,
   type GameState,
   IllegalActionError,
   type JokerCall,
@@ -47,6 +49,8 @@ export interface Room {
   game: GameState | null;
   /** Таймер ходу, секунди; `null` — вимкнений (R-9.3). */
   turnTimerSec: number | null;
+  /** Опції кімнати (§10): хост змінює їх до старту, далі вони зафіксовані в грі (R-10.1). */
+  options: GameOptions;
   /** Коли сплине час поточного ходу (мс від епохи Unix) або `null`. */
   turnDeadline: number | null;
 }
@@ -178,6 +182,8 @@ export class RoomManager {
       seats: snapshot.seats.map((seat) => ({ ...seat, connected: seat.kind === 'bot' })),
       game,
       turnTimerSec: snapshot.turnTimerSec,
+      // Знімки, збережені до §10, опцій не мають — вони вимкнені.
+      options: game?.options ?? snapshot.options ?? DEFAULT_OPTIONS,
       turnDeadline: null,
     };
     for (const member of room.seats) {
@@ -199,6 +205,7 @@ export class RoomManager {
       hostId: room.hostId,
       status: room.status,
       turnTimerSec: room.turnTimerSec,
+      options: room.options,
       seats: room.seats.map(({ id, name, kind, token }) => ({ id, name, kind, token })),
       game: room.game === null ? null : { seed: room.game.seed, log: gameLog(room.game) },
     };
@@ -352,6 +359,7 @@ export class RoomManager {
       seats: [host],
       game: null,
       turnTimerSec: null,
+      options: DEFAULT_OPTIONS,
       turnDeadline: null,
     };
     this.rooms.set(room.code, room);
@@ -447,6 +455,15 @@ export class RoomManager {
     return ok(null);
   }
 
+  /** Хост вмикає чи вимикає опції кімнати (§10) лише до старту гри (R-10.1). */
+  options(code: string, playerId: string, options: GameOptions): Result<null> {
+    const lobby = this.lobby(code, playerId);
+    if (!lobby.ok) return lobby;
+    lobby.data.options = { dark: options.dark, zeroLimit: options.zeroLimit };
+    this.changed(code);
+    return ok(null);
+  }
+
   /** Хост віддає боту місце відключеного гравця (R-9.3); токен гравця більше не діє. */
   replaceWithBot(code: string, playerId: string, seat: number): Result<null> {
     const access = this.access(code, playerId, 'host');
@@ -477,7 +494,8 @@ export class RoomManager {
     if (room.seats.length < MIN_PLAYERS) {
       return fail('notEnoughPlayers', `Потрібно щонайменше ${MIN_PLAYERS} гравці (R-1.2)`);
     }
-    room.game = createGame(this.random.int(UINT32), room.seats.length);
+    // R-10.1: опції фіксуються разом із грою (входять у лог і replay).
+    room.game = createGame(this.random.int(UINT32), room.seats.length, room.options);
     room.status = 'playing';
     this.scheduleTurn(room);
     this.changed(code);
@@ -594,6 +612,7 @@ export class RoomManager {
       seats: room.seats.map(({ id, name, kind, connected }) => ({ id, name, kind, connected })),
       turnTimerSec: room.turnTimerSec,
       turnDeadline: room.turnDeadline,
+      options: room.options,
     };
   }
 }
