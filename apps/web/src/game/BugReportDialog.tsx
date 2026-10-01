@@ -1,4 +1,4 @@
-import { BUG_DESCRIPTION_MAX_LENGTH } from '@poker/protocol';
+import { BUG_DESCRIPTION_MAX_LENGTH, type BugReportResponse } from '@poker/protocol';
 import { useEffect, useId, useRef, useState } from 'react';
 import { uk } from '../i18n';
 import { useClient } from '../net/react';
@@ -7,7 +7,10 @@ export interface BugReportDialogProps {
   onClose: () => void;
 }
 
-/** Діалог «Повідомити про баг» (AUTOPILOT §6): опис гравця, replay гри додає сервер. */
+/**
+ * Діалог «Повідомити про баг» (AUTOPILOT §6): опис гравця, replay гри додає сервер.
+ * Посеред гри звіт публікується лише після її завершення — посилання тоді немає.
+ */
 export function BugReportDialog({ onClose }: BugReportDialogProps) {
   const client = useClient();
   const titleId = useId();
@@ -17,7 +20,8 @@ export function BugReportDialog({ onClose }: BugReportDialogProps) {
   const [description, setDescription] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [url, setUrl] = useState<string | null>(null);
+  /** Відповідь сервера: звіт прийнято (з адресою issue або відкладено до кінця гри). */
+  const [sent, setSent] = useState<BugReportResponse | null>(null);
 
   useEffect(() => {
     text.current?.focus();
@@ -36,7 +40,7 @@ export function BugReportDialog({ onClose }: BugReportDialogProps) {
     setError(null);
     const result = await client.reportBug(description);
     setSending(false);
-    if (result.ok) setUrl(result.data.url);
+    if (result.ok) setSent(result.data);
     else setError(result.error.message);
   }
 
@@ -51,7 +55,7 @@ export function BugReportDialog({ onClose }: BugReportDialogProps) {
         <h2 id={titleId} className="joker-dialog__title">
           {uk.bugReport.title}
         </h2>
-        {url === null ? (
+        {sent === null ? (
           <form
             className="bug-dialog__form"
             onSubmit={(event) => {
@@ -93,10 +97,12 @@ export function BugReportDialog({ onClose }: BugReportDialogProps) {
           </form>
         ) : (
           <>
-            <p role="status">{uk.bugReport.thanks}</p>
-            <a href={url} target="_blank" rel="noreferrer">
-              {uk.bugReport.link}
-            </a>
+            <p role="status">{sent.url === null ? uk.bugReport.pending : uk.bugReport.thanks}</p>
+            {sent.url !== null && (
+              <a href={sent.url} target="_blank" rel="noreferrer">
+                {uk.bugReport.link}
+              </a>
+            )}
             <button type="button" className="button" onClick={onClose}>
               {uk.bugReport.close}
             </button>

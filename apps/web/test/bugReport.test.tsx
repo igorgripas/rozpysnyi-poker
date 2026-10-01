@@ -44,6 +44,18 @@ describe('кнопка «Повідомити про баг» (T52)', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
+  it('посеред гри звіт відкладено до її кінця: без посилання на issue', async () => {
+    const state = findState(3, (s) => s.status === 'playing');
+    const { user, connection } = renderAt(state, 0);
+    connection.on('game:reportBug', () => ({ ok: true, data: { url: null } }));
+
+    const dialog = await openReport(user);
+    await user.type(within(dialog).getByRole('textbox', { name: 'Що сталося?' }), 'баг');
+    await user.click(within(dialog).getByRole('button', { name: 'Надіслати' }));
+    expect(within(dialog).getByRole('status')).toHaveTextContent('після завершення гри');
+    expect(within(dialog).queryByRole('link')).not.toBeInTheDocument();
+  });
+
   it('помилку сервера показано в діалозі, текст не губиться', async () => {
     const state = findState(3, (s) => s.status === 'playing');
     const { user, connection } = renderAt(state, 0);

@@ -173,7 +173,10 @@ export class PokerClient {
     return result.ok ? null : result.error;
   }
 
-  /** Звіт про баг (AUTOPILOT §6): сервер створює issue з replay гри й повертає його адресу. */
+  /**
+   * Звіт про баг (AUTOPILOT §6): сервер створює issue з replay гри й повертає його адресу;
+   * посеред гри — `url: null`, issue зʼявиться після її завершення.
+   */
   async reportBug(description: string): Promise<ClientResult<BugReportResponse>> {
     if (this.state.connection !== 'online' && this.state.connection !== 'connecting') {
       return { ok: false, error: NETWORK_ERROR };

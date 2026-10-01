@@ -357,7 +357,37 @@ describe('звіт про баг (T52)', () => {
     return reports;
   }
 
-  it('R-2.3: гравець повідомляє про баг — сервер створює issue з replay-файлом гри', async () => {
+  /** Кімната хоста з двома ботами, гра почалася. */
+  async function startWithBots() {
+    const host = client();
+    unwrap(await host.request('room:create', { name: 'Оля' }));
+    unwrap(await host.request('room:addBot', {}));
+    unwrap(await host.request('room:addBot', {}));
+    unwrap(await host.request('room:start', {}));
+    await host.until((c) => (c.view?.legalActions.length ?? 0) > 0);
+    return host;
+  }
+
+  /** Хост ходить першою легальною дією, доки гра не завершиться. */
+  async function playToEnd(host: TestClient) {
+    const finished = () => host.room?.status === 'finished';
+    while (!finished()) {
+      await waitFor(() => finished() || (host.view?.legalActions.length ?? 0) > 0);
+      const action = host.view?.legalActions[0];
+      if (action === undefined) continue;
+      host.view = null;
+      unwrap(
+        action.type === 'bid'
+          ? await host.request('game:bid', { bid: action.bid })
+          : await host.request('game:play', {
+              card: action.card,
+              ...(action.call !== undefined && { call: action.call }),
+            }),
+      );
+    }
+  }
+
+  it('R-2.3: звіт посеред гри не публікується до її кінця — інакше seed розкрив би чужі карти', async () => {
     const reports = await withReporter();
     const host = client();
     unwrap(await host.request('room:create', { name: 'Оля' }));
@@ -368,27 +398,50 @@ describe('звіт про баг (T52)', () => {
     unwrap(await host.request('room:addBot', {}));
     unwrap(await host.request('room:start', {}));
     await host.until((c) => (c.view?.legalActions.length ?? 0) > 0);
-
-    expect(unwrap(await host.request('game:reportBug', { description: 'Не той козир' }))).toEqual({
-      url: 'https://github.com/o/r/issues/1',
-    });
-    expect(reports).toHaveLength(1);
-    expect(reports[0]?.body).toContain('Не той козир');
-    const file = parseReplayFile(reports[0]?.body ?? '');
     const code = host.room?.code ?? '';
-    expect(replay(file.seed, file.log)).toEqual(server.rooms.get(code)?.game);
-  });
+    const reportedAt = server.rooms.get(code)?.game?.actions.length;
+
+    // Посилання немає: issue ще не створено.
+    expect(unwrap(await host.request('game:reportBug', { description: 'Не той козир' }))).toEqual({
+      url: null,
+    });
+    expect(reports).toHaveLength(0);
+
+    await playToEnd(host);
+    await waitFor(() => reports.length === 1);
+    const report = reports[0];
+    expect(report?.body).toContain('Не той козир');
+    expect(report?.body).toContain(`дій у лозі на момент звіту: ${reportedAt}`);
+    const file = parseReplayFile(report?.body ?? '');
+    const game = server.rooms.get(code)?.game;
+    expect(game?.status).toBe('finished');
+    expect(replay(file.seed, file.log)).toEqual(game);
+  }, 60_000);
+
+  it('R-2.3: після завершення гри звіт публікується одразу й гравець отримує посилання', async () => {
+    const reports = await withReporter();
+    const host = await startWithBots();
+    await playToEnd(host);
+    expect(
+      unwrap(await host.request('game:reportBug', { description: 'Не той підсумок' })),
+    ).toEqual({ url: 'https://github.com/o/r/issues/1' });
+    expect(reports).toHaveLength(1);
+    const file = parseReplayFile(reports[0]?.body ?? '');
+    expect(replay(file.seed, file.log)).toEqual(server.rooms.get(host.room?.code ?? '')?.game);
+  }, 60_000);
 
   it('звітів від одного гравця не більше ліміту — далі rateLimited', async () => {
     const reports = await withReporter();
-    const host = client();
-    unwrap(await host.request('room:create', { name: 'Оля' }));
-    unwrap(await host.request('room:addBot', {}));
-    unwrap(await host.request('room:addBot', {}));
-    unwrap(await host.request('room:start', {}));
+    const host = await startWithBots();
+    // Відкладені звіти (гра ще йде) теж рахуються.
     for (let i = 0; i < BUG_REPORTS_PER_PLAYER; i++) {
       unwrap(await host.request('game:reportBug', { description: `баг ${i}` }));
     }
+    expect(errorCode(await host.request('game:reportBug', { description: 'ще' }))).toBe(
+      'rateLimited',
+    );
+    await playToEnd(host);
+    await waitFor(() => reports.length === BUG_REPORTS_PER_PLAYER);
     expect(errorCode(await host.request('game:reportBug', { description: 'ще' }))).toBe(
       'rateLimited',
     );
@@ -405,14 +458,12 @@ describe('звіт про баг (T52)', () => {
       'unavailable',
     );
 
+    // Після гри звіт публікується одразу: збій GitHub видно гравцеві.
     await withReporter(true);
-    const again = client();
-    unwrap(await again.request('room:create', { name: 'Оля' }));
-    unwrap(await again.request('room:addBot', {}));
-    unwrap(await again.request('room:addBot', {}));
-    unwrap(await again.request('room:start', {}));
+    const again = await startWithBots();
+    await playToEnd(again);
     expect(errorCode(await again.request('game:reportBug', { description: 'баг' }))).toBe(
       'unavailable',
     );
-  });
+  }, 60_000);
 });

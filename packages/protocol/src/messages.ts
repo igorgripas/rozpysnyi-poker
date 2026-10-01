@@ -106,8 +106,11 @@ export const seatInfoSchema = z.strictObject({
   connected: z.boolean(),
 });
 
-/** Відповідь на звіт про баг: адреса створеного issue. */
-export const bugReportResponseSchema = z.strictObject({ url: z.string().min(1) });
+/**
+ * Відповідь на звіт про баг: адреса створеного issue або `null`, якщо гра ще йде —
+ * тоді звіт опублікується після її завершення (replay розкрив би чужі карти).
+ */
+export const bugReportResponseSchema = z.strictObject({ url: z.string().min(1).nullable() });
 
 export const roomStatusSchema = z.enum(['lobby', 'playing', 'finished']);
 

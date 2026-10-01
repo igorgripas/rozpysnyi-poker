@@ -13,7 +13,12 @@ import {
 } from '@poker/protocol';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { Server, type Socket } from 'socket.io';
-import { BUG_REPORTS_PER_PLAYER, type BugReporter, buildBugReport } from './bugReport.js';
+import {
+  BUG_REPORTS_PER_PLAYER,
+  type BugContext,
+  type BugReporter,
+  buildBugReport,
+} from './bugReport.js';
 import type { RandomSource } from './random.js';
 import { RoomManager, fail } from './rooms.js';
 import type { RoomStore } from './store.js';
@@ -166,6 +171,25 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
 
   /** Скільки звітів про баги надіслав кожен гравець: `code/playerId` → кількість. */
   const bugReports = new Map<string, number>();
+  /**
+   * Звіти з ігор, що ще йдуть: код кімнати → звіти. Replay містить seed, з якого видно
+   * чужі карти, тож issue (у публічному репозиторії) створюється лише після кінця гри.
+   */
+  const pendingBugReports = new Map<string, { context: BugContext; description: string }[]>();
+
+  rooms.subscribe((code) => {
+    const pending = pendingBugReports.get(code);
+    const game = rooms.get(code)?.game;
+    if (pending === undefined || game?.status !== 'finished') return;
+    pendingBugReports.delete(code);
+    for (const { context, description } of pending) {
+      options.bugReporter
+        ?.report(buildBugReport(context, description, game))
+        .catch((error: unknown) =>
+          app.log.error({ err: error }, 'Не вдалося створити звіт про баг'),
+        );
+    }
+  });
 
   async function reportBug(
     session: NonNullable<SocketData['session']>,
@@ -183,6 +207,11 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
       return fail('rateLimited', 'Ви вже надіслали кілька звітів з цієї гри, дякуємо!');
     }
     bugReports.set(k, sent + 1);
+    if (context.data.game.status !== 'finished') {
+      const pending = pendingBugReports.get(session.code) ?? [];
+      pendingBugReports.set(session.code, [...pending, { context: context.data, description }]);
+      return { ok: true, data: { url: null } };
+    }
     try {
       return { ok: true, data: await reporter.report(buildBugReport(context.data, description)) };
     } catch (error) {

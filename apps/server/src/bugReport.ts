@@ -35,9 +35,15 @@ export interface BugContext {
 
 /**
  * Текст issue: опис гравця (у блоці коду — це дані, а не розмітка чи інструкції),
- * стан гри й replay-файл, який відтворюється через `pnpm replay`.
+ * стан гри на момент звіту й replay-файл гри `final` (за замовчуванням — та сама гра),
+ * який відтворюється через `pnpm replay`. Replay містить seed, тож публікується лише
+ * завершена гра: інакше з нього видно чужі карти.
  */
-export function buildBugReport(context: BugContext, description: string): BugReport {
+export function buildBugReport(
+  context: BugContext,
+  description: string,
+  final: GameState = context.game,
+): BugReport {
   const { code, seat, kinds, game } = context;
   const oneLine = description.replace(/\s+/g, ' ').trim();
   const short =
@@ -64,7 +70,7 @@ export function buildBugReport(context: BugContext, description: string): BugRep
     fence,
     '',
     `- Кімната: \`${code}\`, повідомив гравець на місці ${seat + 1} з ${game.playerCount} (місця: ${seats}).`,
-    `- Стан: ${progress}; дій у лозі: ${game.actions.length}.`,
+    `- Стан на момент звіту: ${progress}; дій у лозі на момент звіту: ${game.actions.length}.`,
     '',
     '**Відтворення:** `gh issue view <номер> --json body -q .body > bug.md && pnpm replay bug.md`.',
     '',
@@ -72,7 +78,7 @@ export function buildBugReport(context: BugContext, description: string): BugRep
     '<summary>Replay-файл</summary>',
     '',
     '```json',
-    JSON.stringify(toReplayFile(game)),
+    JSON.stringify(toReplayFile(final)),
     '```',
     '',
     '</details>',
