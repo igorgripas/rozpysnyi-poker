@@ -28,6 +28,7 @@ function done(issues, reason) {
 
 if (process.env.AGENT_PAUSED === 'true') done([], 'AGENT_PAUSED=true');
 
+const MAX_OPEN_PRS = 2;
 const openPrs = ghJson([
   'pr',
   'list',
@@ -38,9 +39,30 @@ const openPrs = ghJson([
   '--state',
   'open',
   '--json',
-  'number',
+  'number,body,labels,statusCheckRollup',
 ]);
-if (openPrs.length) done([], `відкритий PR агента #${openPrs[0].number}`);
+/** Стан перевірки PR: commit status (`state`) або check run (`conclusion`). */
+const checkState = (pr, name) => {
+  const check = pr.statusCheckRollup.find((c) => (c.context ?? c.name) === name);
+  return check?.state ?? check?.conclusion;
+};
+// PR, що чекає лише на людину (мітка spec-change чи needs-human), не блокує інші задачі:
+// інакше вся черга стоїть, поки власник недоступний. Решта PR агента — блокують.
+const waitsForHuman = (pr) =>
+  pr.labels.some((l) => l.name === 'needs-human') ||
+  (checkState(pr, 'verify') === 'SUCCESS' &&
+    checkState(pr, 'agent-review') === 'SUCCESS' &&
+    checkState(pr, 'guard') === 'FAILURE');
+const blocking = openPrs.filter((pr) => !waitsForHuman(pr));
+if (blocking.length) done([], `відкритий PR агента #${blocking[0].number}`);
+if (openPrs.length >= MAX_OPEN_PRS) {
+  done(
+    [],
+    `${openPrs.length} PR агента чекають на людину: ${openPrs.map((p) => `#${p.number}`).join(', ')}`,
+  );
+}
+// Задачі з відкритих PR — зайняті: їх не скидаємо як «застряглі» і не беремо вдруге.
+const busy = new Set(openPrs.flatMap((pr) => closesIssues(pr.body)));
 
 const today = new Date().toISOString().slice(0, 10);
 const createdToday = ghJson([
@@ -96,7 +118,8 @@ const labelsOf = (i) => new Set(i.labels.map((l) => l.name));
 
 // Задачі, що «застрягли» в роботі без PR (впав job) — повертаємо в чергу, вдруге — людині.
 for (const i of all.filter(
-  (i) => state.get(i.number) === 'OPEN' && labelsOf(i).has('agent:in-progress'),
+  (i) =>
+    state.get(i.number) === 'OPEN' && labelsOf(i).has('agent:in-progress') && !busy.has(i.number),
 )) {
   removeLabels(i.number, ['agent:in-progress']);
   if (labelsOf(i).has('agent:stale')) {
@@ -133,8 +156,8 @@ const solo = (i) => /spec-change/.test(i.body ?? '');
 const depsReady = (i, batch) =>
   dependsOn(i.body).every((n) => state.get(n) !== 'OPEN' || batch.has(n));
 const sorted = ready
-  .filter((i) => state.get(i.number) === 'OPEN')
-  .filter((i) => !labelsOf(i).has('needs-human'))
+  .filter((i) => state.get(i.number) === 'OPEN' && !busy.has(i.number))
+  .filter((i) => !labelsOf(i).has('needs-human') && !labelsOf(i).has('agent:in-progress'))
   .sort((a, b) => prio(a) - prio(b) || a.number - b.number);
 
 const first = sorted.find((i) => depsReady(i, new Set()));
