@@ -16,6 +16,8 @@ export class TestClient {
   readonly socket: Socket<ServerToClientEvents, ClientToServerEvents>;
   room: RoomState | null = null;
   view: WirePlayerView | null = null;
+  /** Сервер попередив про перезапуск. */
+  restarting = false;
   private readonly waiters: (() => void)[] = [];
 
   constructor(url: string, protocolVersion: number = PROTOCOL_VERSION) {
@@ -27,6 +29,10 @@ export class TestClient {
     });
     this.socket.on('room:state', (room) => {
       this.room = room;
+      this.notify();
+    });
+    this.socket.on('server:restarting', () => {
+      this.restarting = true;
       this.notify();
     });
     this.socket.on('game:view', (view) => {

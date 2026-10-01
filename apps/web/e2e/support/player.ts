@@ -63,8 +63,10 @@ export async function takeTurn(page: Page, timeout = 60_000): Promise<boolean> {
   } else if (move === 'joker') {
     await page.locator('.joker-dialog button').first().click();
   } else {
-    const card = page.locator('.hand__card:enabled').first();
-    await card.click();
+    // Конкретна карта за data-card: «перша доступна» може змінитися між тапами.
+    const id = await page.locator('.hand__card:enabled').first().getAttribute('data-card');
+    const card = page.locator(`.hand__card[data-card="${id}"]`);
+    if ((await card.getAttribute('aria-pressed')) !== 'true') await card.click();
     await card.click();
   }
   // Дія дійшла до сервера, і він надіслав новий стан.

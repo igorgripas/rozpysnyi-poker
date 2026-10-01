@@ -16,13 +16,20 @@ export function ConnectionIndicator() {
   );
 }
 
-/** Повідомлення про обрив звʼязку або застарілу версію клієнта. */
+/** Повідомлення про обрив звʼязку, перезапуск сервера або застарілу версію клієнта. */
 export function ConnectionBanner() {
   const { connection } = useClientState();
   if (connection === 'offline') {
     return (
       <p role="alert" className="net-banner">
         <strong>{uk.connection.offline}</strong> {uk.connection.reconnecting}
+      </p>
+    );
+  }
+  if (connection === 'waking') {
+    return (
+      <p role="alert" className="net-banner">
+        {uk.connection.waking}
       </p>
     );
   }

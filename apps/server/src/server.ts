@@ -30,7 +30,12 @@ export interface PokerServerOptions {
   trickPauseMs?: number;
   /** Сховище кімнат: із ним сервер переживає рестарт посеред гри. */
   store?: RoomStore;
+  /** Як часто чистити сховище від старих ігор, мс (перше очищення — під час старту). */
+  cleanupIntervalMs?: number;
 }
+
+/** Очищення сховища за замовчуванням — раз на 6 годин. */
+const CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 /** Сесія, привʼязана до зʼєднання після create/join/resume. */
 interface SocketData {
@@ -43,7 +48,7 @@ type PokerIo = Server<ClientToServerEvents, ServerToClientEvents, object, Socket
 type Handler<E extends ClientEvent> = (
   socket: PokerSocket,
   payload: ClientMessage<E>,
-) => Result<ClientResponses[E]>;
+) => Result<ClientResponses[E]> | Promise<Result<ClientResponses[E]>>;
 
 export interface PokerServer {
   readonly app: FastifyInstance;
@@ -51,6 +56,10 @@ export interface PokerServer {
   readonly rooms: RoomManager;
   /** Запускає сервер і повертає його адресу. */
   listen(options: { port: number; host?: string }): Promise<string>;
+  /**
+   * Плавна зупинка (SIGTERM): нові дії не приймаються, прийняті дописуються в базу,
+   * клієнти отримують `server:restarting`, потім зʼєднання закриваються.
+   */
   close(): Promise<void>;
 }
 
@@ -63,12 +72,18 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
     ...(options.botDelayMs !== undefined && { botDelayMs: options.botDelayMs }),
     ...(options.trickPauseMs !== undefined && { trickPauseMs: options.trickPauseMs }),
     ...(options.store && { store: options.store }),
+    onStoreError: (error) => app.log.error({ err: error }, 'Не вдалося зберегти кімнату'),
   });
   const io: PokerIo = new Server(app.server, {
     cors: { origin: options.corsOrigin ?? true },
   });
 
   app.get('/health', () => ({ ok: true, protocolVersion: PROTOCOL_VERSION }));
+
+  /** Плавна зупинка, якщо вже почалася: нові дії й підключення відхиляються. */
+  let closing: Promise<void> | null = null;
+  /** Запити, на які ще не відповіли: зупинка чекає їх. */
+  const inflight = new Set<Promise<void>>();
 
   /** Зʼєднання кожного гравця: `code/playerId` → сокети. */
   const connections = new Map<string, Set<PokerSocket>>();
@@ -91,8 +106,11 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
     if (view !== null) socket.emit('game:view', view as ServerMessage<'game:view'>);
   }
 
+  // Стан розсилається після запису зміни в базу: ніхто не бачить того, що може загубитися.
   rooms.subscribe((code) => {
-    for (const socket of socketsIn(code)) sendState(socket);
+    void rooms.persisted(code).then(() => {
+      for (const socket of socketsIn(code)) sendState(socket);
+    });
   });
 
   function unbind(socket: PokerSocket): void {
@@ -134,10 +152,10 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
   }
 
   function entering<E extends 'room:create' | 'room:join' | 'room:resume'>(
-    enter: (payload: ClientMessage<E>) => Result<Session>,
+    enter: (payload: ClientMessage<E>) => Result<Session> | Promise<Result<Session>>,
   ): Handler<E> {
-    return (socket, payload) => {
-      const result = enter(payload);
+    return async (socket, payload) => {
+      const result = await enter(payload);
       if (result.ok) bind(socket, result.data);
       return result;
     };
@@ -145,8 +163,15 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
 
   const handlers: { [E in ClientEvent]: Handler<E> } = {
     'room:create': entering(({ name }) => rooms.create(name)),
-    'room:join': entering(({ code, name }) => rooms.join(code, name)),
-    'room:resume': entering(({ code, token }) => rooms.resume(code, token)),
+    // Після рестарту кімнати ще немає в памʼяті: підвантажуємо її з бази за кодом.
+    'room:join': entering(async ({ code, name }) => {
+      await rooms.load(code.toUpperCase());
+      return rooms.join(code, name);
+    }),
+    'room:resume': entering(async ({ code, token }) => {
+      await rooms.load(code.toUpperCase());
+      return rooms.resume(code, token);
+    }),
     'room:addBot': withSession(({ code, playerId }) => rooms.addBot(code, playerId)),
     'room:removeBot': withSession(({ code, playerId }, { seat }) =>
       rooms.removeBot(code, playerId, seat),
@@ -165,6 +190,14 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
     ),
   };
 
+  io.use((_socket, next) => {
+    // Сервер зупиняється: клієнт має дочекатися нового процесу, а не цього.
+    if (closing === null) return next();
+    const error = new Error('Сервер перезапускається') as Error & { data?: unknown };
+    error.data = { code: 'unavailable' };
+    next(error);
+  });
+
   io.use((socket, next) => {
     if (handshakeSchema.safeParse(socket.handshake.auth).success) return next();
     const error = new Error(`Потрібна версія протоколу ${PROTOCOL_VERSION}`) as Error & {
@@ -174,14 +207,65 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
     next(error);
   });
 
+  /**
+   * Виконує подію й відповідає лише після запису змін у базу: підтверджена дія
+   * переживе рестарт. Збій бази — помилка `unavailable`, клієнт може повторити.
+   */
+  async function respond(socket: PokerSocket, event: ClientEvent, payload: unknown) {
+    if (closing !== null) {
+      return fail('unavailable', 'Сервер перезапускається, зачекайте хвилину');
+    }
+    const parsed = parseClientMessage(event, payload);
+    if (!parsed.ok) return parsed;
+    const handler = handlers[event] as Handler<ClientEvent>;
+    try {
+      const result = await handler(socket, parsed.data);
+      const code = socket.data.session?.code;
+      if (code !== undefined && !(await rooms.persisted(code)) && result.ok) {
+        return fail('unavailable', 'Не вдалося зберегти зміни, спробуйте ще раз');
+      }
+      return result;
+    } catch (error) {
+      app.log.error({ err: error }, 'Сховище недоступне');
+      return fail('unavailable', 'Сервер тимчасово недоступний, спробуйте ще раз');
+    }
+  }
+
+  let cleanupTimer: ReturnType<typeof setInterval> | null = null;
+
+  async function shutdown(): Promise<void> {
+    if (cleanupTimer !== null) clearInterval(cleanupTimer);
+    rooms.close();
+    // Прийняті дії записуються й підтверджуються до того, як закриються зʼєднання.
+    while (inflight.size > 0) await Promise.all(inflight);
+    await rooms.flush();
+    io.emit('server:restarting', {});
+    // `io.close()` рве транспорт, не дочекавшись відправки: спершу чемно відключаємо
+    // клієнтів і даємо пакетам (відповіді, попередження) піти в мережу.
+    io.disconnectSockets(true);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await io.close();
+    // Відключення гравців теж змінює кімнати: дописуємо все в базу.
+    await rooms.flush();
+    await app.close();
+  }
+  function cleanup(): void {
+    rooms.cleanup().then(
+      (removed) => {
+        if (removed > 0) app.log.info(`Видалено старих кімнат: ${removed}`);
+      },
+      (error: unknown) => app.log.error({ err: error }, 'Не вдалося очистити сховище'),
+    );
+  }
+
   io.on('connection', (socket) => {
     socket.data.session = null;
     for (const event of Object.keys(handlers) as ClientEvent[]) {
       socket.on(event, (payload: unknown, ack: unknown) => {
         if (typeof ack !== 'function') return;
-        const parsed = parseClientMessage(event, payload);
-        const handler = handlers[event] as Handler<ClientEvent>;
-        (ack as (result: unknown) => void)(parsed.ok ? handler(socket, parsed.data) : parsed);
+        const answered = respond(socket, event, payload).then(ack as (result: unknown) => void);
+        inflight.add(answered);
+        void answered.finally(() => inflight.delete(answered));
       });
     }
     socket.on('disconnect', () => unbind(socket));
@@ -192,13 +276,19 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
     io,
     rooms,
     async listen({ port, host }) {
+      // Схема бази готова до першого запиту; холодний старт Neon переживають повторні спроби.
+      await rooms.init();
       const address = await app.listen({ port, ...(host !== undefined && { host }) });
+      if (options.store !== undefined) {
+        cleanup();
+        cleanupTimer = setInterval(cleanup, options.cleanupIntervalMs ?? CLEANUP_INTERVAL_MS);
+        cleanupTimer.unref();
+      }
       return address;
     },
-    async close() {
-      rooms.close();
-      await io.close();
-      await app.close();
+    close() {
+      closing ??= shutdown();
+      return closing;
     },
   };
 }

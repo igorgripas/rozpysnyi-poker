@@ -1,10 +1,13 @@
-import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type { GameLog } from '@poker/engine';
 import type { RoomStatus } from '@poker/protocol';
 
 /** Версія формату знімка кімнати; збільшується при несумісних змінах. */
 export const ROOM_SNAPSHOT_VERSION = 1;
+
+/** Скільки зберігаються завершені ігри, мс. */
+export const FINISHED_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+/** Скільки зберігаються кімнати в лобі (гру так і не почали), мс. */
+export const LOBBY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * Знімок кімнати для відновлення після рестарту. Гра зберігається як seed + лог дій
@@ -25,13 +28,24 @@ export interface RoomSnapshot {
   readonly game: { readonly seed: number; readonly log: GameLog } | null;
 }
 
-/** Сховище кімнат: сервер зберігає знімок після кожної зміни й читає всі під час старту. */
+/**
+ * Сховище кімнат. Сервер зберігає знімок після кожної зміни й підвантажує кімнату
+ * за кодом, коли гравець входить або повертається в неї.
+ */
 export interface RoomStore {
-  load(): RoomSnapshot[];
-  save(snapshot: RoomSnapshot): void;
+  /** Готує сховище під час старту: створює або мігрує схему. */
+  init(): Promise<void>;
+  /** Знімок кімнати або `null`, якщо її немає (чи знімок нечитабельний). */
+  load(code: string): Promise<RoomSnapshot | null>;
+  /** Чи зайнятий код збереженою кімнатою. */
+  has(code: string): Promise<boolean>;
+  save(snapshot: RoomSnapshot): Promise<void>;
+  /** Видаляє завершені ігри старші 30 днів і лобі старші 7 днів; повертає кількість. */
+  cleanup(): Promise<number>;
+  close(): Promise<void>;
 }
 
-function isSnapshot(value: unknown): value is RoomSnapshot {
+export function isSnapshot(value: unknown): value is RoomSnapshot {
   return (
     typeof value === 'object' &&
     value !== null &&
@@ -39,44 +53,53 @@ function isSnapshot(value: unknown): value is RoomSnapshot {
   );
 }
 
-/** Сховище в памʼяті: для тестів і запуску без диска (рестарт у межах процесу). */
-export class MemoryRoomStore implements RoomStore {
-  private readonly snapshots = new Map<string, string>();
-
-  load(): RoomSnapshot[] {
-    return [...this.snapshots.values()].map((json) => JSON.parse(json) as RoomSnapshot);
-  }
-
-  save(snapshot: RoomSnapshot): void {
-    // Копія через JSON: знімок не ділить обʼєкти з живою кімнатою, як і на диску.
-    this.snapshots.set(snapshot.code, JSON.stringify(snapshot));
-  }
+/** Чи прострочений знімок зі статусом `status`, востаннє змінений у `updatedAt`. */
+export function isExpired(status: RoomStatus, updatedAt: number, now: number): boolean {
+  if (status === 'finished') return now - updatedAt > FINISHED_TTL_MS;
+  if (status === 'lobby') return now - updatedAt > LOBBY_TTL_MS;
+  return false;
 }
 
-/** Сховище на диску: файл `<код>.json` на кімнату, запис атомарний (тимчасовий файл + rename). */
-export class FileRoomStore implements RoomStore {
-  constructor(private readonly dir: string) {
-    mkdirSync(dir, { recursive: true });
+/** Сховище в памʼяті: для unit-тестів і запуску без бази (рестарт у межах процесу). */
+export class MemoryRoomStore implements RoomStore {
+  private readonly snapshots = new Map<string, { json: string; updatedAt: number }>();
+
+  constructor(private readonly now: () => number = () => Date.now()) {}
+
+  init(): Promise<void> {
+    return Promise.resolve();
   }
 
-  load(): RoomSnapshot[] {
-    const snapshots: RoomSnapshot[] = [];
-    for (const file of readdirSync(this.dir)) {
-      if (!file.endsWith('.json')) continue;
-      try {
-        const value: unknown = JSON.parse(readFileSync(join(this.dir, file), 'utf8'));
-        if (isSnapshot(value)) snapshots.push(value);
-      } catch {
-        // Пошкоджений файл не має заважати відновленню інших кімнат.
+  load(code: string): Promise<RoomSnapshot | null> {
+    const entry = this.snapshots.get(code);
+    const value: unknown = entry === undefined ? null : JSON.parse(entry.json);
+    return Promise.resolve(isSnapshot(value) ? value : null);
+  }
+
+  has(code: string): Promise<boolean> {
+    return Promise.resolve(this.snapshots.has(code));
+  }
+
+  save(snapshot: RoomSnapshot): Promise<void> {
+    // Копія через JSON: знімок не ділить обʼєкти з живою кімнатою, як і в базі.
+    this.snapshots.set(snapshot.code, { json: JSON.stringify(snapshot), updatedAt: this.now() });
+    return Promise.resolve();
+  }
+
+  cleanup(): Promise<number> {
+    const now = this.now();
+    let removed = 0;
+    for (const [code, { json, updatedAt }] of this.snapshots) {
+      const { status } = JSON.parse(json) as RoomSnapshot;
+      if (isExpired(status, updatedAt, now)) {
+        this.snapshots.delete(code);
+        removed++;
       }
     }
-    return snapshots;
+    return Promise.resolve(removed);
   }
 
-  save(snapshot: RoomSnapshot): void {
-    const path = join(this.dir, `${snapshot.code}.json`);
-    const temp = `${path}.tmp`;
-    writeFileSync(temp, JSON.stringify(snapshot));
-    renameSync(temp, path);
+  close(): Promise<void> {
+    return Promise.resolve();
   }
 }

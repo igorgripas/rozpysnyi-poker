@@ -129,6 +129,8 @@ export const ERROR_CODES = [
   'notEnoughPlayers',
   'illegalAction',
   'playerConnected',
+  /** Сервер не зміг зберегти дію в базу (T54). */
+  'unavailable',
 ] as const;
 
 export const errorCodeSchema = z.enum(ERROR_CODES);
@@ -168,6 +170,8 @@ export interface ClientResponses {
 export const serverMessageSchemas = {
   'room:state': roomStateSchema,
   'game:view': playerViewSchema,
+  /** Сервер зупиняється (передеплой, засинання): клієнт чекає й перепідключається. */
+  'server:restarting': z.strictObject({}),
 } as const;
 
 export type ServerEvent = keyof typeof serverMessageSchemas;

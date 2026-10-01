@@ -12,9 +12,9 @@ function manager(seed = 1) {
 }
 
 /** Кімната з людьми `names` і `bots` ботами; гру запущено. */
-function startedRoom(humans: number, bots: number, seed = 1) {
+async function startedRoom(humans: number, bots: number, seed = 1) {
   const rooms = manager(seed);
-  const host = unwrap(rooms.create('Гравець 0'));
+  const host = unwrap(await rooms.create('Гравець 0'));
   const players = [host];
   for (let i = 1; i < humans; i++) players.push(unwrap(rooms.join(host.code, `Гравець ${i}`)));
   for (let i = 0; i < bots; i++) unwrap(rooms.addBot(host.code, host.playerId));
@@ -37,15 +37,15 @@ afterEach(() => {
 });
 
 describe('авторитетний сервер', () => {
-  it('до старту гри дії відхиляються як notStarted', () => {
+  it('до старту гри дії відхиляються як notStarted', async () => {
     const rooms = manager();
-    const host = unwrap(rooms.create('Оля'));
+    const host = unwrap(await rooms.create('Оля'));
     expect(errorCode(rooms.bid(host.code, host.playerId, 0))).toBe('notStarted');
     expect(rooms.view(host.code, host.playerId)).toBeNull();
   });
 
-  it('кожен гравець отримує viewFor свого місця: лише власна рука', () => {
-    const { rooms, code, players } = startedRoom(3, 0);
+  it('кожен гравець отримує viewFor свого місця: лише власна рука', async () => {
+    const { rooms, code, players } = await startedRoom(3, 0);
     const game = rooms.get(code)?.game;
     players.forEach((player, seat) => {
       const view = rooms.view(code, player.playerId);
@@ -55,16 +55,16 @@ describe('авторитетний сервер', () => {
     });
   });
 
-  it('хід не в свою чергу відхиляється як illegalAction, стан не змінюється', () => {
-    const { rooms, code, players } = startedRoom(3, 0);
+  it('хід не в свою чергу відхиляється як illegalAction, стан не змінюється', async () => {
+    const { rooms, code, players } = await startedRoom(3, 0);
     const game = rooms.get(code)?.game;
     const idle = players.find((_, seat) => seat !== game?.turn);
     expect(errorCode(rooms.bid(code, idle?.playerId as string, 0))).toBe('illegalAction');
     expect(rooms.get(code)?.game).toBe(game);
   });
 
-  it('R-4.4: роздаючому не дають замовити заборонене значення', () => {
-    const { rooms, code, players } = startedRoom(3, 0);
+  it('R-4.4: роздаючому не дають замовити заборонене значення', async () => {
+    const { rooms, code, players } = await startedRoom(3, 0);
     for (;;) {
       const game = rooms.get(code)?.game;
       const player = players[game?.turn as number];
@@ -78,8 +78,8 @@ describe('авторитетний сервер', () => {
     }
   });
 
-  it('R-5.2: карта, якої немає в руці, відхиляється', () => {
-    const { rooms, code, players } = startedRoom(3, 0);
+  it('R-5.2: карта, якої немає в руці, відхиляється', async () => {
+    const { rooms, code, players } = await startedRoom(3, 0);
     for (let i = 0; i < 3; i++) {
       const turn = rooms.get(code)?.game?.turn as number;
       const view = rooms.view(code, players[turn]?.playerId as string);
@@ -94,8 +94,8 @@ describe('авторитетний сервер', () => {
 });
 
 describe('боти', () => {
-  it('бот ходить лише після затримки', () => {
-    const { rooms, code, players } = startedRoom(1, 2, 5);
+  it('бот ходить лише після затримки', async () => {
+    const { rooms, code, players } = await startedRoom(1, 2, 5);
     const human = players[0]?.playerId as string;
     const actions = () => rooms.get(code)?.game?.actions.length as number;
     // Після ходу людини (або одразу) черга бота: у кімнаті на 3 місця вона сидить поміж ботами.
@@ -110,8 +110,8 @@ describe('боти', () => {
     expect(actions()).toBe(before + 1);
   });
 
-  it('гра людини з двома ботами доходить до кінця; лог відтворює стан', () => {
-    const { rooms, code, players } = startedRoom(1, 2, 7);
+  it('гра людини з двома ботами доходить до кінця; лог відтворює стан', async () => {
+    const { rooms, code, players } = await startedRoom(1, 2, 7);
     const human = players[0]?.playerId as string;
     const changes: string[] = [];
     rooms.subscribe((c) => changes.push(c));
@@ -130,13 +130,13 @@ describe('боти', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('після завершення взятки бот ходить не раніше ніж через паузу взятки', () => {
+  it('після завершення взятки бот ходить не раніше ніж через паузу взятки', async () => {
     const rooms = new RoomManager({
       random: testRandom(3),
       botDelayMs: DELAY,
       trickPauseMs: PAUSE,
     });
-    const host = unwrap(rooms.create('Оля'));
+    const host = unwrap(await rooms.create('Оля'));
     unwrap(rooms.addBot(host.code, host.playerId));
     unwrap(rooms.addBot(host.code, host.playerId));
     unwrap(rooms.start(host.code, host.playerId));
@@ -170,13 +170,13 @@ describe('боти', () => {
     rooms.close();
   });
 
-  it('усередині взятки бот ходить зі звичайною затримкою', () => {
+  it('усередині взятки бот ходить зі звичайною затримкою', async () => {
     const rooms = new RoomManager({
       random: testRandom(3),
       botDelayMs: DELAY,
       trickPauseMs: PAUSE,
     });
-    const host = unwrap(rooms.create('Оля'));
+    const host = unwrap(await rooms.create('Оля'));
     unwrap(rooms.addBot(host.code, host.playerId));
     unwrap(rooms.addBot(host.code, host.playerId));
     unwrap(rooms.start(host.code, host.playerId));
@@ -197,11 +197,27 @@ describe('боти', () => {
     rooms.close();
   });
 
-  it('close() скасовує заплановані ходи ботів', () => {
-    const { rooms, code } = startedRoom(1, 2, 9);
+  it('close() скасовує заплановані ходи ботів', async () => {
+    const { rooms, code } = await startedRoom(1, 2, 9);
     vi.advanceTimersByTime(DELAY * 3);
     rooms.close();
     expect(vi.getTimerCount()).toBe(0);
     expect(rooms.get(code)).toBeDefined();
+  });
+
+  it('після close() нові ходи ботів не плануються (сервер зупиняється)', async () => {
+    const { rooms, code, players } = await startedRoom(1, 2, 9);
+    rooms.close();
+    const host = players[0]?.playerId as string;
+    // Дія, прийнята під час зупинки, не запускає ботів.
+    while (rooms.get(code)?.game?.turn !== 0) {
+      const room = rooms.get(code);
+      const seat = room?.game?.turn as number;
+      const view = rooms.view(code, room?.seats[seat]?.id as string);
+      unwrap(send(rooms, code, room?.seats[seat]?.id as string, view?.legalActions[0] as Action));
+    }
+    const view = rooms.view(code, host);
+    unwrap(send(rooms, code, host, view?.legalActions[0] as Action));
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

@@ -8,9 +8,9 @@ function manager(seed = 1) {
 }
 
 describe('створення кімнати', () => {
-  it('повертає код, посилання й токен; творець — хост', () => {
+  it('повертає код, посилання й токен; творець — хост', async () => {
     const rooms = manager();
-    const session = unwrap(rooms.create('Оля'));
+    const session = unwrap(await rooms.create('Оля'));
     expect(sessionSchema.parse(session)).toEqual(session);
     expect(session.code).toHaveLength(ROOM_CODE_LENGTH);
     expect(roomCodeSchema.parse(session.code)).toBe(session.code);
@@ -28,17 +28,18 @@ describe('створення кімнати', () => {
     });
   });
 
-  it('коди різних кімнат не повторюються', () => {
+  it('коди різних кімнат не повторюються', async () => {
     const rooms = manager();
-    const codes = new Set(Array.from({ length: 200 }, () => unwrap(rooms.create('Гравець')).code));
+    const codes = new Set<string>();
+    for (let i = 0; i < 200; i++) codes.add(unwrap(await rooms.create('Гравець')).code);
     expect(codes.size).toBe(200);
   });
 });
 
 describe('вхід у кімнату', () => {
-  it('R-9.1: місця йдуть у порядку входу в кімнату', () => {
+  it('R-9.1: місця йдуть у порядку входу в кімнату', async () => {
     const rooms = manager();
-    const host = unwrap(rooms.create('Оля'));
+    const host = unwrap(await rooms.create('Оля'));
     const petro = unwrap(rooms.join(host.code, 'Петро'));
     const ira = unwrap(rooms.join(host.code.toLowerCase(), 'Іра'));
     expect(petro.code).toBe(host.code);
@@ -49,28 +50,28 @@ describe('вхід у кімнату', () => {
     ]);
   });
 
-  it('невідомий код — roomNotFound', () => {
+  it('невідомий код — roomNotFound', async () => {
     expect(errorCode(manager().join('ZZZZZ', 'Петро'))).toBe('roomNotFound');
   });
 
-  it('R-1.2: у кімнаті не більше 6 місць', () => {
+  it('R-1.2: у кімнаті не більше 6 місць', async () => {
     const rooms = manager();
-    const host = unwrap(rooms.create('Оля'));
+    const host = unwrap(await rooms.create('Оля'));
     for (let i = 0; i < 5; i++) unwrap(rooms.join(host.code, `Гравець ${i}`));
     expect(errorCode(rooms.join(host.code, 'Зайвий'))).toBe('roomFull');
   });
 
-  it('повернення за токеном дає ту саму сесію, чужий токен відхиляється', () => {
+  it('повернення за токеном дає ту саму сесію, чужий токен відхиляється', async () => {
     const rooms = manager();
-    const host = unwrap(rooms.create('Оля'));
+    const host = unwrap(await rooms.create('Оля'));
     expect(unwrap(rooms.resume(host.code, host.token))).toEqual(host);
     expect(errorCode(rooms.resume(host.code, 'x'.repeat(32)))).toBe('badToken');
     expect(errorCode(rooms.resume('ZZZZZ', host.token))).toBe('roomNotFound');
   });
 
-  it('після старту новий гравець не може увійти', () => {
+  it('після старту новий гравець не може увійти', async () => {
     const rooms = manager();
-    const host = unwrap(rooms.create('Оля'));
+    const host = unwrap(await rooms.create('Оля'));
     unwrap(rooms.addBot(host.code, host.playerId));
     unwrap(rooms.addBot(host.code, host.playerId));
     unwrap(rooms.start(host.code, host.playerId));
@@ -79,9 +80,9 @@ describe('вхід у кімнату', () => {
 });
 
 describe('керування кімнатою хостом', () => {
-  it('R-1.2: будь-яке місце може зайняти бот; хост додає й прибирає ботів', () => {
+  it('R-1.2: будь-яке місце може зайняти бот; хост додає й прибирає ботів', async () => {
     const rooms = manager();
-    const host = unwrap(rooms.create('Оля'));
+    const host = unwrap(await rooms.create('Оля'));
     unwrap(rooms.addBot(host.code, host.playerId));
     unwrap(rooms.addBot(host.code, host.playerId));
     let seats = rooms.roomState(host.code, host.playerId).seats;
@@ -98,16 +99,16 @@ describe('керування кімнатою хостом', () => {
     expect(errorCode(rooms.removeBot(host.code, host.playerId, 5))).toBe('badRequest');
   });
 
-  it('R-1.2: бота не можна додати, коли вже 6 місць', () => {
+  it('R-1.2: бота не можна додати, коли вже 6 місць', async () => {
     const rooms = manager();
-    const host = unwrap(rooms.create('Оля'));
+    const host = unwrap(await rooms.create('Оля'));
     for (let i = 0; i < 5; i++) unwrap(rooms.addBot(host.code, host.playerId));
     expect(errorCode(rooms.addBot(host.code, host.playerId))).toBe('roomFull');
   });
 
-  it('лише хост керує кімнатою', () => {
+  it('лише хост керує кімнатою', async () => {
     const rooms = manager();
-    const host = unwrap(rooms.create('Оля'));
+    const host = unwrap(await rooms.create('Оля'));
     const petro = unwrap(rooms.join(host.code, 'Петро'));
     unwrap(rooms.join(host.code, 'Іра'));
     expect(errorCode(rooms.addBot(host.code, petro.playerId))).toBe('notHost');
@@ -116,9 +117,9 @@ describe('керування кімнатою хостом', () => {
     expect(errorCode(rooms.addBot(host.code, 'чужий'))).toBe('notInRoom');
   });
 
-  it('R-9.1: хост перемішує місця до старту — склад той самий, порядок інший', () => {
+  it('R-9.1: хост перемішує місця до старту — склад той самий, порядок інший', async () => {
     const rooms = manager(3);
-    const host = unwrap(rooms.create('Оля'));
+    const host = unwrap(await rooms.create('Оля'));
     for (const name of ['Петро', 'Іра', 'Тарас', 'Марта', 'Богдан']) {
       unwrap(rooms.join(host.code, name));
     }
@@ -133,9 +134,9 @@ describe('керування кімнатою хостом', () => {
     expect(orders.size).toBeGreaterThan(1);
   });
 
-  it('R-9.1: після старту перемішувати місця не можна', () => {
+  it('R-9.1: після старту перемішувати місця не можна', async () => {
     const rooms = manager();
-    const host = unwrap(rooms.create('Оля'));
+    const host = unwrap(await rooms.create('Оля'));
     unwrap(rooms.addBot(host.code, host.playerId));
     unwrap(rooms.addBot(host.code, host.playerId));
     unwrap(rooms.start(host.code, host.playerId));
@@ -144,9 +145,9 @@ describe('керування кімнатою хостом', () => {
     expect(errorCode(rooms.start(host.code, host.playerId))).toBe('alreadyStarted');
   });
 
-  it('R-1.2: гра стартує лише з 3–6 гравцями', () => {
+  it('R-1.2: гра стартує лише з 3–6 гравцями', async () => {
     const rooms = manager();
-    const host = unwrap(rooms.create('Оля'));
+    const host = unwrap(await rooms.create('Оля'));
     unwrap(rooms.addBot(host.code, host.playerId));
     expect(errorCode(rooms.start(host.code, host.playerId))).toBe('notEnoughPlayers');
     unwrap(rooms.addBot(host.code, host.playerId));
@@ -156,11 +157,11 @@ describe('керування кімнатою хостом', () => {
 });
 
 describe('сповіщення про зміни', () => {
-  it('кожна зміна кімнати сповіщає підписників кодом кімнати', () => {
+  it('кожна зміна кімнати сповіщає підписників кодом кімнати', async () => {
     const rooms = manager();
     const changes: string[] = [];
     const unsubscribe = rooms.subscribe((code) => changes.push(code));
-    const host = unwrap(rooms.create('Оля'));
+    const host = unwrap(await rooms.create('Оля'));
     unwrap(rooms.join(host.code, 'Петро'));
     unwrap(rooms.addBot(host.code, host.playerId));
     rooms.setConnected(host.code, host.playerId, true);

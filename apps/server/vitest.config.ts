@@ -6,5 +6,7 @@ export default defineConfig({
   ssr: { resolve: { conditions: ['source'] } },
   test: {
     include: ['test/**/*.test.ts', 'src/**/*.test.ts'],
+    // Справжній Postgres для тестів сховища (T54).
+    globalSetup: ['test/postgres-setup.ts'],
   },
 });

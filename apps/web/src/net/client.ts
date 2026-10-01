@@ -18,6 +18,9 @@ import {
 export const SESSION_STORAGE_KEY = 'poker.session';
 export const NAME_STORAGE_KEY = 'poker.name';
 
+/** Через скільки повторити повернення в кімнату, якщо сервер ще не готовий, мс. */
+export const RESUME_RETRY_MS = 2000;
+
 /** Що клієнт памʼятає між запусками: кімната й секретний токен гравця. */
 export interface StoredSession {
   readonly code: string;
@@ -59,9 +62,20 @@ export class PokerClient {
   }
 
   private async rejoin(code: string): Promise<void> {
-    await this.resume(code);
+    const resumed = await this.resume(code);
     // Кімнати чи місця вже немає (сесію забуто) — повертаємося в лобі.
-    if (this.storedSession()?.code !== code) this.set({ room: null, view: null });
+    if (this.storedSession()?.code !== code) {
+      this.set({ room: null, view: null });
+      return;
+    }
+    // Сервер після перезапуску ще не готовий (база прокидається): пробуємо знову.
+    if (!resumed && this.state.connection === 'online') {
+      setTimeout(() => {
+        if (this.state.connection === 'online' && this.state.room?.code === code) {
+          void this.rejoin(code);
+        }
+      }, RESUME_RETRY_MS);
+    }
   }
 
   getState = (): ClientState => this.state;
@@ -120,7 +134,10 @@ export class PokerClient {
     const result = await this.connection.request('room:resume', stored);
     this.set({ status: 'idle' });
     if (result.ok) return true;
-    if (result.error.code !== 'network') this.storage.removeItem(SESSION_STORAGE_KEY);
+    // Мережа чи сервер, що перезапускається, — тимчасово: сесію не забуваємо.
+    if (result.error.code !== 'network' && result.error.code !== 'unavailable') {
+      this.storage.removeItem(SESSION_STORAGE_KEY);
+    }
     return false;
   }
 
@@ -130,7 +147,7 @@ export class PokerClient {
     payload: ClientMessageInput<E>,
   ): Promise<ClientError | null> {
     // Без звʼязку дію не буферизуємо: після перепідключення стан гри вже інший.
-    if (this.state.connection === 'offline' || this.state.connection === 'outdated') {
+    if (this.state.connection !== 'online' && this.state.connection !== 'connecting') {
       return NETWORK_ERROR;
     }
     const result = await this.connection.request(event, payload);

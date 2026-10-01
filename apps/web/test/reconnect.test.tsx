@@ -1,7 +1,7 @@
 import { act, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App';
-import { PokerClient, SESSION_STORAGE_KEY } from '../src/net/client';
+import { PokerClient, RESUME_RETRY_MS, SESSION_STORAGE_KEY } from '../src/net/client';
 import { FakeConnection, TOKEN, roomState } from './support/fakeConnection';
 
 function setup() {
@@ -106,5 +106,70 @@ describe('стан зʼєднання й перепідключення', () => 
     connection.pushStatus('online');
     await Promise.resolve();
     expect(resumes(connection)).toHaveLength(1);
+  });
+
+  it('перезапуск сервера: показує, що сервер прокидається, і сам повертається в кімнату', async () => {
+    const { connection, client } = inRoom();
+    render(<App client={client} />);
+    act(() => connection.pushStatus('waking'));
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Сервер прокидається, зачекайте до хвилини…',
+    );
+    expect(screen.getByRole('img', { name: 'Сервер прокидається…' })).toBeInTheDocument();
+    // Поки сервер прокидається, дії не надсилаються.
+    expect((await client.send('game:bid', { bid: 1 }))?.code).toBe('network');
+    expect(connection.requests.filter((r) => r.event === 'game:bid')).toEqual([]);
+
+    // Під час монтування App уже повертався в кімнату; після перепідключення — ще раз.
+    const before = resumes(connection).length;
+    await act(async () => {
+      connection.pushStatus('online');
+      await Promise.resolve();
+    });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(resumes(connection).slice(before)).toEqual([
+      { event: 'room:resume', payload: { code: 'ABCDE', token: TOKEN } },
+    ]);
+  });
+
+  it('сервер ще не готовий (unavailable): сесія не забувається', async () => {
+    const { connection, client } = inRoom();
+    connection.on('room:resume', () => ({
+      ok: false,
+      error: { code: 'unavailable', message: 'Сервер перезапускається' },
+    }));
+    expect(await client.resume()).toBe(false);
+    expect(localStorage.getItem(SESSION_STORAGE_KEY)).not.toBeNull();
+  });
+
+  it('після перезапуску база ще прокидається: повернення в кімнату повторюється', async () => {
+    vi.useFakeTimers();
+    try {
+      const { connection, client } = inRoom();
+      let attempts = 0;
+      connection.on('room:resume', () => {
+        attempts++;
+        if (attempts < 3) {
+          return { ok: false, error: { code: 'unavailable', message: 'Сервер перезапускається' } };
+        }
+        return {
+          ok: true,
+          data: { code: 'ABCDE', token: TOKEN, playerId: 'p1', link: '/r/ABCDE' },
+        };
+      });
+      connection.pushStatus('waking');
+      connection.pushStatus('online');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(attempts).toBe(1);
+      await vi.advanceTimersByTimeAsync(RESUME_RETRY_MS);
+      expect(attempts).toBe(2);
+      await vi.advanceTimersByTimeAsync(RESUME_RETRY_MS);
+      expect(attempts).toBe(3);
+      await vi.advanceTimersByTimeAsync(RESUME_RETRY_MS * 5);
+      expect(attempts).toBe(3);
+      expect(client.getState().room?.code).toBe('ABCDE');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

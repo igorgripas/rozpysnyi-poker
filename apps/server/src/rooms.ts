@@ -58,8 +58,10 @@ export interface RoomManagerOptions {
   botDelayMs?: number;
   /** Пауза після завершення взятки перед наступним ходом бота, мс: щоб люди встигли її роздивитися. */
   trickPauseMs?: number;
-  /** Сховище, з якого кімнати відновлюються під час старту і куди зберігаються після змін. */
+  /** Сховище, куди кімнати зберігаються після змін і звідки підвантажуються за кодом. */
   store?: RoomStore;
+  /** Помилка запису у сховище (після всіх повторних спроб). */
+  onStoreError?: (error: unknown) => void;
 }
 
 /** Затримка ходу бота за замовчуванням: щоб люди встигали бачити карти. */
@@ -97,6 +99,15 @@ export class RoomManager {
   private readonly turnTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Боти за ідентифікатором учасника. */
   private readonly bots = new Map<string, Bot>();
+  private readonly onStoreError: (error: unknown) => void;
+  /** Остання черга записів кожної кімнати: записи однієї кімнати йдуть послідовно. */
+  private readonly writes = new Map<string, Promise<boolean>>();
+  /** Кімнати, що зараз підвантажуються зі сховища. */
+  private readonly loading = new Map<string, Promise<Room | undefined>>();
+  /** Менеджер зупинено (`close`): ходи ботів і таймери більше не плануються. */
+  private closed = false;
+  /** Коди, зайняті кімнатами, які ще створюються. */
+  private readonly reserved = new Set<string>();
 
   constructor(options: RoomManagerOptions = {}) {
     this.random = options.random ?? cryptoRandom;
@@ -104,39 +115,71 @@ export class RoomManager {
     this.botDelayMs = options.botDelayMs ?? DEFAULT_BOT_DELAY_MS;
     this.trickPauseMs = options.trickPauseMs ?? TRICK_PAUSE_MS;
     this.store = options.store ?? null;
-    if (this.store !== null) this.restore(this.store.load());
+    this.onStoreError = options.onStoreError ?? (() => undefined);
   }
 
-  /** Відновлює кімнати зі знімків: гру — через `replay`, люди чекають на перепідключення (R-9.3). */
-  private restore(snapshots: readonly RoomSnapshot[]): void {
-    for (const snapshot of snapshots) {
-      let game: GameState | null = null;
-      try {
-        if (snapshot.game !== null) {
-          game = replay(snapshot.game.seed, snapshot.game.log);
-          if (game.playerCount !== snapshot.seats.length) continue;
+  /** Готує сховище під час старту сервера (схема бази). */
+  async init(): Promise<void> {
+    await this.store?.init();
+  }
+
+  /**
+   * Кімната за кодом: з памʼяті або, якщо її там немає (новий процес після рестарту),
+   * зі сховища. Відновлена гра продовжується: боти ходять, пауза після взятки витримується.
+   */
+  async load(code: string): Promise<Room | undefined> {
+    const room = this.rooms.get(code);
+    if (room !== undefined || this.store === null) return room;
+    let pending = this.loading.get(code);
+    if (pending === undefined) {
+      const store = this.store;
+      pending = (async () => {
+        try {
+          const snapshot = await store.load(code);
+          // Поки читали, кімнату могли завантажити або створити.
+          const existing = this.rooms.get(code);
+          if (existing !== undefined || snapshot === null) return existing;
+          return this.restore(snapshot);
+        } finally {
+          this.loading.delete(code);
         }
-      } catch {
-        // Знімок, який не відтворюється, пропускаємо: решта кімнат має піднятися.
-        continue;
-      }
-      const room: Room = {
-        code: snapshot.code,
-        hostId: snapshot.hostId,
-        status: snapshot.status,
-        seats: snapshot.seats.map((seat) => ({ ...seat, connected: seat.kind === 'bot' })),
-        game,
-        turnTimerSec: snapshot.turnTimerSec,
-        turnDeadline: null,
-      };
-      for (const member of room.seats) {
-        if (member.kind === 'bot') this.bots.set(member.id, createHeuristicBot());
-      }
-      this.rooms.set(room.code, room);
+      })();
+      this.loading.set(code, pending);
     }
-    for (const room of this.rooms.values()) {
-      if (room.status === 'playing') this.scheduleTurn(room);
+    return pending;
+  }
+
+  /** Відновлює кімнату зі знімка: гру — через `replay`, люди чекають на перепідключення (R-9.3). */
+  private restore(snapshot: RoomSnapshot): Room | undefined {
+    let game: GameState | null = null;
+    try {
+      if (snapshot.game !== null) {
+        game = replay(snapshot.game.seed, snapshot.game.log);
+        if (game.playerCount !== snapshot.seats.length) return undefined;
+      }
+    } catch {
+      // Знімок, який не відтворюється, пропускаємо: це не має валити сервер.
+      return undefined;
     }
+    const room: Room = {
+      code: snapshot.code,
+      hostId: snapshot.hostId,
+      status: snapshot.status,
+      seats: snapshot.seats.map((seat) => ({ ...seat, connected: seat.kind === 'bot' })),
+      game,
+      turnTimerSec: snapshot.turnTimerSec,
+      turnDeadline: null,
+    };
+    for (const member of room.seats) {
+      if (member.kind === 'bot') this.bots.set(member.id, createHeuristicBot());
+    }
+    this.rooms.set(room.code, room);
+    if (room.status === 'playing' && game !== null) {
+      // Рестарт міг статися одразу після взятки: пауза взятки починається заново.
+      const last = game.actions.at(-1);
+      this.scheduleTurn(room, last?.type === 'play' && game.hand.trick.length === 0);
+    }
+    return room;
   }
 
   private snapshot(room: Room): RoomSnapshot {
@@ -158,8 +201,47 @@ export class RoomManager {
 
   protected changed(code: string): void {
     const room = this.rooms.get(code);
-    if (room !== undefined) this.store?.save(this.snapshot(room));
+    if (room !== undefined) this.persist(room);
     for (const listener of this.listeners) listener(code);
+  }
+
+  /** Ставить знімок у чергу записів кімнати: наступний запис чекає попередній. */
+  private persist(room: Room): void {
+    const store = this.store;
+    if (store === null) return;
+    const snapshot = this.snapshot(room);
+    const previous = this.writes.get(room.code) ?? Promise.resolve(true);
+    const next = previous.then(() =>
+      store.save(snapshot).then(
+        () => true,
+        (error: unknown) => {
+          this.onStoreError(error);
+          return false;
+        },
+      ),
+    );
+    this.writes.set(room.code, next);
+    void next.then(() => {
+      if (this.writes.get(room.code) === next) this.writes.delete(room.code);
+    });
+  }
+
+  /**
+   * Чекає, доки всі зміни кімнати запишуться у сховище. `false` — останній запис не вдався
+   * (сховище недоступне навіть після повторних спроб).
+   */
+  async persisted(code: string): Promise<boolean> {
+    return (await this.writes.get(code)) ?? true;
+  }
+
+  /** Чекає запису всіх кімнат (зупинка сервера). */
+  async flush(): Promise<void> {
+    while (this.writes.size > 0) await Promise.all(this.writes.values());
+  }
+
+  /** Очищує сховище від старих завершених ігор і покинутих лобі. */
+  async cleanup(): Promise<number> {
+    return (await this.store?.cleanup()) ?? 0;
   }
 
   /** Посилання-запрошення в кімнату. */
@@ -171,13 +253,25 @@ export class RoomManager {
     return this.rooms.get(code);
   }
 
-  private newCode(): string {
+  /** Новий код, не зайнятий ні в памʼяті, ні у сховищі. */
+  private async newCode(): Promise<string> {
     for (;;) {
       let code = '';
       for (let i = 0; i < ROOM_CODE_LENGTH; i++) {
         code += ROOM_CODE_ALPHABET[this.random.int(ROOM_CODE_ALPHABET.length)];
       }
-      if (!this.rooms.has(code)) return code;
+      if (this.rooms.has(code) || this.reserved.has(code)) continue;
+      if (this.store === null) return code;
+      // Код резервується, поки перевіряємо сховище: паралельне створення його не візьме.
+      // Зарезервований код звільняє `create`, коли кімната вже в памʼяті.
+      this.reserved.add(code);
+      let taken = true;
+      try {
+        taken = await this.store.has(code);
+      } finally {
+        if (taken) this.reserved.delete(code);
+      }
+      if (!taken) return code;
     }
   }
 
@@ -225,10 +319,11 @@ export class RoomManager {
     return ok(room);
   }
 
-  create(name: string): Result<Session> {
+  async create(name: string): Promise<Result<Session>> {
+    const code = await this.newCode();
     const host = this.newHuman(name);
     const room: Room = {
-      code: this.newCode(),
+      code,
       hostId: host.id,
       status: 'lobby',
       seats: [host],
@@ -237,11 +332,12 @@ export class RoomManager {
       turnDeadline: null,
     };
     this.rooms.set(room.code, room);
+    this.reserved.delete(code);
     this.changed(room.code);
     return ok(this.session(room, host));
   }
 
-  /** Вхід за кодом: новий гравець сідає на наступне місце (R-9.1). */
+  /** Вхід за кодом: новий гравець сідає на наступне місце (R-9.1). Кімнату спершу підвантажує `load`. */
   join(code: string, name: string): Result<Session> {
     const room = this.rooms.get(code.toUpperCase());
     if (room === undefined) return fail('roomNotFound', `Кімнати ${code} немає`);
@@ -255,7 +351,7 @@ export class RoomManager {
     return ok(this.session(room, member));
   }
 
-  /** Повернення в кімнату за токеном. */
+  /** Повернення в кімнату за токеном. Кімнату спершу підвантажує `load`. */
   resume(code: string, token: string): Result<Session> {
     const room = this.rooms.get(code.toUpperCase());
     if (room === undefined) return fail('roomNotFound', `Кімнати ${code} немає`);
@@ -389,6 +485,7 @@ export class RoomManager {
 
   /** Скасовує заплановані ходи (зупинка сервера); стан лишається у сховищі. */
   close(): void {
+    this.closed = true;
     for (const timer of this.turnTimers.values()) clearTimeout(timer);
     this.turnTimers.clear();
   }
@@ -429,7 +526,7 @@ export class RoomManager {
     this.turnTimers.delete(room.code);
     room.turnDeadline = null;
     const turn = room.game?.turn ?? null;
-    if (turn === null) return;
+    if (turn === null || this.closed) return;
     const member = room.seats[turn] as Member;
     let delay: number;
     let bot: Bot;

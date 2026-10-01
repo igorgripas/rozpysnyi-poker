@@ -26,6 +26,7 @@ import {
   playerNameSchema,
   playerViewSchema,
   roomCodeSchema,
+  serverMessageSchemas,
   type WireAction,
   type WireCard,
   type WireJokerCall,
@@ -168,6 +169,10 @@ describe('перепідключення й таймер ходу', () => {
     expect(ERROR_CODES).toContain('playerConnected');
   });
 
+  it('є код помилки для збою сховища: дію не вдалося зберегти', () => {
+    expect(ERROR_CODES).toContain('unavailable');
+  });
+
   it('R-9.3: стан кімнати містить налаштування таймера й дедлайн ходу', () => {
     const room = {
       code: 'ABCDE',
@@ -240,5 +245,11 @@ describe('повідомлення сервера', () => {
       unknown
     >;
     expect(playerViewSchema.safeParse({ ...view, hands: [[], [], []] }).success).toBe(false);
+  });
+});
+
+describe('перезапуск сервера (T55)', () => {
+  it('сервер попереджає клієнтів про перезапуск подією server:restarting', () => {
+    expect(serverMessageSchemas['server:restarting'].parse({})).toEqual({});
   });
 });
