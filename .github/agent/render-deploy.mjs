@@ -8,7 +8,7 @@ const API = 'https://api.render.com/v1';
 const { RENDER_API_KEY, SHA, RENDER_SERVICES = '', DEPLOYED = '' } = process.env;
 const FAILED = new Set(['build_failed', 'update_failed', 'pre_deploy_failed', 'canceled']);
 /** Скільки чекати, поки Render узагалі створить деплой коміту (buildFilter може його пропустити). */
-const APPEAR_MS = 5 * 60_000;
+const APPEAR_MS = 8 * 60_000;
 const FINISH_MS = 25 * 60_000;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -80,7 +80,14 @@ if (command === 'wait') {
     const id = await serviceId(name);
     const result = await waitFor(name, id);
     if (result === null) {
-      console.log(`${name}: коміт ${SHA.slice(0, 7)} цей сервіс не змінює — деплою немає`);
+      console.log(
+        `${name}: деплою коміту ${SHA.slice(0, 7)} немає (buildFilter або вже витіснений)`,
+      );
+      for (const d of (await deploys(id)).slice(0, 3)) {
+        console.log(
+          `  останній: ${d.commit?.id?.slice(0, 7) ?? '—'} ${d.status} ${d.trigger ?? ''} ${d.createdAt ?? ''}`,
+        );
+      }
     } else if (result.status === 'live') {
       console.log(`${name}: live (${result.deploy}), попередній ${result.previous || '—'}`);
       deployed.push(`${name}:${id}:${result.previous}`);
