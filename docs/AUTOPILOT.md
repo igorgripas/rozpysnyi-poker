@@ -34,7 +34,7 @@
 |------|-----------|
 | `docs/RULES.md` | людина або агент через PR з міткою `spec-change`, яку ставить людина |
 | `packages/engine/test/golden/**` — еталонні сценарії, похідні від RULES.md | так само, як RULES.md |
-| `.github/workflows/**`, `CLAUDE.md` (розділ «Правила агента») | так само |
+| `.github/workflows/**`, `apps/web/smoke/**` (smoke на проді), `CLAUDE.md` (розділ «Правила агента») | так само |
 | усе інше | агенти вільно |
 
 Workflow `guard` відхиляє PR агента, який торкається захищених шляхів без мітки
@@ -61,7 +61,7 @@ Workflow `guard` відхиляє PR агента, який торкається
 | `agent-review.yml` | PR агента, зелений CI | окремий запуск Claude з роллю рецензента: звіряє зміни з RULES.md і критеріями приймання, шукає послаблені тести та невідтестовані гілки. Результат публікує як status check `agent-review` |
 | `agent-fix.yml` | CI червоний або `agent-review` = changes | Claude виправляє. Після 3 невдалих спроб ставить `needs-human` і надсилає сповіщення |
 | auto-merge | branch protection | обов'язкові checks: `verify` (CI), `guard`, `agent-review`. Після них — squash-merge |
-| `deploy.yml` | push у main | Docker-образ → деплой → health check → smoke e2e на проді. Якщо smoke падає — відкат на попередній образ і issue `bug P0` |
+| `deploy.yml` | push у main | Render сам деплоїть кожен коміт main (`render.yaml`); workflow через Render API чекає деплою цього коміту, проганяє smoke (`apps/web/smoke/`) на проді. Збій збірки → issue `bug P0`; збій smoke → відкат сервісів до попереднього деплою + issue `bug P0` |
 | `nightly.yml` | cron щоночі | 100k симуляцій, mutation testing рушія (Stryker, поріг ≥80%), e2e на проді, оновлення залежностей. Будь-яке падіння — issue `agent:ready` |
 | `digest.yml` | cron щодня | коментар у закріпленому issue «Щоденний звіт»: що змерджено й задеплоєно, що заблоковано, витрати на запуски агентів |
 

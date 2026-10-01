@@ -1,6 +1,6 @@
 # Render Blueprint (T51): сервер гри (web service, free) + клієнт (static site, CDN, не засинає).
 # Кімнати зберігаються в Neon Postgres (DATABASE_URL задає власник під час створення Blueprint).
-# Деплой — лише після зелених перевірок GitHub на коміті в main (autoDeployTrigger: checksPass).
+# Деплой — на кожен коміт у main (туди потрапляють лише PR із зеленими перевірками); перевірка — .github/workflows/deploy.yml.
 services:
   - name: rozpysnyi-poker-api
     type: web
@@ -10,7 +10,7 @@ services:
     buildCommand: npx --yes pnpm@12.6.0 install --frozen-lockfile && npx --yes pnpm@12.6.0 --filter "@poker/server..." build
     startCommand: node apps/server/dist/main.js
     healthCheckPath: /health
-    autoDeployTrigger: checksPass
+    autoDeployTrigger: commit
     buildFilter:
       paths:
         - apps/server/**
@@ -33,7 +33,7 @@ services:
     runtime: static
     buildCommand: npx --yes pnpm@12.6.0 install --frozen-lockfile && npx --yes pnpm@12.6.0 --filter @poker/web build
     staticPublishPath: apps/web/dist
-    autoDeployTrigger: checksPass
+    autoDeployTrigger: commit
     buildFilter:
       paths:
         - apps/web/**
