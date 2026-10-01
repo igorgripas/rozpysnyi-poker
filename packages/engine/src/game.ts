@@ -339,7 +339,7 @@ export interface PlayerView {
   readonly bids: readonly (number | null)[];
   /** Поточна сума замовлень (R-4.5). */
   readonly bidSum: number;
-  /** Заборонене для роздаючого значення (R-4.4, R-4.5) або `null`. */
+  /** Заборонене для роздаючого значення (R-4.4, R-4.5) або `null` (зокрема в роздачах з 1–3 картами, R-4.6). */
   readonly forbiddenBid: number | null;
   readonly taken: readonly number[];
   readonly leader: number;

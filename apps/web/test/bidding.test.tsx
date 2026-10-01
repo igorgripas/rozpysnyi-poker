@@ -4,9 +4,16 @@ import { describe, expect, it } from 'vitest';
 import { defined, renderAt, renderTable } from './support/render';
 import { findState, gameRoom, wireView } from './support/views';
 
-/** Хід роздаючого в замовленні: він замовляє останнім (R-4.2). */
+/** Хід роздаючого в замовленні: він замовляє останнім (R-4.2); з 4 карт діє R-4.4. */
 const dealerBids = (state: GameState) =>
-  state.status === 'bidding' && state.turn === state.hand.dealer && state.hand.spec.cards >= 2;
+  state.status === 'bidding' && state.turn === state.hand.dealer && state.hand.spec.cards >= 4;
+
+/** Хід роздаючого в роздачі з 2–3 картами, де R-4.4 не діє (R-4.6). */
+const dealerBidsSmallHand = (state: GameState) =>
+  state.status === 'bidding' &&
+  state.turn === state.hand.dealer &&
+  state.hand.spec.cards >= 2 &&
+  state.hand.spec.cards <= 3;
 
 /** Хід не-роздаючого в замовленні. */
 const otherBids = (state: GameState) =>
@@ -46,6 +53,27 @@ describe('замовлення', () => {
     expect(bidButtons().filter((b) => b.hasAttribute('disabled'))).toHaveLength(1);
     await user.click(button);
     expect(connection.requests).toEqual([]);
+  });
+
+  it('R-4.6: у роздачі з 1–3 картами роздаючому доступні всі 0…K без заборони', async () => {
+    const state = findState(3, dealerBidsSmallHand);
+    const seat = state.hand.dealer;
+    const { connection, user } = renderAt(state, seat);
+    const view = wireView(state, seat);
+    const cards = state.hand.spec.cards;
+    expect(view.forbiddenBid).toBeNull();
+    const buttons = bidButtons();
+    expect(buttons.map((b) => b.textContent)).toEqual(
+      Array.from({ length: cards + 1 }, (_, bid) => String(bid)),
+    );
+    for (const button of buttons) expect(button).toBeEnabled();
+    expect(screen.getByRole('region', { name: 'Замовлення' })).not.toHaveTextContent(
+      'Роздаючому не можна',
+    );
+    // Замовлення, з яким сума дорівнює кількості карт, надсилається.
+    const sumToCards = cards - view.bidSum;
+    await user.click(screen.getByRole('button', { name: String(sumToCards) }));
+    expect(connection.requests).toEqual([{ event: 'game:bid', payload: { bid: sumToCards } }]);
   });
 
   it('R-4.5: сума замовлень і заборонене значення видні всім', () => {

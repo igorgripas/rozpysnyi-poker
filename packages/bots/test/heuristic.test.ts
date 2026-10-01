@@ -36,6 +36,20 @@ describe('евристичний бот: замовлення', () => {
     expect(view.legalActions).toContainEqual(action);
     expect(action).toEqual({ type: 'bid', seat: 3, bid: 1 });
   });
+
+  it('R-4.6: у роздачі з 1–3 картами роздаючий може замовити значення, що дає суму = K', () => {
+    // Інші замовили 3 з 3 → у роздачі на 3 карти роздаючий не обмежений і пасує зі слабкою рукою.
+    const view = scenario({
+      seat: 3,
+      dealer: 3,
+      phase: 'ascending',
+      trump: 'spades',
+      hand: 'H6 D6 C6',
+      bids: [1, 1, 1, null],
+    });
+    expect(view.legalActions).toHaveLength(4);
+    expect(bot.act(view)).toEqual({ type: 'bid', seat: 3, bid: 0 });
+  });
 });
 
 describe('евристичний бот: розіграш на замовлення', () => {

@@ -65,13 +65,31 @@ describe('замовлення', () => {
   });
 
   it('R-4.4: forbidden value is K when others bid 0 in total', () => {
-    expect(forbiddenDealerBid(1, 0)).toBe(1);
-    expect(legalBids(1, [0, 0], 3)).toEqual([0]);
+    expect(forbiddenDealerBid(4, 0)).toBe(4);
+    expect(legalBids(4, [0, 0], 3)).toEqual([0, 1, 2, 3]);
   });
 
   it('R-4.4: no forbidden value when others already exceed cards dealt', () => {
-    expect(forbiddenDealerBid(2, 3)).toBeNull();
-    expect(legalBids(2, [2, 1, 0], 4)).toEqual([0, 1, 2]);
+    expect(forbiddenDealerBid(4, 5)).toBeNull();
+    expect(legalBids(4, [2, 2, 1], 4)).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it('R-4.6: in hands of 1, 2 and 3 cards the dealer may make the sum equal to cards dealt', () => {
+    expect(forbiddenDealerBid(1, 0)).toBeNull();
+    expect(legalBids(1, [0, 0], 3)).toEqual([0, 1]);
+    expect(isLegalBid(1, [0, 0], 3, 1)).toBe(true);
+    expect(forbiddenDealerBid(2, 2)).toBeNull();
+    expect(legalBids(2, [1, 1], 3)).toEqual([0, 1, 2]);
+    expect(isLegalBid(2, [1, 1], 3, 0)).toBe(true);
+    expect(forbiddenDealerBid(3, 2)).toBeNull();
+    expect(legalBids(3, [1, 1, 0], 4)).toEqual([0, 1, 2, 3]);
+    expect(isLegalBid(3, [1, 1, 0], 4, 1)).toBe(true);
+  });
+
+  it('R-4.6: from 4 cards on R-4.4 applies again', () => {
+    expect(forbiddenDealerBid(4, 3)).toBe(1);
+    expect(legalBids(4, [1, 1, 1], 4)).toEqual([0, 2, 3, 4]);
+    expect(isLegalBid(4, [1, 1, 1], 4, 1)).toBe(false);
   });
 
   it('R-4.4: forbidden value 0 when others bid exactly K', () => {
@@ -79,8 +97,8 @@ describe('замовлення', () => {
     expect(legalBids(4, [2, 2], 3)).toEqual([1, 2, 3, 4]);
   });
 
-  it('R-4.4: dealer always has at least one legal bid and the total never equals K', () => {
-    for (let k = 1; k <= 12; k++) {
+  it('R-4.4: dealer always has at least one legal bid and the total never equals K (K ≥ 4)', () => {
+    for (let k = 4; k <= 12; k++) {
       for (let a = 0; a <= k; a++) {
         for (let b = 0; b <= k; b++) {
           const bids = legalBids(k, [a, b], 3);
@@ -95,7 +113,7 @@ describe('замовлення', () => {
 
   it('R-4.4: restriction applies only to the dealer, not to other players', () => {
     // Другий гравець із трьох: сума могла б стати K, але він не роздаючий.
-    expect(isLegalBid(2, [1], 3, 1)).toBe(true);
+    expect(isLegalBid(4, [2], 3, 2)).toBe(true);
   });
 
   it('R-4.2: no more bids are accepted after the dealer has bid', () => {

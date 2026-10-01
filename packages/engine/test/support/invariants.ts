@@ -100,7 +100,7 @@ export function checkTrickSums(state: GameState): string[] {
   });
 }
 
-/** R-4.4: сума замовлень ≠ кількості карт у кожній роздачі із замовленням. */
+/** R-4.4: сума замовлень ≠ кількості карт у кожній роздачі із замовленням на 4+ карти (R-4.6). */
 export function checkBidSums(state: GameState): string[] {
   return segments(state).flatMap(({ record, bids }) => {
     if (!record.spec.bidding) {
@@ -108,6 +108,8 @@ export function checkBidSums(state: GameState): string[] {
         ? []
         : [`${label(record)}: замовлення в роздачі без замовлень`];
     }
+    // R-4.6: у роздачах з 1–3 картами сума може дорівнювати кількості карт.
+    if (record.spec.cards <= 3) return [];
     const sum = bids.reduce((acc, action) => acc + (action.type === 'bid' ? action.bid : 0), 0);
     return sum === record.spec.cards
       ? [`${label(record)}: сума замовлень ${sum} дорівнює кількості карт`]

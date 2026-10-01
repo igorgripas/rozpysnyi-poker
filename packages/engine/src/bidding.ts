@@ -20,11 +20,15 @@ export function biddingOrder(dealer: number, playerCount: number): number[] {
   return Array.from({ length: playerCount }, (_, i) => (dealer + 1 + i) % playerCount);
 }
 
+/** Найбільша кількість карт, за якої R-4.4 не діє (R-4.6): роздачі з 1, 2 і 3 картами. */
+const UNRESTRICTED_DEALER_MAX_CARDS = 3;
+
 /**
  * Заборонене для роздаючого значення (R-4.4): `K − (сума замовлень інших)`,
- * якщо воно в межах 0…K; інакше `null`.
+ * якщо воно в межах 0…K; інакше `null`. У роздачах з 1–3 картами — завжди `null` (R-4.6).
  */
 export function forbiddenDealerBid(cards: number, othersSum: number): number | null {
+  if (cards <= UNRESTRICTED_DEALER_MAX_CARDS) return null;
   const forbidden = cards - othersSum;
   return forbidden >= 0 && forbidden <= cards ? forbidden : null;
 }
@@ -36,7 +40,8 @@ function isInRange(cards: number, bid: number): boolean {
 /**
  * Легальні замовлення для наступного гравця за порядком R-4.2.
  * `previousBids` — замовлення, вже зроблені в цій роздачі, у порядку черги.
- * Діапазон 0…K (R-4.3); для роздаючого (останнього) виключається заборонене значення (R-4.4).
+ * Діапазон 0…K (R-4.3); для роздаючого (останнього) виключається заборонене значення (R-4.4),
+ * крім роздач з 1–3 картами (R-4.6).
  */
 export function legalBids(
   cards: number,
@@ -69,7 +74,7 @@ export function legalBids(
   return bids;
 }
 
-/** Чи легальне замовлення `bid` для наступного гравця (R-4.3, R-4.4). */
+/** Чи легальне замовлення `bid` для наступного гравця (R-4.3, R-4.4, R-4.6). */
 export function isLegalBid(
   cards: number,
   previousBids: readonly number[],

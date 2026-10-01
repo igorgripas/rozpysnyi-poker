@@ -109,14 +109,29 @@ describe('apply: замовлення', () => {
     expect(() => apply(state, { type: 'bid', seat, bid: -1 })).toThrow(IllegalActionError);
   });
 
-  it('R-4.4: dealer cannot make sum equal to cards dealt', () => {
+  it('R-4.6: in a 1-card hand the dealer may make sum equal to cards dealt', () => {
     let state = createGame(5, 3);
-    // Роздача на 1 карту: двоє перших замовляють 0, роздаючому заборонено 1.
+    // Роздача на 1 карту: двоє перших замовляють 0, роздаючий може замовити 1.
     state = apply(state, { type: 'bid', seat: state.turn as number, bid: 0 });
     state = apply(state, { type: 'bid', seat: state.turn as number, bid: 0 });
     const dealer = state.turn as number;
     expect(dealer).toBe(state.hand.dealer);
-    expect(() => apply(state, { type: 'bid', seat: dealer, bid: 1 })).toThrow(IllegalActionError);
+    expect(viewFor(state, dealer).forbiddenBid).toBeNull();
+    expect(legalActions(state)).toHaveLength(2);
+    expect(apply(state, { type: 'bid', seat: dealer, bid: 1 }).status).toBe('playing');
+  });
+
+  it('R-4.4: dealer cannot make sum equal to cards dealt', () => {
+    let state = createGame(5, 3);
+    // Перші три роздачі (1–3 карти, R-4.6) — без обмеження; далі роздача на 4 карти.
+    while (state.hand.spec.cards < 4) state = apply(state, legalActions(state)[0] as Action);
+    expect(state.status).toBe('bidding');
+    state = apply(state, { type: 'bid', seat: state.turn as number, bid: 1 });
+    state = apply(state, { type: 'bid', seat: state.turn as number, bid: 1 });
+    const dealer = state.turn as number;
+    expect(dealer).toBe(state.hand.dealer);
+    expect(viewFor(state, dealer).forbiddenBid).toBe(2);
+    expect(() => apply(state, { type: 'bid', seat: dealer, bid: 2 })).toThrow(IllegalActionError);
     expect(apply(state, { type: 'bid', seat: dealer, bid: 0 }).status).toBe('playing');
   });
 
@@ -273,9 +288,9 @@ describe('повна гра', () => {
     expect(legalActions(state)).toEqual([]);
   });
 
-  it('R-4.4: in every hand the sum of bids differs from cards dealt', () => {
+  it('R-4.4, R-4.6: in every hand of 4+ cards the sum of bids differs from cards dealt', () => {
     const state = playToEnd(55, 4);
-    for (const record of state.history.filter((r) => r.spec.bidding)) {
+    for (const record of state.history.filter((r) => r.spec.bidding && r.spec.cards >= 4)) {
       const sum = record.bids.reduce<number>((a, b) => a + (b ?? 0), 0);
       expect(sum).not.toBe(record.spec.cards);
     }
@@ -381,14 +396,26 @@ describe('viewFor', () => {
   });
 
   it('R-4.5: bids are open to everyone and the view shows the sum and forbidden value', () => {
-    let state = createGame(65, 3);
+    let state = playUntil(createGame(65, 3), createRng(1), (s) => s.hand.spec.cards === 4);
+    expect(state.status).toBe('bidding');
     state = apply(state, { type: 'bid', seat: state.turn as number, bid: 0 });
     state = apply(state, { type: 'bid', seat: state.turn as number, bid: 1 });
     for (let seat = 0; seat < 3; seat++) {
       const view = viewFor(state, seat);
       expect(view.bids).toEqual(state.hand.bids);
       expect(view.bidSum).toBe(1);
-      expect(view.forbiddenBid).toBe(0);
+      expect(view.forbiddenBid).toBe(3);
+    }
+  });
+
+  it('R-4.5, R-4.6: in hands of 1–3 cards the view has no forbidden value', () => {
+    let state = createGame(65, 3);
+    state = apply(state, { type: 'bid', seat: state.turn as number, bid: 0 });
+    state = apply(state, { type: 'bid', seat: state.turn as number, bid: 1 });
+    for (let seat = 0; seat < 3; seat++) {
+      const view = viewFor(state, seat);
+      expect(view.bidSum).toBe(1);
+      expect(view.forbiddenBid).toBeNull();
     }
   });
 
