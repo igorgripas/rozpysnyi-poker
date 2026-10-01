@@ -129,6 +129,8 @@ export const ERROR_CODES = [
   'notEnoughPlayers',
   'illegalAction',
   'playerConnected',
+  /** Сервер не зміг зберегти дію в базу (T54). */
+  'unavailable',
 ] as const;
 
 export const errorCodeSchema = z.enum(ERROR_CODES);

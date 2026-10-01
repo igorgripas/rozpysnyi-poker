@@ -1,22 +1,27 @@
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { type Action, type GameState, gameLog, replay } from '@poker/engine';
 import { roomStateSchema } from '@poker/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { PostgresRoomStore } from '../src/postgres.js';
 import { RoomManager } from '../src/rooms.js';
-import { FileRoomStore, MemoryRoomStore, type RoomStore } from '../src/store.js';
-import { errorCode, testRandom, unwrap } from './support.js';
+import { MemoryRoomStore, type RoomSnapshot, type RoomStore } from '../src/store.js';
+import { freshDatabase } from './db.js';
+import { GatedStore, errorCode, settle, testRandom, unwrap } from './support.js';
 
 const DELAY = 500;
+const PAUSE = 2000;
 
 function manager(store: RoomStore, seed = 1) {
-  return new RoomManager({ random: testRandom(seed), botDelayMs: DELAY, store });
+  return new RoomManager({
+    random: testRandom(seed),
+    botDelayMs: DELAY,
+    trickPauseMs: PAUSE,
+    store,
+  });
 }
 
 /** Кімната з людьми й ботами; гру запущено. */
-function startedRoom(rooms: RoomManager, humans: number, bots: number) {
-  const host = unwrap(rooms.create('Гравець 0'));
+async function startedRoom(rooms: RoomManager, humans: number, bots: number) {
+  const host = unwrap(await rooms.create('Гравець 0'));
   const players = [host];
   for (let i = 1; i < humans; i++) players.push(unwrap(rooms.join(host.code, `Гравець ${i}`)));
   for (let i = 0; i < bots; i++) unwrap(rooms.addBot(host.code, host.playerId));
@@ -43,26 +48,51 @@ function actions(rooms: RoomManager, code: string): number {
   return rooms.get(code)?.game?.actions.length as number;
 }
 
-beforeEach(() => {
-  vi.useFakeTimers();
-});
+/** «Зупинка процесу»: дописати все у сховище й скасувати таймери. */
+async function shutdown(rooms: RoomManager): Promise<void> {
+  await rooms.flush();
+  rooms.close();
+}
 
-afterEach(() => {
+const STORES: [string, () => Promise<RoomStore>][] = [
+  ['MemoryRoomStore', () => Promise.resolve(new MemoryRoomStore())],
+  [
+    'PostgresRoomStore',
+    async () => {
+      const store = new PostgresRoomStore({ connectionString: await freshDatabase() });
+      opened.push(store);
+      return store;
+    },
+  ],
+];
+const opened: PostgresRoomStore[] = [];
+
+afterEach(async () => {
   vi.useRealTimers();
+  for (const store of opened.splice(0)) await store.close();
 });
 
-describe('персистентність', () => {
-  it('R-9.3: після рестарту посеред гри стан, місця й таблиця ті самі; гравці чекають на перепідключення', () => {
-    const store = new MemoryRoomStore();
+describe.each(STORES)('персистентність: %s', (_name, makeStore) => {
+  let store: RoomStore;
+
+  beforeEach(async () => {
+    store = await makeStore();
+    await store.init();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  });
+
+  it('R-9.3: після рестарту посеред гри стан, місця й таблиця ті самі; гравці чекають на перепідключення', async () => {
     const before = manager(store);
-    const { code, players } = startedRoom(before, 3, 0);
+    const { code, players } = await startedRoom(before, 3, 0);
     for (const p of players) before.setConnected(code, p.playerId, true);
     playHumans(before, code, 7);
     const game = before.get(code)?.game as GameState;
-    before.close();
+    await shutdown(before);
 
     const after = manager(store, 2);
-    const room = after.get(code);
+    // Новий процес нічого не тримає в памʼяті: кімната підвантажується за кодом.
+    expect(after.get(code)).toBeUndefined();
+    const room = await after.load(code);
     expect(room?.game).toEqual(game);
     expect(room?.status).toBe('playing');
     expect(room?.hostId).toBe(players[0]?.playerId);
@@ -71,35 +101,39 @@ describe('персистентність', () => {
     );
     const state = after.roomState(code, players[1]?.playerId as string);
     expect(roomStateSchema.parse(state)).toEqual(state);
+    expect(await after.load('ZZZZZ')).toBeUndefined();
   });
 
-  it('R-9.3: після рестарту гравець повертається за токеном і гра продовжується до кінця', () => {
-    const store = new MemoryRoomStore();
+  it('R-9.3: після рестарту гравець повертається за токеном і гра продовжується до кінця', async () => {
     const before = manager(store);
-    const { code, players } = startedRoom(before, 3, 0);
+    const { code, players } = await startedRoom(before, 3, 0);
     playHumans(before, code, 5);
-    before.close();
+    await shutdown(before);
 
     const after = manager(store, 2);
+    await after.load(code);
     for (const p of players) expect(unwrap(after.resume(code, p.token))).toEqual(p);
     expect(errorCode(after.resume(code, 'x'.repeat(32)))).toBe('badToken');
     while (after.get(code)?.status !== 'finished') playHumans(after, code, 1);
     const game = after.get(code)?.game as GameState;
     expect(replay(game.seed, gameLog(game))).toEqual(game);
-    after.close();
+    await shutdown(after);
 
     // Завершена гра теж переживає рестарт.
-    expect(manager(store, 3).get(code)?.status).toBe('finished');
+    expect((await manager(store, 3).load(code))?.status).toBe('finished');
   });
 
-  it('після рестарту боти продовжують ходити', () => {
-    const store = new MemoryRoomStore();
+  it('після рестарту боти продовжують ходити', async () => {
     const before = manager(store);
-    const { code } = startedRoom(before, 1, 2);
-    before.close();
-    expect(vi.getTimerCount()).toBe(0);
+    const { code } = await startedRoom(before, 1, 2);
+    await shutdown(before);
+    // Зупинений менеджер більше не ходить ботами.
+    const stopped = actions(before, code);
+    vi.advanceTimersByTime(DELAY * 10);
+    expect(actions(before, code)).toBe(stopped);
 
     const after = manager(store, 2);
+    await after.load(code);
     const turn = after.get(code)?.game?.turn as number;
     if (after.get(code)?.seats[turn]?.kind === 'human') playHumans(after, code, 1);
     const count = actions(after, code);
@@ -108,10 +142,48 @@ describe('персистентність', () => {
     after.close();
   });
 
-  it('кімната в лобі теж переживає рестарт: можна входити й запускати гру', () => {
-    const store = new MemoryRoomStore();
-    const host = unwrap(manager(store).create('Оля'));
+  it('після рестарту одразу після взятки бот витримує паузу взятки', async () => {
+    const before = manager(store);
+    const { code, players } = await startedRoom(before, 1, 2);
+    const host = players[0]?.playerId as string;
+    const game = () => before.get(code)?.game as GameState;
+    // Доходимо до моменту, коли взятку щойно завершено, а наступним ходить бот.
+    let steps = 0;
+    for (;;) {
+      expect(++steps).toBeLessThan(5000);
+      const g = game();
+      const last = g.actions.at(-1);
+      const next = g.turn;
+      if (
+        last?.type === 'play' &&
+        g.hand.trick.length === 0 &&
+        next !== null &&
+        before.get(code)?.seats[next]?.kind === 'bot'
+      ) {
+        break;
+      }
+      const view = before.view(code, host);
+      if (view?.legalActions.length) {
+        unwrap(send(before, code, host, view.legalActions[0] as Action));
+      } else vi.advanceTimersByTime(1);
+    }
+    await shutdown(before);
+
     const after = manager(store, 2);
+    await after.load(code);
+    const count = actions(after, code);
+    vi.advanceTimersByTime(PAUSE - 1);
+    expect(actions(after, code)).toBe(count);
+    vi.advanceTimersByTime(1);
+    expect(actions(after, code)).toBe(count + 1);
+    after.close();
+  });
+
+  it('кімната в лобі теж переживає рестарт: можна входити й запускати гру', async () => {
+    const host = unwrap(await manager(store).create('Оля'));
+    await settle();
+    const after = manager(store, 2);
+    await after.load(host.code);
     unwrap(after.join(host.code, 'Петро'));
     unwrap(after.addBot(host.code, host.playerId));
     unwrap(after.start(host.code, host.playerId));
@@ -119,86 +191,123 @@ describe('персистентність', () => {
     after.close();
   });
 
-  it('нові коди кімнат після рестарту не збігаються з відновленими', () => {
-    const store = new MemoryRoomStore();
-    const first = unwrap(manager(store, 1).create('Оля'));
-    // Той самий seed дав би той самий код, якби відновлені кімнати не враховувались.
-    expect(unwrap(manager(store, 1).create('Петро')).code).not.toBe(first.code);
-  });
-});
-
-describe('FileRoomStore', () => {
-  let dir: string;
-
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'poker-rooms-'));
+  it('нові коди кімнат після рестарту не збігаються зі збереженими', async () => {
+    const first = manager(store, 1);
+    const created = unwrap(await first.create('Оля'));
+    await first.flush();
+    // Той самий seed дав би той самий код, якби збережені кімнати не враховувались.
+    expect(unwrap(await manager(store, 1).create('Петро')).code).not.toBe(created.code);
   });
 
-  afterEach(() => {
-    rmSync(dir, { recursive: true, force: true });
-  });
-
-  it('зберігає кожну кімнату у файл і відновлює її новим екземпляром', () => {
-    const before = manager(new FileRoomStore(dir));
-    const { code, players } = startedRoom(before, 3, 0);
-    playHumans(before, code, 4);
-    const game = before.get(code)?.game;
-    before.close();
-    expect(readdirSync(dir)).toEqual([`${code}.json`]);
-
-    const after = manager(new FileRoomStore(dir), 2);
-    expect(after.get(code)?.game).toEqual(game);
-    expect(unwrap(after.resume(code, players[2]?.token as string))).toEqual(players[2]);
+  it('паралельні завантаження однієї кімнати дають один і той самий обʼєкт', async () => {
+    const before = manager(store);
+    const { code } = await startedRoom(before, 1, 2);
+    await shutdown(before);
+    const after = manager(store, 2);
+    const [a, b] = await Promise.all([after.load(code), after.load(code)]);
+    expect(a).toBeDefined();
+    expect(a).toBe(b);
+    expect(after.get(code)).toBe(a);
     after.close();
   });
 
-  it('створює каталог, якого ще немає', () => {
-    const nested = join(dir, 'a', 'b');
-    const rooms = manager(new FileRoomStore(nested));
-    const { code } = unwrap(rooms.create('Оля'));
-    expect(readdirSync(nested)).toEqual([`${code}.json`]);
-  });
-
-  it('пошкоджені файли пропускаються, решта кімнат відновлюється', () => {
-    const { code } = unwrap(manager(new FileRoomStore(dir)).create('Оля'));
-    writeFileSync(join(dir, 'BROKE.json'), '{ не json');
-    writeFileSync(join(dir, 'WRONG.json'), JSON.stringify({ version: 999 }));
-    writeFileSync(join(dir, 'notes.txt'), 'сторонній файл');
-    const store = new FileRoomStore(dir);
-    expect(store.load().map((s) => s.code)).toEqual([code]);
-  });
-
-  it('знімок із неможливим логом не валить сервер: кімнату пропущено', () => {
-    const store = new MemoryRoomStore();
+  it('знімок із неможливим логом не валить сервер: кімнату пропущено', async () => {
     const before = manager(store);
-    const { code } = startedRoom(before, 3, 0);
-    before.close();
-    const [snapshot] = store.load();
-    store.save({
-      ...(snapshot as NonNullable<typeof snapshot>),
+    const { code } = await startedRoom(before, 3, 0);
+    await shutdown(before);
+    const snapshot = (await store.load(code)) as RoomSnapshot;
+    await store.save({
+      ...snapshot,
       game: {
         seed: 1,
         log: { version: 1, playerCount: 3, actions: [{ type: 'bid', seat: 5, bid: 9 }] },
       },
     });
-    expect(manager(store, 2).get(code)).toBeUndefined();
+    expect(await manager(store, 2).load(code)).toBeUndefined();
+  });
+
+  it('очищення сховища: завершені ігри старші 30 днів, лобі старші 7 днів', async () => {
+    const rooms = manager(store);
+    const lobby = unwrap(await rooms.create('Оля'));
+    const { code } = await startedRoom(rooms, 3, 0);
+    await rooms.flush();
+    vi.advanceTimersByTime(7 * 24 * 60 * 60 * 1000 + 1);
+    expect(await rooms.cleanup()).toBe(1);
+    expect(await store.load(lobby.code)).toBeNull();
+    expect(await store.load(code)).not.toBeNull();
+    rooms.close();
+  });
+});
+
+describe('запис у сховище', () => {
+  it('записи однієї кімнати йдуть послідовно в порядку змін', async () => {
+    const store = new GatedStore();
+    const rooms = manager(store);
+    const host = unwrap(await rooms.create('Оля'));
+    unwrap(rooms.join(host.code, 'Петро'));
+    unwrap(rooms.addBot(host.code, host.playerId));
+    await settle();
+    // Другий запис не починається, доки не завершився перший.
+    expect(store.started).toEqual([`${host.code}:1`]);
+    let done = false;
+    void rooms.persisted(host.code).then(() => (done = true));
+    for (let i = 0; i < 3; i++) {
+      store.release();
+      await settle();
+    }
+    expect(store.finished).toEqual([`${host.code}:1`, `${host.code}:2`, `${host.code}:3`]);
+    expect(done).toBe(true);
+  });
+
+  it('persisted() повідомляє про невдалий запис; наступний успішний запис це виправляє', async () => {
+    const store = new GatedStore();
+    const errors: unknown[] = [];
+    const rooms = new RoomManager({
+      random: testRandom(1),
+      store,
+      onStoreError: (error) => errors.push(error),
+    });
+    const host = unwrap(await rooms.create('Оля'));
+    store.release();
+    expect(await rooms.persisted(host.code)).toBe(true);
+
+    store.fail = true;
+    unwrap(rooms.join(host.code, 'Петро'));
+    const result = rooms.persisted(host.code);
+    await settle();
+    store.release();
+    expect(await result).toBe(false);
+    expect(errors).toHaveLength(1);
+    expect((await store.load(host.code))?.seats).toHaveLength(1);
+
+    store.fail = false;
+    unwrap(rooms.join(host.code, 'Марта'));
+    const next = rooms.persisted(host.code);
+    await settle();
+    store.release();
+    expect(await next).toBe(true);
+    expect((await store.load(host.code))?.seats).toHaveLength(3);
   });
 });
 
 describe('відключений гравець (R-9.3)', () => {
-  it('R-9.3: місце відключеного гравця чекає: без таймера гра не йде далі', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  it('R-9.3: місце відключеного гравця чекає: без таймера гра не йде далі', async () => {
     const rooms = manager(new MemoryRoomStore());
-    const { code } = startedRoom(rooms, 3, 0);
+    const { code } = await startedRoom(rooms, 3, 0);
     const count = actions(rooms, code);
     vi.advanceTimersByTime(60 * 60 * 1000);
     expect(actions(rooms, code)).toBe(count);
     expect(rooms.roomState(code, rooms.get(code)?.hostId as string).turnDeadline).toBeNull();
   });
 
-  it('R-9.3: хост віддає місце відключеного гравця боту; бот доходить його хід', () => {
+  it('R-9.3: хост віддає місце відключеного гравця боту; бот доходить його хід', async () => {
     const store = new MemoryRoomStore();
     const rooms = manager(store);
-    const { code, players } = startedRoom(rooms, 3, 0);
+    const { code, players } = await startedRoom(rooms, 3, 0);
     const host = players[0]?.playerId as string;
     rooms.setConnected(code, host, true);
     const turn = rooms.get(code)?.game?.turn as number;
@@ -218,17 +327,17 @@ describe('відключений гравець (R-9.3)', () => {
     const count = actions(rooms, code);
     vi.advanceTimersByTime(DELAY);
     expect(actions(rooms, code)).toBe(count + 1);
-    rooms.close();
+    await shutdown(rooms);
 
     // Заміна переживає рестарт.
     const after = manager(store, 2);
-    expect(after.get(code)?.seats[seat]?.kind).toBe('bot');
+    expect((await after.load(code))?.seats[seat]?.kind).toBe('bot');
     after.close();
   });
 
-  it('R-9.3: віддати місце боту може лише хост, лише під час гри і лише за відключеного гравця', () => {
+  it('R-9.3: віддати місце боту може лише хост, лише під час гри і лише за відключеного гравця', async () => {
     const rooms = manager(new MemoryRoomStore());
-    const host = unwrap(rooms.create('Оля'));
+    const host = unwrap(await rooms.create('Оля'));
     const guest = unwrap(rooms.join(host.code, 'Петро'));
     unwrap(rooms.addBot(host.code, host.playerId));
     expect(errorCode(rooms.replaceWithBot(host.code, host.playerId, 1))).toBe('notStarted');
@@ -246,9 +355,13 @@ describe('відключений гравець (R-9.3)', () => {
 });
 
 describe('таймер ходу (R-9.3)', () => {
-  it('R-9.3: таймер за замовчуванням вимкнений; хост вмикає його в налаштуваннях до старту', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  it('R-9.3: таймер за замовчуванням вимкнений; хост вмикає його в налаштуваннях до старту', async () => {
     const rooms = manager(new MemoryRoomStore());
-    const host = unwrap(rooms.create('Оля'));
+    const host = unwrap(await rooms.create('Оля'));
     const guest = unwrap(rooms.join(host.code, 'Петро'));
     expect(rooms.roomState(host.code, host.playerId).turnTimerSec).toBeNull();
     expect(errorCode(rooms.settings(host.code, guest.playerId, 30))).toBe('notHost');
@@ -262,9 +375,9 @@ describe('таймер ходу (R-9.3)', () => {
     rooms.close();
   });
 
-  it('R-9.3: коли час ходу сплив, сервер робить легальний хід за гравця', () => {
+  it('R-9.3: коли час ходу сплив, сервер робить легальний хід за гравця', async () => {
     const rooms = manager(new MemoryRoomStore());
-    const host = unwrap(rooms.create('Оля'));
+    const host = unwrap(await rooms.create('Оля'));
     unwrap(rooms.join(host.code, 'Петро'));
     unwrap(rooms.join(host.code, 'Марта'));
     unwrap(rooms.settings(host.code, host.playerId, 10));
@@ -294,9 +407,9 @@ describe('таймер ходу (R-9.3)', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('R-9.3: з таймером гра людей без жодного ходу доходить до кінця', () => {
+  it('R-9.3: з таймером гра людей без жодного ходу доходить до кінця', async () => {
     const rooms = manager(new MemoryRoomStore());
-    const host = unwrap(rooms.create('Оля'));
+    const host = unwrap(await rooms.create('Оля'));
     unwrap(rooms.addBot(host.code, host.playerId));
     unwrap(rooms.addBot(host.code, host.playerId));
     unwrap(rooms.settings(host.code, host.playerId, 5));
@@ -310,18 +423,19 @@ describe('таймер ходу (R-9.3)', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it('R-9.3: налаштування таймера переживає рестарт, відлік починається заново', () => {
+  it('R-9.3: налаштування таймера переживає рестарт, відлік починається заново', async () => {
     const store = new MemoryRoomStore();
     const before = manager(store);
-    const host = unwrap(before.create('Оля'));
+    const host = unwrap(await before.create('Оля'));
     unwrap(before.join(host.code, 'Петро'));
     unwrap(before.join(host.code, 'Марта'));
     unwrap(before.settings(host.code, host.playerId, 20));
     unwrap(before.start(host.code, host.playerId));
-    before.close();
+    await shutdown(before);
 
     vi.advanceTimersByTime(60_000);
     const after = manager(store, 2);
+    await after.load(host.code);
     const state = after.roomState(host.code, host.playerId);
     expect(state.turnTimerSec).toBe(20);
     expect(state.turnDeadline).toBe(Date.now() + 20_000);

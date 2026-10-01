@@ -1,14 +1,12 @@
 // Інтеграційні тести сервера (AUTOPILOT §5 п.5): справжній сервер і кілька віртуальних
 // клієнтів через WebSocket — кімната, гра, перепідключення, рестарт сервера посеред гри.
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { type GameState, gameLog, replay, viewFor } from '@poker/engine';
 import { type Session, playerViewSchema, roomStateSchema } from '@poker/protocol';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type PokerServer, type PokerServerOptions, createPokerServer } from '../src/server.js';
-import { FileRoomStore } from '../src/store.js';
+import { PostgresRoomStore } from '../src/postgres.js';
 import { TestClient } from './client.js';
+import { freshDatabase } from './db.js';
 import { testRandom, unwrap } from './support.js';
 
 const TIMEOUT = 60_000;
@@ -200,24 +198,32 @@ describe('перепідключення', () => {
 });
 
 describe('рестарт сервера', () => {
-  let dir: string;
+  let databaseUrl: string;
+  const stores: PostgresRoomStore[] = [];
 
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'poker-it-'));
+  /** Нове зʼєднання з тією ж базою — як у нового процесу сервера. */
+  function store(): PostgresRoomStore {
+    const created = new PostgresRoomStore({ connectionString: databaseUrl });
+    stores.push(created);
+    return created;
+  }
+
+  beforeEach(async () => {
+    databaseUrl = await freshDatabase();
   });
 
   afterEach(async () => {
-    // Спершу зупиняємо сервер: інакше він писатиме знімки у вже видалений каталог.
+    // Спершу зупиняємо сервер: інакше він писатиме знімки в уже закрите зʼєднання.
     for (const c of clients.splice(0)) c.close();
     await stop();
-    rmSync(dir, { recursive: true, force: true });
+    for (const s of stores.splice(0)) await s.close();
   });
 
   it(
-    'R-9.3: сервер із FileRoomStore падає посеред гри; після старту гравці повертаються за токенами й дограють',
+    'R-9.3: сервер із Postgres зупиняється посеред гри; новий процес підвантажує кімнату, гравці повертаються за токенами й дограють',
     async () => {
       await stop();
-      await start({ store: new FileRoomStore(dir) });
+      await start({ store: store() });
       const { players, sessions, code } = await lobby(['Оля', 'Петро', 'Марта'], 1);
       unwrap(await (players[0] as TestClient).request('room:start', {}));
       await play(players, () => game(code).actions.length >= 25);
@@ -227,8 +233,10 @@ describe('рестарт сервера', () => {
       // Зупинений сервер більше не ходить ботами: це останній збережений стан.
       const before = rooms?.get(code)?.game as GameState;
 
-      // Новий процес: інший порт, інший генератор, стан — лише з диска.
-      await start({ store: new FileRoomStore(dir), random: testRandom(99) });
+      // Новий процес: інший порт, інший генератор, стан — лише з бази.
+      await start({ store: store(), random: testRandom(99) });
+      expect(server?.rooms.get(code)).toBeUndefined();
+      await server?.rooms.load(code);
       expect(game(code)).toEqual(before);
       const seats = server?.rooms.get(code)?.seats.map((m) => m.id) ?? [];
       const back = sessions.map(() => client());

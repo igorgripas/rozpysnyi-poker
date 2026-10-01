@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type PokerServer, createPokerServer } from '../src/server.js';
 import { MemoryRoomStore } from '../src/store.js';
 import { TestClient } from './client.js';
-import { errorCode, testRandom, unwrap } from './support.js';
+import { GatedStore, errorCode, testRandom, unwrap } from './support.js';
 
 let server: PokerServer;
 let url: string;
@@ -211,5 +211,89 @@ describe('перепідключення й рестарт (R-9.3)', () => {
     await host.until((c) => c.room?.seats[1]?.connected === false);
     unwrap(await host.request('room:replaceWithBot', { seat: 1 }));
     await host.until((c) => c.room?.seats[1]?.kind === 'bot');
+  });
+});
+
+describe('сховище кімнат (T54)', () => {
+  const stores: GatedStore[] = [];
+
+  async function restartWith(store: GatedStore): Promise<void> {
+    if (!stores.includes(store)) stores.push(store);
+    await server.close();
+    server = createPokerServer({ random: testRandom(6), store, botDelayMs: 0, trickPauseMs: 0 });
+    url = await server.listen({ port: 0, host: '127.0.0.1' });
+  }
+
+  afterEach(() => {
+    // Інакше зупинка сервера чекала б записів, які тест так і не пропустив.
+    for (const store of stores.splice(0)) store.open();
+  });
+
+  /** Пропускає записи по одному, доки запит не отримає відповідь. */
+  async function drain<T>(store: GatedStore, pending: Promise<T>): Promise<T> {
+    let done = false;
+    void pending.finally(() => (done = true));
+    while (!done) {
+      store.release();
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    return pending;
+  }
+
+  /** Запит, який памʼятає, чи вже прийшла відповідь. */
+  function tracked<T>(pending: Promise<T>): { promise: Promise<T>; acked: () => boolean } {
+    let acked = false;
+    const promise = pending.then((result) => {
+      acked = true;
+      return result;
+    });
+    return { promise, acked: () => acked };
+  }
+
+  it('дія підтверджується клієнту лише після запису в сховище', async () => {
+    const store = new GatedStore();
+    await restartWith(store);
+    const host = client();
+    const creating = tracked(host.request('room:create', { name: 'Оля' }));
+    await waitFor(() => store.waiting === 1);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(creating.acked()).toBe(false);
+    const session = unwrap(await drain(store, creating.promise));
+    expect(await store.load(session.code)).not.toBeNull();
+
+    const adding = tracked(host.request('room:addBot', {}));
+    await waitFor(() => store.waiting === 1);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(adding.acked()).toBe(false);
+    // Інші гравці теж бачать зміну лише після запису.
+    expect(host.room?.seats).toHaveLength(1);
+    unwrap(await drain(store, adding.promise));
+    expect((await store.load(session.code))?.seats).toHaveLength(2);
+    await host.until((c) => c.room?.seats.length === 2);
+  });
+
+  it('невдалий запис у сховище — клієнт отримує помилку unavailable', async () => {
+    const store = new GatedStore();
+    await restartWith(store);
+    const host = client();
+    unwrap(await drain(store, host.request('room:create', { name: 'Оля' })));
+    store.fail = true;
+    expect(errorCode(await drain(store, host.request('room:addBot', {})))).toBe('unavailable');
+  });
+
+  it('після рестарту кімната підвантажується зі сховища за кодом і для входу нового гравця', async () => {
+    const store = new GatedStore();
+    store.gated = false;
+    await restartWith(store);
+    const host = client();
+    const session = unwrap(await host.request('room:create', { name: 'Оля' }));
+    host.close();
+    await restartWith(store);
+    expect(server.rooms.get(session.code)).toBeUndefined();
+
+    const guest = client();
+    unwrap(await guest.request('room:join', { code: session.code.toLowerCase(), name: 'Петро' }));
+    await guest.until((c) => c.room?.seats.length === 2);
+    expect(guest.room?.seats.map((m) => m.name)).toEqual(['Оля', 'Петро']);
   });
 });

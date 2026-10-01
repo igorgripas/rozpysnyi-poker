@@ -1,13 +1,19 @@
+import { PostgresRoomStore } from './postgres.js';
 import { createPokerServer } from './server.js';
-import { FileRoomStore } from './store.js';
 
 // Точка входу: PORT, HOST і PUBLIC_URL (адреса веб-клієнта для посилань) — зі змінних оточення.
-// DATA_DIR — каталог для знімків кімнат: з ним ігри переживають рестарт сервера.
-const dataDir = process.env.DATA_DIR;
+// DATABASE_URL — Postgres для кімнат: з ним ігри переживають рестарт сервера.
+const databaseUrl = process.env.DATABASE_URL;
 const server = createPokerServer({
   publicUrl: process.env.PUBLIC_URL ?? '',
   logger: true,
-  ...(dataDir !== undefined && dataDir !== '' && { store: new FileRoomStore(dataDir) }),
+  ...(databaseUrl !== undefined &&
+    databaseUrl !== '' && {
+      store: new PostgresRoomStore({
+        connectionString: databaseUrl,
+        onError: (error) => console.error('Postgres: обрив зʼєднання', error),
+      }),
+    }),
 });
 await server.listen({
   port: Number(process.env.PORT ?? 3000),

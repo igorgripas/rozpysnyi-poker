@@ -33,7 +33,7 @@ export default defineConfig({
   ],
   webServer: [
     {
-      // Сервер без DATA_DIR: кімнати лише в памʼяті.
+      // Сервер без DATABASE_URL: кімнати лише в памʼяті.
       command: 'node --import tsx --conditions=source src/main.ts',
       cwd: '../server',
       url: `http://localhost:${SERVER_PORT}/health`,

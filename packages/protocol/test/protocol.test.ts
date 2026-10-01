@@ -168,6 +168,10 @@ describe('перепідключення й таймер ходу', () => {
     expect(ERROR_CODES).toContain('playerConnected');
   });
 
+  it('є код помилки для збою сховища: дію не вдалося зберегти', () => {
+    expect(ERROR_CODES).toContain('unavailable');
+  });
+
   it('R-9.3: стан кімнати містить налаштування таймера й дедлайн ходу', () => {
     const room = {
       code: 'ABCDE',
