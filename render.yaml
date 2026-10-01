@@ -24,9 +24,9 @@ services:
         value: '24'
       - key: DATABASE_URL
         sync: false
-      # Адреса клієнта для посилань-запрошень у кімнату.
+      # Адреса клієнта для посилань-запрошень у кімнату (ім'я rozpysnyi-poker на Render зайняте — суфікс -pzgu).
       - key: PUBLIC_URL
-        value: https://rozpysnyi-poker.onrender.com
+        value: https://rozpysnyi-poker-pzgu.onrender.com
 
   - name: rozpysnyi-poker
     type: web
@@ -55,6 +55,9 @@ services:
     # Service worker і index.html завжди свіжі, щоб після деплою клієнт оновлювався.
     headers:
       - path: /sw.js
+        name: Cache-Control
+        value: no-cache
+      - path: /
         name: Cache-Control
         value: no-cache
       - path: /index.html
