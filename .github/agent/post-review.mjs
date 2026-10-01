@@ -52,6 +52,9 @@ comment(
 
 if (report.verdict === 'approve') {
   status('success', 'Рецензент схвалив');
+  // Схвалений PR або змерджиться, або чекатиме лише на людину — тоді він не блокує черги:
+  // одразу пробуємо взяти наступну задачу, не чекаючи cron.
+  gh(['workflow', 'run', 'agent-dispatch.yml', '--repo', REPO]);
 } else if (report.verdict === 'changes') {
   status('failure', 'Рецензент просить змін');
   if (isAgent)
