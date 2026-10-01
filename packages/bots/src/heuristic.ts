@@ -133,7 +133,10 @@ function trickDistribution(chances: readonly number[]): number[] {
   return dist;
 }
 
-/** Замовлення з найбільшим очікуваним результатом (R-4.3, R-4.4, R-7.1–R-7.4). */
+/**
+ * Замовлення з найбільшим очікуваним результатом (R-4.3, R-7.1–R-7.4) серед легальних:
+ * роздаючому заборонене значення виключає рушій (R-4.4), у роздачах з 1–3 картами — ні (R-4.6).
+ */
 function chooseBid(k: Knowledge): Action {
   const dist = trickDistribution(k.view.hand.map((c) => cardChance(k, c)));
   let best: Action | undefined;

@@ -20,6 +20,23 @@ function corruptLastHand(state: GameState, patch: (taken: number[]) => number[])
   return { ...state, history };
 }
 
+/** Підміняє замовлення роздачі `index` (за місцями) в історії й лозі дій. */
+function withBids(state: GameState, index: number, bids: readonly number[]): GameState {
+  const n = state.playerCount;
+  const start = state.history
+    .slice(0, index)
+    .reduce((offset, record) => offset + (record.spec.bidding ? n : 0) + n * record.spec.cards, 0);
+  const history = state.history.map((record) =>
+    record.spec.index === index ? { ...record, bids: [...bids] } : record,
+  );
+  const actions = state.actions.map((action, i) =>
+    i >= start && i < start + n && action.type === 'bid'
+      ? { ...action, bid: bids[action.seat] as number }
+      : action,
+  );
+  return { ...state, history, actions };
+}
+
 describe('перевірки інваріантів гри', () => {
   it('випадкова гра детермінована: той самий seed дає ту саму гру', () => {
     const a = playRandomGame(7, 4);
@@ -45,15 +62,20 @@ describe('перевірки інваріантів гри', () => {
     expect(checkReplay(state).length).toBeGreaterThan(0);
   });
 
-  it('R-4.4: помічає суму замовлень, що дорівнює кількості карт', () => {
+  it('R-4.4: помічає суму замовлень, що дорівнює кількості карт (роздача на 4 карти)', () => {
     const state = playRandomGame(2, 3);
-    const history = state.history.map((record) =>
-      record.spec.index === 0 ? { ...record, bids: [1, 0, 0] } : record,
-    );
-    const actions = state.actions.map((action, index) =>
-      index < 3 && action.type === 'bid' ? { ...action, bid: action.seat === 0 ? 1 : 0 } : action,
-    );
-    expect(checkBidSums({ ...state, history, actions }).length).toBeGreaterThan(0);
+    expect(state.history[3]?.spec.cards).toBe(4);
+    expect(checkBidSums(state)).toEqual([]);
+    expect(checkBidSums(withBids(state, 3, [2, 1, 1]))).toEqual([
+      'роздача 4: сума замовлень 4 дорівнює кількості карт',
+    ]);
+  });
+
+  it('R-4.6: не помічає суму замовлень, що дорівнює кількості карт, у роздачах з 1–3 картами', () => {
+    const state = playRandomGame(2, 3);
+    expect(checkBidSums(withBids(state, 0, [1, 0, 0]))).toEqual([]);
+    expect(checkBidSums(withBids(state, 1, [1, 1, 0]))).toEqual([]);
+    expect(checkBidSums(withBids(state, 2, [1, 1, 1]))).toEqual([]);
   });
 
   it('помічає карту, зіграну двічі', () => {

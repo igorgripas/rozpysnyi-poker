@@ -7,11 +7,13 @@ import { PLAYER_NAMES, findState, wireView } from './support/views';
 const COUNTS = [3, 4, 5, 6] as const;
 
 /** Замовлення, коли вже замовили `made` гравців (роздаючий — останній). */
-const biddingAfter = (made: number, dealer?: number) => (state: GameState) =>
-  state.status === 'bidding' &&
-  state.hand.spec.cards >= 2 &&
-  state.hand.bids.filter((bid) => bid !== null).length === made &&
-  (dealer === undefined || state.hand.dealer === dealer);
+const biddingAfter =
+  (made: number, dealer?: number, minCards = 2) =>
+  (state: GameState) =>
+    state.status === 'bidding' &&
+    state.hand.spec.cards >= minCards &&
+    state.hand.bids.filter((bid) => bid !== null).length === made &&
+    (dealer === undefined || state.hand.dealer === dealer);
 
 function queueItems() {
   return within(screen.getByRole('list', { name: 'Черга замовлень' })).getAllByRole('listitem');
@@ -74,14 +76,14 @@ describe('черга замовлень', () => {
 
   it('R-4.4: заборонене роздаючому значення показано лише на його ході', () => {
     for (const n of COUNTS) {
-      const before = findState(n, biddingAfter(n - 2));
+      const before = findState(n, biddingAfter(n - 2, undefined, 4));
       const { unmount } = renderAt(before, 0);
       expect(screen.getByRole('region', { name: 'Замовлення' })).not.toHaveTextContent(
         'Роздаючому не можна',
       );
       unmount();
 
-      const dealerTurn = findState(n, biddingAfter(n - 1));
+      const dealerTurn = findState(n, biddingAfter(n - 1, undefined, 4));
       const seat = (dealerTurn.hand.dealer + 1) % n;
       const forbidden = defined(wireView(dealerTurn, seat).forbiddenBid);
       const second = renderAt(dealerTurn, seat);
@@ -89,6 +91,24 @@ describe('черга замовлень', () => {
         `Роздаючому не можна: ${forbidden}`,
       );
       second.unmount();
+    }
+  });
+
+  it('R-4.6: у роздачах з 1–3 картами заборонене значення не показано', () => {
+    for (const n of COUNTS) {
+      const dealerTurn = findState(
+        n,
+        (state) => biddingAfter(n - 1)(state) && state.hand.spec.cards <= 3,
+      );
+      const seat = (dealerTurn.hand.dealer + 1) % n;
+      expect(wireView(dealerTurn, seat).forbiddenBid).toBeNull();
+      const { unmount } = renderAt(dealerTurn, seat);
+      const region = screen.getByRole('region', { name: 'Замовлення' });
+      expect(region).not.toHaveTextContent('Роздаючому не можна');
+      expect(region).toHaveTextContent(
+        `Сума: ${dealerTurn.hand.bids.reduce<number>((a, b) => a + (b ?? 0), 0)} з ${dealerTurn.hand.spec.cards}`,
+      );
+      unmount();
     }
   });
 
