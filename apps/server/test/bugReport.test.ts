@@ -36,7 +36,7 @@ function context(game: GameState): BugContext {
 }
 
 describe('звіт про баг (AUTOPILOT §6)', () => {
-  it('R-2.3: issue містить replay-файл, з якого відтворюється стан гри', () => {
+  it('§6: issue містить replay-файл, з якого відтворюється стан гри', () => {
     const game = play(9, 4, 40);
     const report = buildBugReport(context(game), 'Карта зникла з руки');
     expect(report.labels).toEqual(BUG_REPORT_LABELS);
@@ -63,6 +63,15 @@ describe('звіт про баг (AUTOPILOT §6)', () => {
     const report = buildBugReport(context(play(1, 3, 1)), `${'а'.repeat(200)}\nдругий рядок`);
     expect(report.title.length).toBeLessThanOrEqual(80);
     expect(report.title).not.toContain('\n');
+  });
+
+  it('у заголовку немає невидимих і керувальних символів (bidi-override тощо)', () => {
+    const description = 'Карта\u202Eзникла\u200B з\u0000 руки\u2066!\u2069\u2028кінець';
+    const report = buildBugReport(context(play(1, 3, 1)), description);
+    expect(report.title).toBe('Баг від гравця: Картазникла з руки! кінець');
+    expect(report.title).not.toMatch(/[\p{Cc}\p{Cf}]/u);
+    // Опис у тілі — як є, у блоці коду.
+    expect(report.body).toContain(description);
   });
 
   it('звіт про завершену гру будь-якої кількості гравців вміщається в issue GitHub', () => {

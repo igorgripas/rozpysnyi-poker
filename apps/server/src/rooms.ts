@@ -24,9 +24,14 @@ import {
   type RoomStatus,
   type Session,
 } from '@poker/protocol';
-import type { BugContext } from './bugReport.js';
+import { BUG_REPORTS_PER_PLAYER, type BugContext } from './bugReport.js';
 import { type RandomSource, cryptoRandom } from './random.js';
-import { ROOM_SNAPSHOT_VERSION, type RoomSnapshot, type RoomStore } from './store.js';
+import {
+  type PendingBugReport,
+  ROOM_SNAPSHOT_VERSION,
+  type RoomSnapshot,
+  type RoomStore,
+} from './store.js';
 
 /** Учасник кімнати: людина з токеном або бот. */
 export interface Member {
@@ -50,6 +55,19 @@ export interface Room {
   turnTimerSec: number | null;
   /** Коли сплине час поточного ходу (мс від епохи Unix) або `null`. */
   turnDeadline: number | null;
+  /** Звіти про баги, що чекають кінця гри (T52); зберігаються в знімку кімнати. */
+  bugReports: PendingBugReport[];
+  /** Скільки звітів надіслав кожен гравець: ідентифікатор → кількість. */
+  bugReportsSent: Record<string, number>;
+}
+
+/** Звіт про баг, готовий до публікації: контекст на момент звіту й остаточний стан гри. */
+export interface QueuedBugReport {
+  readonly id: string;
+  readonly context: BugContext;
+  readonly description: string;
+  /** Стан гри для replay-файлу. */
+  readonly final: GameState;
 }
 
 export interface RoomManagerOptions {
@@ -87,6 +105,25 @@ function ok<T>(data: T): Result<T> {
 }
 
 const UINT32 = 2 ** 32;
+
+/** Відкладені звіти з контекстом на момент звіту: стан гри — перші `actions` дій. */
+function queuedReports(
+  code: string,
+  reports: readonly PendingBugReport[],
+  final: GameState,
+): QueuedBugReport[] {
+  return reports.map(({ id, seat, kinds, actions, description }) => ({
+    id,
+    context: {
+      code,
+      seat,
+      kinds,
+      game: replay(final.seed, { ...gameLog(final), actions: final.actions.slice(0, actions) }),
+    },
+    description,
+    final,
+  }));
+}
 
 /** Кімнати в памʼяті: створення, вхід за кодом, повернення за токеном і керування хостом. */
 export class RoomManager {
@@ -180,6 +217,8 @@ export class RoomManager {
       game,
       turnTimerSec: snapshot.turnTimerSec,
       turnDeadline: null,
+      bugReports: [...(snapshot.bugReports ?? [])],
+      bugReportsSent: { ...snapshot.bugReportsSent },
     };
     for (const member of room.seats) {
       if (member.kind === 'bot') this.bots.set(member.id, createHeuristicBot());
@@ -202,6 +241,8 @@ export class RoomManager {
       turnTimerSec: room.turnTimerSec,
       seats: room.seats.map(({ id, name, kind, token }) => ({ id, name, kind, token })),
       game: room.game === null ? null : { seed: room.game.seed, log: gameLog(room.game) },
+      bugReports: [...room.bugReports],
+      bugReportsSent: { ...room.bugReportsSent },
     };
   }
 
@@ -354,6 +395,8 @@ export class RoomManager {
       game: null,
       turnTimerSec: null,
       turnDeadline: null,
+      bugReports: [],
+      bugReportsSent: {},
     };
     this.rooms.set(room.code, room);
     this.reserved.delete(code);
@@ -508,17 +551,101 @@ export class RoomManager {
     return viewFor(room.game, seat);
   }
 
-  /** Що потрібно для звіту про баг (T52): гра й місце гравця; до старту гри — `notStarted`. */
-  bugContext(code: string, playerId: string): Result<BugContext> {
+  /**
+   * Реєструє звіт гравця про баг (T52): не більше `BUG_REPORTS_PER_PLAYER` від гравця.
+   * Звіт з гри, що йде, стає в чергу в знімку кімнати (`queued`) — він переживе рестарт;
+   * звіт із завершеної гри сервер публікує одразу. До старту гри — `notStarted`.
+   */
+  reportBug(
+    code: string,
+    playerId: string,
+    description: string,
+  ): Result<{ context: BugContext; queued: boolean }> {
     const access = this.access(code, playerId);
     if (!access.ok) return access;
     const { room, member } = access.data;
     if (room.game === null) return fail('notStarted', 'Гра ще не почалася');
-    return ok({
+    const sent = room.bugReportsSent[playerId] ?? 0;
+    if (sent >= BUG_REPORTS_PER_PLAYER) {
+      return fail('rateLimited', 'Ви вже надіслали кілька звітів з цієї гри, дякуємо!');
+    }
+    room.bugReportsSent[playerId] = sent + 1;
+    const context: BugContext = {
       code: room.code,
       seat: room.seats.indexOf(member),
       kinds: room.seats.map((m) => m.kind),
       game: room.game,
+    };
+    const queued = room.game.status !== 'finished';
+    if (queued) {
+      room.bugReports.push({
+        id: this.random.id(),
+        seat: context.seat,
+        kinds: context.kinds,
+        actions: room.game.actions.length,
+        description,
+      });
+    }
+    this.persist(room);
+    return ok({ context, queued });
+  }
+
+  /** Звіт не вдалося опублікувати: він не рахується в ліміт гравця. */
+  unreportBug(code: string, playerId: string): void {
+    const room = this.rooms.get(code);
+    const sent = room?.bugReportsSent[playerId] ?? 0;
+    if (room === undefined || sent === 0) return;
+    room.bugReportsSent[playerId] = sent - 1;
+    this.persist(room);
+  }
+
+  /** Відкладені звіти кімнати, якщо її гра завершилася: тепер їх можна публікувати. */
+  finishedBugReports(code: string): QueuedBugReport[] {
+    const room = this.rooms.get(code);
+    if (room?.game?.status !== 'finished') return [];
+    return queuedReports(room.code, room.bugReports, room.game);
+  }
+
+  /**
+   * Звіти зі сховища, які вже можна публікувати: із завершених ігор (напр. сервер упав
+   * до публікації) і з покинутих. Покинуту кімнату не відновлюємо — боти не ходять.
+   */
+  async unpublishedBugReports(): Promise<QueuedBugReport[]> {
+    const store = this.store;
+    if (store === null) return [];
+    const result: QueuedBugReport[] = [];
+    for (const code of await store.unpublishedBugReports()) {
+      const room = this.rooms.get(code);
+      if (room !== undefined) {
+        if (room.game !== null) result.push(...queuedReports(code, room.bugReports, room.game));
+        continue;
+      }
+      const snapshot = await store.load(code);
+      if (snapshot?.game == null) continue;
+      try {
+        const game = replay(snapshot.game.seed, snapshot.game.log);
+        result.push(...queuedReports(code, snapshot.bugReports ?? [], game));
+      } catch {
+        // Гру несумісної версії не відтворити: звіт без replay агентові не допоможе.
+      }
+    }
+    return result;
+  }
+
+  /** Звіт `id` опубліковано: прибирає його з черги кімнати (у памʼяті чи у сховищі). */
+  async bugReportPublished(code: string, id: string): Promise<void> {
+    const room = this.rooms.get(code);
+    if (room !== undefined) {
+      room.bugReports = room.bugReports.filter((report) => report.id !== id);
+      this.persist(room);
+      await this.persisted(code);
+      return;
+    }
+    const snapshot = await this.store?.load(code);
+    if (snapshot == null) return;
+    await this.store?.save({
+      ...snapshot,
+      bugReports: (snapshot.bugReports ?? []).filter((report) => report.id !== id),
     });
   }
 

@@ -14,13 +14,13 @@ import {
 import Fastify, { type FastifyInstance } from 'fastify';
 import { Server, type Socket } from 'socket.io';
 import {
-  BUG_REPORTS_PER_PLAYER,
-  type BugContext,
+  BUG_REPORTS_PER_HOUR,
+  BUG_REPORTS_PER_IP_PER_HOUR,
   type BugReporter,
   buildBugReport,
 } from './bugReport.js';
 import type { RandomSource } from './random.js';
-import { RoomManager, fail } from './rooms.js';
+import { type QueuedBugReport, RoomManager, fail } from './rooms.js';
 import type { RoomStore } from './store.js';
 
 export interface PokerServerOptions {
@@ -40,6 +40,18 @@ export interface PokerServerOptions {
   cleanupIntervalMs?: number;
   /** Куди надсилати звіти гравців про баги; без нього звіти недоступні. */
   bugReporter?: BugReporter;
+  /**
+   * Глобальні ліміти звітів про баги за годину: на весь сервер і на IP-адресу.
+   * Кожен звіт — issue з `agent:ready P0`, тобто запуск платного агента.
+   */
+  bugReportLimits?: { perHour?: number; perIpPerHour?: number };
+  /**
+   * Сервер за проксі (Render): IP клієнта — останній запис `X-Forwarded-For`,
+   * який дописав сам проксі (попередні клієнт може підробити).
+   */
+  trustProxy?: boolean;
+  /** Годинник для лімітів звітів (у тестах — керований). */
+  now?: () => number;
 }
 
 /** Очищення сховища за замовчуванням — раз на 6 годин. */
@@ -169,53 +181,76 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
     };
   }
 
-  /** Скільки звітів про баги надіслав кожен гравець: `code/playerId` → кількість. */
-  const bugReports = new Map<string, number>();
-  /**
-   * Звіти з ігор, що ще йдуть: код кімнати → звіти. Replay містить seed, з якого видно
-   * чужі карти, тож issue (у публічному репозиторії) створюється лише після кінця гри.
-   */
-  const pendingBugReports = new Map<string, { context: BugContext; description: string }[]>();
+  /** Звіти, що зараз публікуються: щоб не створити той самий issue двічі. */
+  const publishing = new Set<string>();
 
+  /**
+   * Публікує відкладений звіт і лише потім прибирає його з черги кімнати: збій GitHub
+   * чи рестарт не губить звіт — його опублікує наступне очищення.
+   */
+  function publish(queued: QueuedBugReport): Promise<void> {
+    const reporter = options.bugReporter;
+    if (reporter === undefined || publishing.has(queued.id)) return Promise.resolve();
+    publishing.add(queued.id);
+    return reporter
+      .report(buildBugReport(queued.context, queued.description, queued.final))
+      .then(() => rooms.bugReportPublished(queued.context.code, queued.id))
+      .catch((error: unknown) => app.log.error({ err: error }, 'Не вдалося створити звіт про баг'))
+      .finally(() => publishing.delete(queued.id));
+  }
+
+  // Звіти з гри, що йде, публікуються після її кінця: replay містить seed, з якого видно
+  // чужі карти, а issue — у публічному репозиторії.
   rooms.subscribe((code) => {
-    const pending = pendingBugReports.get(code);
-    const game = rooms.get(code)?.game;
-    if (pending === undefined || game?.status !== 'finished') return;
-    pendingBugReports.delete(code);
-    for (const { context, description } of pending) {
-      options.bugReporter
-        ?.report(buildBugReport(context, description, game))
-        .catch((error: unknown) =>
-          app.log.error({ err: error }, 'Не вдалося створити звіт про баг'),
-        );
-    }
+    for (const queued of rooms.finishedBugReports(code)) void publish(queued);
   });
 
+  const now = options.now ?? (() => Date.now());
+  const perHour = options.bugReportLimits?.perHour ?? BUG_REPORTS_PER_HOUR;
+  const perIpPerHour = options.bugReportLimits?.perIpPerHour ?? BUG_REPORTS_PER_IP_PER_HOUR;
+  /** Час прийнятих звітів за останню годину: усіх і за IP-адресою. */
+  const recentReports: number[] = [];
+  const recentReportsByIp = new Map<string, number[]>();
+  const HOUR_MS = 60 * 60 * 1000;
+
+  function clientIp(socket: PokerSocket): string {
+    const forwarded = socket.handshake.headers['x-forwarded-for'];
+    const header = Array.isArray(forwarded) ? forwarded.join(',') : forwarded;
+    const last = header?.split(',').at(-1)?.trim();
+    return options.trustProxy === true && last ? last : socket.handshake.address;
+  }
+
+  /** Звіти, прийняті за останню годину (старші викидаються з `times`). */
+  function lastHour(times: number[]): number[] {
+    const since = now() - HOUR_MS;
+    while (times.length > 0 && (times[0] as number) <= since) times.shift();
+    return times;
+  }
+
   async function reportBug(
+    socket: PokerSocket,
     session: NonNullable<SocketData['session']>,
     description: string,
   ): Promise<Result<ClientResponses['game:reportBug']>> {
-    const context = rooms.bugContext(session.code, session.playerId);
-    if (!context.ok) return context;
     const reporter = options.bugReporter;
     if (reporter === undefined) {
       return fail('unavailable', 'Звіти про баги на цьому сервері не налаштовані');
     }
-    const k = key(session.code, session.playerId);
-    const sent = bugReports.get(k) ?? 0;
-    if (sent >= BUG_REPORTS_PER_PLAYER) {
-      return fail('rateLimited', 'Ви вже надіслали кілька звітів з цієї гри, дякуємо!');
+    const ip = clientIp(socket);
+    const byIp = lastHour(recentReportsByIp.get(ip) ?? []);
+    if (lastHour(recentReports).length >= perHour || byIp.length >= perIpPerHour) {
+      return fail('rateLimited', 'Забагато звітів про баги, спробуйте за годину');
     }
-    bugReports.set(k, sent + 1);
-    if (context.data.game.status !== 'finished') {
-      const pending = pendingBugReports.get(session.code) ?? [];
-      pendingBugReports.set(session.code, [...pending, { context: context.data, description }]);
-      return { ok: true, data: { url: null } };
-    }
+    const result = rooms.reportBug(session.code, session.playerId, description);
+    if (!result.ok) return result;
+    recentReports.push(now());
+    recentReportsByIp.set(ip, [...byIp, now()]);
+    const { context, queued } = result.data;
+    if (queued) return { ok: true, data: { url: null } };
     try {
-      return { ok: true, data: await reporter.report(buildBugReport(context.data, description)) };
+      return { ok: true, data: await reporter.report(buildBugReport(context, description)) };
     } catch (error) {
-      bugReports.set(k, sent);
+      rooms.unreportBug(session.code, session.playerId);
       app.log.error({ err: error }, 'Не вдалося створити звіт про баг');
       return fail('unavailable', 'Не вдалося надіслати звіт, спробуйте пізніше');
     }
@@ -251,7 +286,7 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
     'game:reportBug': (socket, { description }) => {
       const session = socket.data.session;
       if (session === null) return fail('notInRoom', 'Спершу створіть кімнату або увійдіть у неї');
-      return reportBug(session, description);
+      return reportBug(socket, session, description);
     },
   };
 
@@ -314,13 +349,19 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
     await rooms.flush();
     await app.close();
   }
-  function cleanup(): void {
-    rooms.cleanup().then(
-      (removed) => {
-        if (removed > 0) app.log.info(`Видалено старих кімнат: ${removed}`);
-      },
-      (error: unknown) => app.log.error({ err: error }, 'Не вдалося очистити сховище'),
-    );
+  /** Очищення сховища; звіти із завершених і покинутих ігор публікуються перед ним. */
+  function cleanup(): Promise<void> {
+    const reports = options.bugReporter === undefined ? [] : rooms.unpublishedBugReports();
+    return Promise.resolve(reports)
+      .then((queued) => Promise.all(queued.map(publish)))
+      .catch((error: unknown) => app.log.error({ err: error }, 'Не вдалося опублікувати звіти'))
+      .then(() => rooms.cleanup())
+      .then(
+        (removed) => {
+          if (removed > 0) app.log.info(`Видалено старих кімнат: ${removed}`);
+        },
+        (error: unknown) => app.log.error({ err: error }, 'Не вдалося очистити сховище'),
+      );
   }
 
   io.on('connection', (socket) => {
@@ -345,8 +386,11 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
       await rooms.init();
       const address = await app.listen({ port, ...(host !== undefined && { host }) });
       if (options.store !== undefined) {
-        cleanup();
-        cleanupTimer = setInterval(cleanup, options.cleanupIntervalMs ?? CLEANUP_INTERVAL_MS);
+        void cleanup();
+        cleanupTimer = setInterval(
+          () => void cleanup(),
+          options.cleanupIntervalMs ?? CLEANUP_INTERVAL_MS,
+        );
         cleanupTimer.unref();
       }
       return address;

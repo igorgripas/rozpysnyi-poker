@@ -24,6 +24,8 @@ const bugReporter =
 const server = createPokerServer({
   publicUrl: process.env.PUBLIC_URL ?? '',
   logger: true,
+  // Render (змінна RENDER) стоїть проксі перед сервером: IP клієнта — з X-Forwarded-For.
+  trustProxy: process.env.RENDER !== undefined,
   ...(store !== undefined && { store }),
   ...(bugReporter !== undefined && { bugReporter }),
 });

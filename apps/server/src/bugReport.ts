@@ -18,6 +18,12 @@ export const BUG_REPORT_LABELS = ['bug', 'P0', 'agent:ready'] as const;
 /** Скільки звітів може надіслати один гравець в одній кімнаті: захист від спаму. */
 export const BUG_REPORTS_PER_PLAYER = 3;
 
+/** Скільки звітів сервер приймає за годину від усіх гравців: кожен — запуск агента. */
+export const BUG_REPORTS_PER_HOUR = 10;
+
+/** Скільки звітів сервер приймає за годину з однієї IP-адреси. */
+export const BUG_REPORTS_PER_IP_PER_HOUR = 3;
+
 /** Найбільша довжина тексту issue в GitHub. */
 export const ISSUE_BODY_MAX_LENGTH = 65_536;
 
@@ -45,11 +51,17 @@ export function buildBugReport(
   final: GameState = context.game,
 ): BugReport {
   const { code, seat, kinds, game } = context;
-  const oneLine = description.replace(/\s+/g, ' ').trim();
+  // Заголовок видно в черзі агента: без невидимих і керувальних символів (bidi-override тощо).
+  const oneLine = Array.from(
+    description
+      .replace(/\p{Cf}/gu, '')
+      .replace(/[\s\p{Cc}]+/gu, ' ')
+      .trim(),
+  );
   const short =
     oneLine.length > TITLE_DESCRIPTION_LENGTH
-      ? `${oneLine.slice(0, TITLE_DESCRIPTION_LENGTH)}…`
-      : oneLine;
+      ? `${oneLine.slice(0, TITLE_DESCRIPTION_LENGTH).join('')}…`
+      : oneLine.join('');
   // Огорожа довша за будь-яку послідовність ` в описі: з блоку не вийти.
   const longestRun = Math.max(0, ...Array.from(description.matchAll(/`+/g), (m) => m[0].length));
   const fence = '`'.repeat(Math.max(3, longestRun + 1));
