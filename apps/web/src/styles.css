@@ -1022,9 +1022,15 @@ tfoot .sheet__cell {
 .sheet__bid {
   display: inline-grid;
   place-items: center;
-  min-width: 1.4em;
   height: 1.4em;
   border-radius: 50%;
+}
+
+/* Круглий кружечок ширший за цифру; виступає за неї, не розсуваючи «→взяв». */
+.sheet__bid[data-circles='1'],
+.sheet__bid[data-circles='2'] {
+  min-width: 1.4em;
+  margin-inline: -0.3em;
 }
 
 .sheet__bid[data-circles='1'] {
@@ -1036,6 +1042,58 @@ tfoot .sheet__cell {
     0 0 0 1px currentColor,
     0 0 0 2px var(--surface),
     0 0 0 3px currentColor;
+}
+
+/* «Замовив→взяв» (T61). Влучання — зафарбоване тло (не лише колір), недобір чи
+   перебір — червоне «взяв». Тло розширене тінню: ширини клітинки воно не забирає. */
+.sheet__outcome {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  border-radius: 999px;
+}
+
+.sheet__arrow {
+  font-size: 0.85em;
+  color: var(--muted);
+}
+
+.sheet__outcome[data-result='hit'] {
+  color: var(--accent-text);
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.sheet__outcome[data-result='hit'] .sheet__arrow {
+  color: inherit;
+}
+
+.sheet__outcome[data-result='miss'] .sheet__taken {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.sheet__col--deal {
+  width: 3.25rem;
+}
+
+/* Компактна таблиця (телефон): колонці замовлення потрібно більше місця, ніж балам. */
+.sheet__table[data-compact] {
+  font-size: 0.6875rem;
+}
+
+.sheet__table[data-compact] .sheet__col--deal,
+.sheet__table[data-compact] .sheet__corner,
+.sheet__table[data-compact] .sheet__row {
+  width: 3rem;
+}
+
+.sheet__table[data-compact] .sheet__col--bid {
+  width: 2.35em;
+}
+
+.sheet__table[data-compact] td {
+  padding-inline: 0;
 }
 
 /* Роздаючий: трикутник у куті клітинки замовлення. */

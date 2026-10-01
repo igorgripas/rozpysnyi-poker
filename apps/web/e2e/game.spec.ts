@@ -228,6 +228,61 @@ test('таблиця гри відкривається під час гри й �
   await expect(dialog).toBeHidden();
 });
 
+test('R-8.2: після роздачі в таблиці «замовив→взяв» з влучанням; на 6 гравців усе видно', async ({
+  page,
+}) => {
+  test.setTimeout(2 * 60_000);
+  await page.goto('/?trickPause=0');
+  await page.getByLabel('Ваше імʼя').fill('Оля');
+  await page.getByRole('button', { name: 'Створити кімнату' }).click();
+  for (let i = 0; i < 5; i++) await page.getByRole('button', { name: 'Додати бота' }).click();
+  await expect(page.getByRole('list', { name: 'Гравці' }).getByRole('listitem')).toHaveCount(6);
+  await page.getByRole('button', { name: 'Почати гру' }).click();
+
+  // Перша роздача (1 карта) зіграна: у руці вже 2 карти другої роздачі.
+  await playUntil(page, async () => (await page.locator('.hand__card').count()) === 2);
+
+  await page.getByRole('button', { name: 'Таблиця' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Таблиця гри' });
+  const outcomes = dialog.locator('tbody tr').first().locator('.sheet__outcome');
+  await expect(outcomes).toHaveCount(6);
+  // Між замовленням і «→» — лише текст для екранного читача про джокерів.
+  await expect(outcomes.first()).toHaveText(/^[01](, \d джокер\S*)?→[01], (не )?влучив$/);
+  const scroll = dialog.locator('.sheet__scroll');
+  expect(await scroll.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
+  // Кожне «замовив→взяв» зі значком вміщується у свою клітинку, нічого не обрізано.
+  for (const outcome of await outcomes.all()) {
+    const fits = await outcome.evaluate((el) => {
+      const cell = el.closest('td')?.getBoundingClientRect();
+      const box = el.getBoundingClientRect();
+      return cell !== undefined && box.left >= cell.left - 0.5 && box.right <= cell.right + 0.5;
+    });
+    expect(fits).toBe(true);
+  }
+  // Найширші значення (кружечки за 2 джокери й «−60») теж вміщуються.
+  const widest = await dialog
+    .locator('tbody tr')
+    .first()
+    .evaluate((tr) => {
+      const outcome = tr.querySelector('.sheet__outcome');
+      const bid = outcome?.querySelector('.sheet__bid');
+      const points = tr.querySelector('.sheet__cell--points');
+      if (!outcome || !bid || !points) return false;
+      bid.setAttribute('data-circles', '2');
+      points.textContent = '−60';
+      const range = document.createRange();
+      range.selectNodeContents(points);
+      const cell = outcome.closest('td')?.getBoundingClientRect();
+      const box = outcome.getBoundingClientRect();
+      return (
+        cell !== undefined &&
+        box.width <= cell.width + 0.5 &&
+        range.getBoundingClientRect().width <= points.getBoundingClientRect().width + 0.5
+      );
+    });
+  expect(widest).toBe(true);
+});
+
 test('пауза після взятки: видно, хто бере, і всі карти; у новій роздачі стіл чистий (R-9.2)', async ({
   page,
 }) => {
