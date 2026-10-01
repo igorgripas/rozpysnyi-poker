@@ -83,6 +83,8 @@ export function GameTable({ room, view: latest }: GameTableProps) {
 
   // Джокер спершу відкриває діалог оголошення (§6).
   const [joker, setJoker] = useState<Card | null>(null);
+  // Скасування оголошення джокера знімає вибір карти в руці.
+  const [handReset, setHandReset] = useState(0);
   const jokerCalls =
     legal === null || joker === null
       ? []
@@ -265,6 +267,7 @@ export function GameTable({ room, view: latest }: GameTableProps) {
       <Hand
         cards={view.hand}
         legal={legal}
+        resetKey={handReset}
         onPlay={(card) => (card.kind === 'joker' ? setJoker(card) : play(card))}
       />
 
@@ -276,7 +279,10 @@ export function GameTable({ room, view: latest }: GameTableProps) {
         <JokerDialog
           calls={jokerCalls}
           onChoose={(call) => play(joker, call)}
-          onCancel={() => setJoker(null)}
+          onCancel={() => {
+            setJoker(null);
+            setHandReset((n) => n + 1);
+          }}
         />
       )}
     </div>

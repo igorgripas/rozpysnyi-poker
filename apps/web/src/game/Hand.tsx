@@ -13,14 +13,32 @@ export interface HandProps {
   /** Ідентифікатори карт, якими можна зіграти зараз; `null` — не ваш хід. */
   legal: ReadonlySet<string> | null;
   onPlay: (card: Card) => void;
+  /** Змінюється, коли вибір треба скинути ззовні (напр. скасовано діалог джокера). */
+  resetKey?: number;
 }
 
 /** Рука гравця: тап — вибрати карту, другий тап — зіграти; нелегальні карти приглушені. */
-export function Hand({ cards, legal, onPlay }: HandProps) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+export function Hand({ cards, legal, onPlay, resetKey = 0 }: HandProps) {
+  const [selection, setSelection] = useState<{ id: string; turn: string } | null>(null);
   const sorted = [...cards].sort((a, b) => sortKey(a) - sortKey(b));
-  // Вибір діє, лише поки карта легальна: після ходу чи зміни взятки він скидається сам.
-  const selected = selectedId !== null && legal?.has(selectedId) ? selectedId : null;
+  // Вибір належить поточному ходу: рука, легальні карти й скидання ззовні. Коли хід
+  // закінчився (legal = null) чи рука змінилась, вибір зникає — навіть для джокера,
+  // який легальний завжди, тож інакше «переїжджав» би в наступний хід і грався з першого тапу.
+  const turn = [
+    resetKey,
+    sorted.map(cardId).join(','),
+    legal === null ? 'wait' : [...legal].sort().join(','),
+  ].join('|');
+  // Хід перейшов до іншого гравця: вибір не доживає до мого наступного ходу
+  // (коригування стану під час рендеру — без ефекту й зайвого кадру).
+  const waiting = legal === null;
+  const [wasWaiting, setWasWaiting] = useState(waiting);
+  if (waiting !== wasWaiting) {
+    setWasWaiting(waiting);
+    if (waiting) setSelection(null);
+  }
+  const selected =
+    selection !== null && selection.turn === turn && legal?.has(selection.id) ? selection.id : null;
 
   return (
     <ul
@@ -43,7 +61,7 @@ export function Hand({ cards, legal, onPlay }: HandProps) {
               disabled={isLegal !== true}
               onClick={() => {
                 if (selected === id) onPlay(card);
-                else setSelectedId(id);
+                else setSelection({ id, turn });
               }}
             >
               <CardFace card={card} />
