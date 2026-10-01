@@ -1188,6 +1188,29 @@ tfoot .sheet__cell {
   font-size: 1.25rem;
 }
 
+/* Привітання переможця (R-9.4): кубок підстрибує; з prefers-reduced-motion — без анімації. */
+.results__winner {
+  margin: 0 0 var(--space-3);
+  font-size: 1.125rem;
+  color: var(--accent);
+}
+
+.results__trophy {
+  display: inline-block;
+  animation: trophy-bounce 0.9s ease-out 3;
+}
+
+@keyframes trophy-bounce {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+
+  40% {
+    transform: translateY(-6px) scale(1.25);
+  }
+}
+
 .results__list {
   display: grid;
   gap: var(--space-1);

@@ -8,6 +8,7 @@ import { type PokerClient, inviteCodeFromPath } from './net/client';
 import { ClientProvider, useClientState } from './net/react';
 import { CardFace } from './ui/Card';
 import { ConnectionBanner, ConnectionIndicator } from './ui/ConnectionStatus';
+import { SoundToggle } from './ui/sound';
 import { ThemeProvider, ThemeToggle } from './ui/theme';
 import { VibrationToggle } from './ui/vibration';
 
@@ -30,6 +31,7 @@ export function App({
               <div className="app__tools">
                 <ConnectionIndicator />
                 <VibrationToggle />
+                <SoundToggle />
                 <ThemeToggle />
               </div>
             </header>

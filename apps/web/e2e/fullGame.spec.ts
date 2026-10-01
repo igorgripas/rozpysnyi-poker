@@ -50,6 +50,14 @@ test('повна гра: 4 гравці в окремих браузерах г�
       const summary = page.getByRole('region', { name: 'Результати' });
       await expect(summary.getByRole('heading', { name: 'Гру завершено' })).toBeVisible();
       await expect(summary.getByRole('listitem')).toHaveCount(4);
+      // Привітання переможця з анімацією кубка (рух не вимкнено).
+      await expect(summary.getByRole('heading', { level: 3 })).toContainText(
+        /^🏆 Вітаємо, .+! (Спільна п|П)еремога з −?\d+ очк/,
+      );
+      const animation = await summary
+        .locator('.results__trophy')
+        .evaluate((el) => getComputedStyle(el).animationName);
+      expect(animation).toBe('trophy-bounce');
       return summary.getByRole('listitem').allTextContents();
     }),
   );

@@ -15,6 +15,11 @@ export const uk = {
     on: 'Вібрація на свій хід: увімкнена',
     off: 'Вібрація на свій хід: вимкнена',
   },
+  sound: {
+    label: 'Звуки гри',
+    on: 'Звуки гри: увімкнені',
+    off: 'Звуки гри: вимкнені',
+  },
   connection: {
     indicator: {
       connecting: 'Підключення до сервера…',
@@ -165,11 +170,18 @@ export const uk = {
       '— карт у роздачі й козир, б/к — без козиря · Б — безкозирка · М — мізер · В — відіграш · 3→2 — замовив→взяв, зафарбовано — влучив · ◯ — джокер (кружечок навколо замовлення) · ◤ — роздавав',
     results: 'Результати',
   },
+  results: {
+    /** «Вітаємо, Оля! Перемога з 127 очками»; за рівних підсумків — усі імена (R-9.4). */
+    winner: (names: readonly string[], score: string, points: number) =>
+      `Вітаємо, ${listNames(names)}! ${names.length > 1 ? 'Спільна перемога' : 'Перемога'} з ${score} ${plural(points, uk.plural.pointWith)}`,
+  },
   plural: {
     trick: ['взятка', 'взятки', 'взяток'],
     card: ['карта', 'карти', 'карт'],
     player: ['гравець', 'гравці', 'гравців'],
     joker: ['джокер', 'джокери', 'джокерів'],
+    /** Орудний відмінок: «з 1 очком», «з 5 очками». */
+    pointWith: ['очком', 'очками', 'очками'],
   },
 } as const satisfies Record<string, unknown>;
 
@@ -255,6 +267,12 @@ export function phaseName(phase: HandPhase): string {
 /** Козир роздачі або «б/к» (R-3.2, R-3.4). */
 export function trumpLabel(trump: Suit | null): string {
   return trump === null ? uk.noTrump : `${suitSymbol(trump)} ${suitName(trump)}`;
+}
+
+/** «Оля», «Оля і Бот 1», «Оля, Бот 1 і Бот 2». */
+export function listNames(names: readonly string[]): string {
+  if (names.length <= 1) return names.join('');
+  return `${names.slice(0, -1).join(', ')} і ${names.at(-1)}`;
 }
 
 /** Форма іменника для числа `n`: 1 взятка, 3 взятки, 5 взяток, 21 взятка. */

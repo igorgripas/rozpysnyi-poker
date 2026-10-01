@@ -6,6 +6,7 @@ import type { ClientError } from '../net/connection';
 import { useClient } from '../net/react';
 import { CardFace } from '../ui/Card';
 import { JokerCallLabel, SuitMark } from '../ui/SuitMark';
+import { useGameSounds } from '../ui/sound';
 import { useTurnVibration } from '../ui/vibration';
 import { Bidding } from './Bidding';
 import { BugReportDialog } from './BugReportDialog';
@@ -88,6 +89,7 @@ export function GameTable({ room, view: latest }: GameTableProps) {
 
   const yourTurn = view.status !== 'finished' && view.turn === view.seat;
   useTurnVibration(yourTurn);
+  useGameSounds(latest, yourTurn);
 
   const plays = view.legalActions.filter((action): action is PlayAction => action.type === 'play');
   const legal =
