@@ -135,10 +135,16 @@ function trickDistribution(chances: readonly number[]): number[] {
 
 /**
  * Замовлення з найбільшим очікуваним результатом (R-4.3, R-7.1–R-7.4) серед легальних:
- * роздаючому заборонене значення виключає рушій (R-4.4), у роздачах з 1–3 картами — ні (R-4.6).
+ * роздаючому заборонене значення виключає рушій (R-4.4), у роздачах з 1–3 картами — ні (R-4.6);
+ * так само рушій виключає четвертий нуль поспіль (R-10.3). У «Темній» руки не видно (R-10.2).
  */
 function chooseBid(k: Knowledge): Action {
-  const dist = trickDistribution(k.view.hand.map((c) => cardChance(k, c)));
+  const { view } = k;
+  // R-10.2: наосліп кожна карта бере в середньому одну взятку з N.
+  const chances = view.blind
+    ? Array.from({ length: view.spec.cards }, () => 1 / view.playerCount)
+    : view.hand.map((c) => cardChance(k, c));
+  const dist = trickDistribution(chances);
   let best: Action | undefined;
   let bestScore = -Infinity;
   for (const action of k.view.legalActions) {

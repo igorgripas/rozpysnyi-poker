@@ -8,6 +8,7 @@ import {
   checkReplay,
   checkScoreFromLog,
   checkTrickSums,
+  checkZeroStreaks,
   playRandomGame,
 } from './support/invariants.js';
 
@@ -76,6 +77,26 @@ describe('перевірки інваріантів гри', () => {
     expect(checkBidSums(withBids(state, 0, [1, 0, 0]))).toEqual([]);
     expect(checkBidSums(withBids(state, 1, [1, 1, 0]))).toEqual([]);
     expect(checkBidSums(withBids(state, 2, [1, 1, 1]))).toEqual([]);
+  });
+
+  it('R-10.3: помічає четвертий нуль поспіль, якщо опцію ввімкнено', () => {
+    const state = playRandomGame(4, 3, { dark: false, zeroLimit: true });
+    expect(checkZeroStreaks(state)).toEqual([]);
+    let zeroes = withBids(state, 0, [0, 0, 0]);
+    for (const index of [1, 2, 3]) zeroes = withBids(zeroes, index, [0, 0, index === 3 ? 4 : 0]);
+    expect(checkZeroStreaks(zeroes)).toEqual([
+      'роздача 4: гравець 0 замовив 0 вже 4-й раз поспіль',
+      'роздача 4: гравець 1 замовив 0 вже 4-й раз поспіль',
+    ]);
+    expect(checkZeroStreaks({ ...zeroes, options: { dark: false, zeroLimit: false } })).toEqual([]);
+  });
+
+  it('коректна гра з опціями (R-10.1–R-10.3) не має порушень', () => {
+    for (let players = 3; players <= 6; players++) {
+      const state = playRandomGame(200 + players, players, { dark: true, zeroLimit: true });
+      expect(state.history.some((record) => record.spec.phase === 'dark')).toBe(true);
+      expect(checkGame(state)).toEqual([]);
+    }
   });
 
   it('помічає карту, зіграну двічі', () => {

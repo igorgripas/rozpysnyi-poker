@@ -20,10 +20,19 @@ const PHASES: readonly HandPhase[] = [
 
 /** Очікувані кількості роздач за таблицею RULES.md §2. */
 const TABLE: Record<number, Record<HandPhase, number> & { total: number }> = {
-  3: { ascending: 11, maximum: 3, suits: 4, noTrump: 3, misere: 1, comeback: 1, total: 23 },
-  4: { ascending: 8, maximum: 4, suits: 4, noTrump: 4, misere: 1, comeback: 1, total: 22 },
-  5: { ascending: 6, maximum: 5, suits: 4, noTrump: 5, misere: 1, comeback: 1, total: 22 },
-  6: { ascending: 5, maximum: 6, suits: 4, noTrump: 6, misere: 1, comeback: 1, total: 23 },
+  3: {
+    ascending: 11,
+    maximum: 3,
+    suits: 4,
+    noTrump: 3,
+    dark: 0,
+    misere: 1,
+    comeback: 1,
+    total: 23,
+  },
+  4: { ascending: 8, maximum: 4, suits: 4, noTrump: 4, dark: 0, misere: 1, comeback: 1, total: 22 },
+  5: { ascending: 6, maximum: 5, suits: 4, noTrump: 5, dark: 0, misere: 1, comeback: 1, total: 22 },
+  6: { ascending: 5, maximum: 6, suits: 4, noTrump: 6, dark: 0, misere: 1, comeback: 1, total: 23 },
 };
 
 describe('розклад гри', () => {

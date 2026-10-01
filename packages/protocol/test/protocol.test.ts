@@ -1,6 +1,7 @@
 import {
   type Action,
   type Card,
+  type GameOptions,
   type GameState,
   type JokerCall,
   apply,
@@ -19,6 +20,7 @@ import {
   bidRequestSchema,
   cardSchema,
   clientMessageSchemas,
+  gameOptionsSchema,
   handshakeSchema,
   jokerCallSchema,
   parseClientMessage,
@@ -38,9 +40,14 @@ import {
 } from '../src/index.js';
 
 /** Грає гру випадковими легальними ходами й повертає всі проміжні стани. */
-function randomGame(seed: number, playerCount: number, maxActions = Infinity): GameState[] {
+function randomGame(
+  seed: number,
+  playerCount: number,
+  maxActions = Infinity,
+  options?: GameOptions,
+): GameState[] {
   const rng = createRng(seed);
-  let state = createGame(seed, playerCount);
+  let state = createGame(seed, playerCount, options);
   const states = [state];
   while (state.turn !== null && states.length <= maxActions) {
     const actions = legalActions(state);
@@ -183,6 +190,7 @@ describe('перепідключення й таймер ходу', () => {
       seats: [{ id: 'p1', name: 'Оля', kind: 'human', connected: false }],
       turnTimerSec: 30,
       turnDeadline: 1_700_000_000_000,
+      options: { dark: false, zeroLimit: false },
     };
     expect(roomStateSchema.parse(room)).toEqual(room);
     expect(roomStateSchema.safeParse({ ...room, turnTimerSec: undefined }).success).toBe(false);
@@ -206,6 +214,7 @@ describe('повідомлення сервера', () => {
       ],
       turnTimerSec: null,
       turnDeadline: null,
+      options: { dark: true, zeroLimit: false },
     };
     expect(roomStateSchema.parse(room)).toEqual(room);
     expect(roomStateSchema.safeParse({ ...room, status: 'paused' }).success).toBe(false);
@@ -245,6 +254,48 @@ describe('повідомлення сервера', () => {
       unknown
     >;
     expect(playerViewSchema.safeParse({ ...view, hands: [[], [], []] }).success).toBe(false);
+  });
+});
+
+describe('опції кімнати (§10)', () => {
+  it('R-10.1: хост задає обидві опції; інших полів немає', () => {
+    const options = { dark: true, zeroLimit: false };
+    expect(parseClientMessage('room:options', options)).toEqual({ ok: true, data: options });
+    expect(parseClientMessage('room:options', { dark: true }).ok).toBe(false);
+    expect(parseClientMessage('room:options', { ...options, extra: 1 }).ok).toBe(false);
+    expect(gameOptionsSchema.safeParse({ dark: 'так', zeroLimit: false }).success).toBe(false);
+  });
+
+  it('R-10.1: стан кімнати показує всім, які опції ввімкнено', () => {
+    expect(roomStateSchema.shape.options).toBe(gameOptionsSchema);
+  });
+
+  it('R-10.1–R-10.3: погляд гравця в грі з опціями проходить схему без змін', () => {
+    const states = randomGame(5, 4, Infinity, { dark: true, zeroLimit: true });
+    const dark = states.filter((state) => state.hand.spec.phase === 'dark');
+    expect(dark.length).toBeGreaterThan(0);
+    for (const state of [...states.filter((_, i) => i % 11 === 0), ...dark]) {
+      for (let seat = 0; seat < 4; seat++) {
+        const wire = JSON.parse(JSON.stringify(viewFor(state, seat))) as unknown;
+        expect(playerViewSchema.parse(wire)).toEqual(wire);
+      }
+    }
+  });
+
+  it('R-10.2: у «Темній» до замовлення роздаючого погляд не містить карт гравця', () => {
+    const states = randomGame(6, 3, Infinity, { dark: true, zeroLimit: false });
+    const blind = states.filter((s) => s.hand.spec.phase === 'dark' && s.status === 'bidding');
+    expect(blind).toHaveLength(3);
+    for (const state of blind) {
+      for (let seat = 0; seat < 3; seat++) {
+        const wire = JSON.parse(JSON.stringify(viewFor(state, seat))) as Record<string, unknown>;
+        expect(wire).toMatchObject({ blind: true, hand: [] });
+        expect(playerViewSchema.parse(wire)).toEqual(wire);
+        // Схема не пропускає руку в погляді наосліп: сервер не може її надіслати.
+        const hand = state.hand.hands[seat];
+        expect(playerViewSchema.safeParse({ ...wire, hand }).success).toBe(false);
+      }
+    }
   });
 });
 

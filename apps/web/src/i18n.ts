@@ -65,6 +65,11 @@ export const uk = {
     start: 'Почати гру',
     needPlayers: (min: number) => `Потрібно щонайменше ${min} гравці`,
     waitingHost: 'Чекаємо, поки хост почне гру',
+    options: 'Опції гри',
+    dark: 'Темна',
+    darkHint: 'Роздача наосліп перед мізером, бали ×2',
+    zeroLimit: 'Не більше трьох нулів поспіль',
+    zeroLimitHint: 'Четвертий 0 поспіль замовити не можна',
   },
   card: {
     joker: 'Джокер',
@@ -97,6 +102,7 @@ export const uk = {
     taken: (n: number) => `Взято: ${n}`,
     cardsLeft: (n: number) => `Карт: ${n}`,
     offline: 'не в мережі',
+    blindHint: 'Темна: замовляйте наосліп — карти відкриються, коли замовить роздаючий',
   },
   bidding: {
     title: 'Замовлення',
@@ -107,6 +113,7 @@ export const uk = {
     queue: 'Черга замовлень',
     queueSum: (sum: number, cards: number) => `Сума: ${sum} з ${cards}`,
     dealerCannot: (bid: number) => `Роздаючому не можна: ${bid}`,
+    zeroForbidden: '0 не можна замовити четвертий раз поспіль',
     made: (bid: number) => `замовив ${bid}`,
     turn: 'замовляє зараз',
     waiting: 'ще чекає',
@@ -140,7 +147,7 @@ export const uk = {
     showAll: 'Показати взяті й підсумок',
     columns: { bid: 'замовлення', taken: 'взяв', points: 'бали', total: 'разом' },
     short: { bid: 'зам', taken: 'взяв', points: 'бал', total: 'Σ' },
-    marks: { noTrump: 'Б', misere: 'М', comeback: 'В' },
+    marks: { noTrump: 'Б', misere: 'М', comeback: 'В', dark: 'Тем' },
     row: (n: number, phase: string, cards: string, trump: string, dealer: string) =>
       `Роздача ${n}: ${phase}, ${cards}, козир ${trump}, роздає ${dealer}`,
     jokers: 'Джокери × −10',
@@ -148,6 +155,8 @@ export const uk = {
     /** Легенда після зразка «9♥» (його малює значок масті). */
     legend:
       '— карт у роздачі й козир, б/к — без козиря · Б — безкозирка · М — мізер · В — відіграш · ◯ — джокер (кружечок навколо замовлення) · ◤ — роздавав',
+    /** Легенда «Темної» — лише в грі з цією опцією (R-10.2). */
+    darkLegend: 'Тем — темна (бали ×2)',
     results: 'Результати',
   },
   plural: {
@@ -209,6 +218,7 @@ const PHASE_NAMES: Record<HandPhase, string> = {
   maximum: 'Максимум',
   suits: 'Масті',
   noTrump: 'Безкозирка',
+  dark: 'Темна',
   misere: 'Мізер',
   comeback: 'Відіграш',
 };

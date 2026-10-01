@@ -16,6 +16,8 @@ export class TestClient {
   readonly socket: Socket<ServerToClientEvents, ClientToServerEvents>;
   room: RoomState | null = null;
   view: WirePlayerView | null = null;
+  /** Усі погляди, отримані від сервера, по порядку. */
+  readonly views: WirePlayerView[] = [];
   /** Сервер попередив про перезапуск. */
   restarting = false;
   private readonly waiters: (() => void)[] = [];
@@ -37,6 +39,7 @@ export class TestClient {
     });
     this.socket.on('game:view', (view) => {
       this.view = view;
+      this.views.push(view);
       this.notify();
     });
   }
