@@ -79,6 +79,7 @@ export const uk = {
     revealed: 'Відкрита карта',
     noTrump: 'Без козиря',
     table: 'Стіл',
+    trick: 'Взятка',
     lastTrick: (name: string) => `Остання взятка: ${name}`,
     takes: (name: string) => `Бере: ${name}`,
     youTake: 'Ви берете',

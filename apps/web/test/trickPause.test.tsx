@@ -52,7 +52,9 @@ function finishPause() {
 }
 
 const felt = () => screen.getByRole('region', { name: 'Стіл' });
-const feltCards = () => within(felt()).queryAllByRole('figure');
+// Карти взятки (окремо від відкритої карти-козиря, що теж лежить на столі).
+const feltCards = () =>
+  within(within(felt()).getByRole('group', { name: 'Взятка' })).queryAllByRole('figure');
 const nameAt = (seat: number) => PLAYER_NAMES[seat] as string;
 
 function seatItem(name: string) {
