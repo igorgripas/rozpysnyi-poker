@@ -205,6 +205,56 @@ describe('таблиця гри (розписка)', () => {
     }
   });
 
+  it('R-8.2: у клітинці замовлення — «замовив→взяв» і позначка влучання', () => {
+    mockNarrowScreen(true);
+    const table = wireView(finishedGame(), 0).table;
+    renderSheet(table);
+    const rows = bodyRows();
+    let hits = 0;
+    let misses = 0;
+    table.rows.forEach((row, i) => {
+      row.players.forEach((cell, seat) => {
+        const outcome = defined(
+          defined(rows[i]).querySelectorAll<HTMLElement>('.sheet__outcome')[seat],
+        );
+        if (cell.bid === null) {
+          // Мізер і відіграш — без замовлення, отже без влучання.
+          expect(outcome.dataset.result).toBeUndefined();
+          expect(visibleText(outcome)).toBe(`—→${cell.taken}`);
+          return;
+        }
+        const hit = cell.bid === cell.taken;
+        if (hit) hits++;
+        else misses++;
+        expect(outcome.dataset.result).toBe(hit ? 'hit' : 'miss');
+        expect(visibleText(outcome)).toBe(`${cell.bid}→${cell.taken}`);
+        // Для екранного читача — словами (видно — зафарбованим тлом, див. e2e).
+        expect(outcome).toHaveTextContent(hit ? ', влучив' : ', не влучив');
+      });
+    });
+    expect(hits).toBeGreaterThan(0);
+    expect(misses).toBeGreaterThan(0);
+    expect(screen.getByRole('note')).toHaveTextContent('3→2 — замовив→взяв, зафарбовано — влучив');
+  });
+
+  it('R-8.2: поки роздача триває, у клітинці лише замовлення, без «→» і влучання', () => {
+    const state = findState(
+      3,
+      (s) => s.status === 'playing' && s.hand.spec.index > 0 && s.hand.taken.some(Boolean),
+    );
+    const table = wireView(state, 0).table;
+    renderSheet(table);
+    const current = defined(bodyRows().at(-1));
+    const row = defined(table.rows.at(-1));
+    const outcomes = current.querySelectorAll<HTMLElement>('.sheet__outcome');
+    expect(outcomes).toHaveLength(3);
+    outcomes.forEach((outcome, seat) => {
+      expect(outcome.dataset.result).toBeUndefined();
+      expect(outcome).not.toHaveTextContent('→');
+      expect(outcome).toHaveTextContent(String(row.players[seat]?.bid ?? ''));
+    });
+  });
+
   it('R-8.4: під таблицею — джокери × −10 і фінальний підсумок кожного гравця', () => {
     const table = wireView(gameWithDoubleJoker(), 0).table;
     renderSheet(table);
@@ -255,6 +305,13 @@ describe('таблиця гри (розписка)', () => {
     expect(screen.queryByRole('list', { name: 'Ваші карти' })).toBeNull();
   });
 });
+
+/** Видимий текст елемента — без тексту для екранних читачів. */
+function visibleText(element: HTMLElement): string {
+  const copy = element.cloneNode(true) as HTMLElement;
+  for (const hidden of copy.querySelectorAll('.sr-only')) hidden.remove();
+  return copy.textContent ?? '';
+}
 
 function hasJoker(hand: readonly { kind: string }[]) {
   return hand.some((card) => card.kind === 'joker');

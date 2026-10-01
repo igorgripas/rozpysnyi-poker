@@ -4,6 +4,7 @@ import {
   type ClientMessageInput,
   type RoomState,
   type Session,
+  type VoiceJoinResponse,
   type WirePlayerView,
   playerNameSchema,
   roomCodeSchema,
@@ -14,6 +15,7 @@ import {
   type Connection,
   type ConnectionStatus,
   NETWORK_ERROR,
+  type VoiceMessage,
 } from './connection';
 
 export const SESSION_STORAGE_KEY = 'poker.session';
@@ -41,7 +43,7 @@ export interface ClientState {
 
 type RoomEvent = Exclude<
   ClientEvent,
-  'room:create' | 'room:join' | 'room:resume' | 'game:reportBug'
+  'room:create' | 'room:join' | 'room:resume' | 'game:reportBug' | 'voice:join'
 >;
 
 /** Стан клієнта поверх зʼєднання: сесія, кімната й погляд на гру. */
@@ -54,6 +56,7 @@ export class PokerClient {
     resumeError: null,
   };
   private readonly listeners = new Set<() => void>();
+  private readonly voiceListeners = new Set<(message: VoiceMessage) => void>();
 
   constructor(
     private readonly connection: Connection,
@@ -62,7 +65,9 @@ export class PokerClient {
     connection.subscribe((update) => {
       if (update.type === 'room') this.set({ room: update.room });
       else if (update.type === 'view') this.set({ view: update.view });
-      else this.changeConnection(update.status);
+      else if (update.type === 'voice') {
+        for (const listener of this.voiceListeners) listener(update.message);
+      } else this.changeConnection(update.status);
     });
   }
 
@@ -171,6 +176,17 @@ export class PokerClient {
     }
     const result = await this.connection.request(event, payload);
     return result.ok ? null : result.error;
+  }
+
+  /** Події голосового чату від сервера (T63). */
+  onVoice(listener: (message: VoiceMessage) => void): () => void {
+    this.voiceListeners.add(listener);
+    return () => this.voiceListeners.delete(listener);
+  }
+
+  /** Вхід у голосовий чат кімнати: у відповідь — хто вже в голосі. */
+  voiceJoin(): Promise<ClientResult<VoiceJoinResponse>> {
+    return this.connection.request('voice:join', {});
   }
 
   /**

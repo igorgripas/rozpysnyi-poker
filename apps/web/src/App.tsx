@@ -8,8 +8,11 @@ import { type PokerClient, inviteCodeFromPath } from './net/client';
 import { ClientProvider, useClientState } from './net/react';
 import { CardFace } from './ui/Card';
 import { ConnectionBanner, ConnectionIndicator } from './ui/ConnectionStatus';
+import { SoundToggle } from './ui/sound';
 import { ThemeProvider, ThemeToggle } from './ui/theme';
 import { VibrationToggle } from './ui/vibration';
+import { VoiceChat, browserVoiceEnv } from './voice/VoiceChat';
+import { VoiceProvider } from './voice/VoiceControls';
 
 /** Каркас застосунку: шапка й основна область. */
 export function App({
@@ -20,24 +23,38 @@ export function App({
   /** Скільки завершена взятка лежить на столі, мс. */
   trickPauseMs?: number;
 }) {
+  // Голосовий чат кімнати (T63) — лише в браузерах із WebRTC.
+  const [voice] = useState(() =>
+    typeof globalThis.RTCPeerConnection === 'function'
+      ? new VoiceChat(client, browserVoiceEnv())
+      : null,
+  );
+  useEffect(() => {
+    voice?.start();
+    return () => voice?.stop();
+  }, [voice]);
+
   return (
     <ThemeProvider>
       <TrickPauseContext value={trickPauseMs}>
         <ClientProvider client={client}>
-          <div className="app">
-            <header className="app__header">
-              <h1 className="app__title">{uk.appTitle}</h1>
-              <div className="app__tools">
-                <ConnectionIndicator />
-                <VibrationToggle />
-                <ThemeToggle />
-              </div>
-            </header>
-            <ConnectionBanner />
-            <main className="app__main">
-              <Screen client={client} />
-            </main>
-          </div>
+          <VoiceProvider voice={voice}>
+            <div className="app">
+              <header className="app__header">
+                <h1 className="app__title">{uk.appTitle}</h1>
+                <div className="app__tools">
+                  <ConnectionIndicator />
+                  <VibrationToggle />
+                  <SoundToggle />
+                  <ThemeToggle />
+                </div>
+              </header>
+              <ConnectionBanner />
+              <main className="app__main">
+                <Screen client={client} />
+              </main>
+            </div>
+          </VoiceProvider>
         </ClientProvider>
       </TrickPauseContext>
     </ThemeProvider>

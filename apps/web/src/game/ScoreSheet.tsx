@@ -31,7 +31,8 @@ export interface ScoreSheetProps {
 
 /**
  * Таблиця гри — розписка (R-8.1–R-8.4). Колонка роздачі компактна: «9♥», «Б», «М», «В».
- * На телефоні в гравця лише замовлення й бали; решту показує перемикач.
+ * На телефоні в гравця лише замовлення й бали; решту показує перемикач. Після роздачі
+ * клітинка замовлення — «3→3» (замовив→взяв); влучання зафарбоване, не лише кольорове.
  */
 export function ScoreSheet({ table, names }: ScoreSheetProps) {
   const narrow = useMediaQuery(NARROW_SCREEN);
@@ -53,7 +54,19 @@ export function ScoreSheet({ table, names }: ScoreSheetProps) {
         </button>
       )}
       <div className="sheet__scroll">
-        <table className="sheet__table" aria-label={uk.sheet.title}>
+        <table
+          className="sheet__table"
+          aria-label={uk.sheet.title}
+          data-compact={columns === COMPACT_COLUMNS || undefined}
+        >
+          <colgroup>
+            <col className="sheet__col sheet__col--deal" />
+            {seats.flatMap((seat) =>
+              columns.map((column) => (
+                <col key={`${seat}-${column}`} className={`sheet__col sheet__col--${column}`} />
+              )),
+            )}
+          </colgroup>
           <thead>
             <tr>
               <th scope="col" rowSpan={2} className="sheet__corner" aria-label={uk.sheet.deal} />
@@ -165,14 +178,26 @@ function cellContent(row: Row, cell: Cell, column: Column) {
   switch (column) {
     case 'bid': {
       const noBids = row.phase === 'misere' || row.phase === 'comeback';
+      // Роздача завершена, коли є бали: тоді показуємо «замовив→взяв» і влучання.
+      const done = cell.points !== null;
+      const result = done && cell.bid !== null ? (cell.bid === cell.taken ? 'hit' : 'miss') : null;
       return (
-        <span className="sheet__bid" data-circles={cell.circles ?? undefined}>
-          {cell.bid ?? (noBids ? '—' : '')}
-          {cell.circles !== null && cell.circles > 0 && (
-            <span className="sr-only">
-              , {cell.circles} {plural(cell.circles, uk.plural.joker)}
-            </span>
+        <span className="sheet__outcome" data-result={result ?? undefined}>
+          <span className="sheet__bid" data-circles={cell.circles ?? undefined}>
+            {cell.bid ?? (noBids ? '—' : '')}
+            {cell.circles !== null && cell.circles > 0 && (
+              <span className="sr-only">
+                , {cell.circles} {plural(cell.circles, uk.plural.joker)}
+              </span>
+            )}
+          </span>
+          {done && (
+            <>
+              <span className="sheet__arrow">→</span>
+              <span className="sheet__taken">{cell.taken}</span>
+            </>
           )}
+          {result !== null && <span className="sr-only">, {uk.sheet.result[result]}</span>}
         </span>
       );
     }

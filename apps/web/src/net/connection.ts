@@ -6,6 +6,7 @@ import {
   type ErrorCode,
   PROTOCOL_VERSION,
   type RoomState,
+  type ServerMessage,
   type ServerToClientEvents,
   type WirePlayerView,
   serverMessageSchemas,
@@ -29,10 +30,17 @@ export type ClientResult<T> =
  */
 export type ConnectionStatus = 'connecting' | 'online' | 'offline' | 'waking' | 'outdated';
 
-/** Подія зʼєднання: стан кімнати, погляд гравця на гру або зміна стану звʼязку. */
+/** Подія голосового чату від сервера (T63). */
+export type VoiceMessage =
+  | ({ readonly type: 'joined' } & ServerMessage<'voice:joined'>)
+  | ({ readonly type: 'left' } & ServerMessage<'voice:left'>)
+  | ({ readonly type: 'signal' } & ServerMessage<'voice:signal'>);
+
+/** Подія зʼєднання: стан кімнати, погляд гравця на гру, голос або зміна стану звʼязку. */
 export type ServerUpdate =
   | { readonly type: 'room'; readonly room: RoomState }
   | { readonly type: 'view'; readonly view: WirePlayerView }
+  | { readonly type: 'voice'; readonly message: VoiceMessage }
   | { readonly type: 'status'; readonly status: ConnectionStatus };
 
 /** Зʼєднання з сервером; у тестах його підмінюють. */
@@ -85,6 +93,19 @@ export function createSocketConnection(url?: string): Connection {
     const parsed = serverMessageSchemas['game:view'].safeParse(payload);
     if (parsed.success) notify({ type: 'view', view: parsed.data });
     else console.error('Некоректний game:view', parsed.error);
+  });
+
+  socket.on('voice:joined', (payload) => {
+    const parsed = serverMessageSchemas['voice:joined'].safeParse(payload);
+    if (parsed.success) notify({ type: 'voice', message: { type: 'joined', ...parsed.data } });
+  });
+  socket.on('voice:left', (payload) => {
+    const parsed = serverMessageSchemas['voice:left'].safeParse(payload);
+    if (parsed.success) notify({ type: 'voice', message: { type: 'left', ...parsed.data } });
+  });
+  socket.on('voice:signal', (payload) => {
+    const parsed = serverMessageSchemas['voice:signal'].safeParse(payload);
+    if (parsed.success) notify({ type: 'voice', message: { type: 'signal', ...parsed.data } });
   });
 
   // Стан звʼязку. Після обриву Socket.IO перепідключається сам, крім розриву сервером.

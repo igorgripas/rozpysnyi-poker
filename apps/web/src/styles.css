@@ -930,6 +930,56 @@ textarea {
   font-size: 0.8125rem;
 }
 
+/* ── Голосовий чат (T63) ─────────────────────────────────────────────────── */
+
+.game__tools {
+  display: grid;
+  flex: none;
+  justify-items: end;
+  gap: var(--space-2);
+}
+
+.voice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.voice .icon-button[aria-pressed='true'] {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.voice__notice {
+  flex-basis: 100%;
+  max-width: 16rem;
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.8125rem;
+  text-align: right;
+}
+
+.voice__notice:empty {
+  display: none;
+}
+
+.waiting__heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+/* Хто говорить: обвідка картки гравця. */
+.player[data-speaking],
+.seat[data-speaking] {
+  outline: 3px solid var(--accent);
+  outline-offset: 1px;
+}
+
 /* ── Таблиця гри (розписка) ─────────────────────────────────────────────── */
 
 .game__sheet {
@@ -1022,9 +1072,15 @@ tfoot .sheet__cell {
 .sheet__bid {
   display: inline-grid;
   place-items: center;
-  min-width: 1.4em;
   height: 1.4em;
   border-radius: 50%;
+}
+
+/* Круглий кружечок ширший за цифру; виступає за неї, не розсуваючи «→взяв». */
+.sheet__bid[data-circles='1'],
+.sheet__bid[data-circles='2'] {
+  min-width: 1.4em;
+  margin-inline: -0.3em;
 }
 
 .sheet__bid[data-circles='1'] {
@@ -1036,6 +1092,58 @@ tfoot .sheet__cell {
     0 0 0 1px currentColor,
     0 0 0 2px var(--surface),
     0 0 0 3px currentColor;
+}
+
+/* «Замовив→взяв» (T61). Влучання — зафарбоване тло (не лише колір), недобір чи
+   перебір — червоне «взяв». Тло розширене тінню: ширини клітинки воно не забирає. */
+.sheet__outcome {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  border-radius: 999px;
+}
+
+.sheet__arrow {
+  font-size: 0.85em;
+  color: var(--muted);
+}
+
+.sheet__outcome[data-result='hit'] {
+  color: var(--accent-text);
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.sheet__outcome[data-result='hit'] .sheet__arrow {
+  color: inherit;
+}
+
+.sheet__outcome[data-result='miss'] .sheet__taken {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.sheet__col--deal {
+  width: 3.25rem;
+}
+
+/* Компактна таблиця (телефон): колонці замовлення потрібно більше місця, ніж балам. */
+.sheet__table[data-compact] {
+  font-size: 0.6875rem;
+}
+
+.sheet__table[data-compact] .sheet__col--deal,
+.sheet__table[data-compact] .sheet__corner,
+.sheet__table[data-compact] .sheet__row {
+  width: 3rem;
+}
+
+.sheet__table[data-compact] .sheet__col--bid {
+  width: 2.35em;
+}
+
+.sheet__table[data-compact] td {
+  padding-inline: 0;
 }
 
 /* Роздаючий: трикутник у куті клітинки замовлення. */
@@ -1128,6 +1236,29 @@ tfoot .sheet__cell {
 .results__title {
   margin: 0 0 var(--space-2);
   font-size: 1.25rem;
+}
+
+/* Привітання переможця (R-9.4): кубок підстрибує; з prefers-reduced-motion — без анімації. */
+.results__winner {
+  margin: 0 0 var(--space-3);
+  font-size: 1.125rem;
+  color: var(--accent);
+}
+
+.results__trophy {
+  display: inline-block;
+  animation: trophy-bounce 0.9s ease-out 3;
+}
+
+@keyframes trophy-bounce {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+
+  40% {
+    transform: translateY(-6px) scale(1.25);
+  }
 }
 
 .results__list {

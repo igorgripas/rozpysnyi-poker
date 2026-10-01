@@ -6,7 +6,9 @@ import type { ClientError } from '../net/connection';
 import { useClient } from '../net/react';
 import { CardFace } from '../ui/Card';
 import { JokerCallLabel, SuitMark } from '../ui/SuitMark';
+import { useGameSounds } from '../ui/sound';
 import { useTurnVibration } from '../ui/vibration';
+import { VoiceControls, useVoiceState } from '../voice/VoiceControls';
 import { Bidding } from './Bidding';
 import { BugReportDialog } from './BugReportDialog';
 import { Hand } from './Hand';
@@ -86,8 +88,11 @@ export function GameTable({ room, view: latest }: GameTableProps) {
   const nameOf = (seat: number) => names[seat] ?? `#${seat + 1}`;
   const total = createSchedule(view.playerCount).length;
 
+  const speaking = useVoiceState()?.speaking;
+
   const yourTurn = view.status !== 'finished' && view.turn === view.seat;
   useTurnVibration(yourTurn);
+  useGameSounds(latest, yourTurn);
 
   const plays = view.legalActions.filter((action): action is PlayAction => action.type === 'play');
   const legal =
@@ -199,14 +204,17 @@ export function GameTable({ room, view: latest }: GameTableProps) {
           </strong>
           {view.spec.bidding && <span>{uk.bidding.sum(view.bidSum, view.spec.cards)}</span>}
         </div>
-        <button
-          type="button"
-          className="button game__sheet"
-          aria-haspopup="dialog"
-          onClick={() => setSheetOpen(true)}
-        >
-          {uk.sheet.open}
-        </button>
+        <div className="game__tools">
+          <button
+            type="button"
+            className="button game__sheet"
+            aria-haspopup="dialog"
+            onClick={() => setSheetOpen(true)}
+          >
+            {uk.sheet.open}
+          </button>
+          <VoiceControls />
+        </div>
       </section>
 
       <p role="status" className="game__turn">
@@ -225,8 +233,14 @@ export function GameTable({ room, view: latest }: GameTableProps) {
             aria-current={view.turn === seat ? 'true' : undefined}
             data-you={seat === view.seat || undefined}
             data-last-taker={seat === lastTaker || undefined}
+            data-speaking={speaking?.has(room.seats[seat]?.id ?? '') || undefined}
           >
-            <span className="player__name">{nameOf(seat)}</span>
+            <span className="player__name">
+              {nameOf(seat)}
+              {speaking?.has(room.seats[seat]?.id ?? '') && (
+                <span className="sr-only">, {uk.voice.speaking}</span>
+              )}
+            </span>
             <span className="player__badges">
               {seat === view.seat && <span className="badge badge--accent">{uk.game.you}</span>}
               {seat === view.dealer && <span className="badge">{uk.game.dealer}</span>}

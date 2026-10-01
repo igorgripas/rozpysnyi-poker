@@ -10,16 +10,29 @@ export interface ResultsProps {
   onReportBug: () => void;
 }
 
-/** Фінальний екран: підсумки гравців від найбільшого (R-8.4) і вся таблиця гри. */
+/**
+ * Фінальний екран: привітання переможця (за рівних підсумків — усіх, R-9.4), підсумки
+ * гравців від найбільшого (R-8.4) і вся таблиця гри.
+ */
 export function Results({ view, names, onReportBug }: ResultsProps) {
   const ranking = view.table.summary
     .map((summary, seat) => ({ seat, final: summary.final }))
     .sort((a, b) => b.final - a.final);
+  const best = ranking[0]?.final ?? 0;
+  const winners = ranking
+    .filter(({ final }) => final === best)
+    .map(({ seat }) => names[seat] ?? `#${seat + 1}`);
 
   return (
     <div className="results">
       <section className="results__summary panel" aria-label={uk.sheet.results}>
         <h2 className="results__title">{uk.game.finished}</h2>
+        <h3 className="results__winner">
+          <span className="results__trophy" aria-hidden="true">
+            🏆
+          </span>{' '}
+          {uk.results.winner(winners, best < 0 ? formatScore(best) : String(best), best)}
+        </h3>
         <ul className="results__list">
           {ranking.map(({ seat, final }) => (
             <li key={seat} className="results__item" data-you={seat === view.seat || undefined}>

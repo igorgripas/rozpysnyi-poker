@@ -38,6 +38,9 @@ import {
   TURN_TIMER_MAX_SEC,
   TURN_TIMER_MIN_SEC,
   turnTimerSchema,
+  VOICE_SDP_MAX_LENGTH,
+  voiceJoinResponseSchema,
+  voiceSignalSchema,
 } from '../src/index.js';
 
 /** Грає гру випадковими легальними ходами й повертає всі проміжні стани. */
@@ -270,5 +273,55 @@ describe('повідомлення сервера', () => {
 describe('перезапуск сервера (T55)', () => {
   it('сервер попереджає клієнтів про перезапуск подією server:restarting', () => {
     expect(serverMessageSchemas['server:restarting'].parse({})).toEqual({});
+  });
+});
+
+describe('голосовий чат (T63)', () => {
+  const offer = { type: 'offer', sdp: 'v=0\r\n' } as const;
+  const candidate = {
+    type: 'candidate',
+    candidate: {
+      candidate: 'candidate:1 1 udp 1 10.0.0.1 9 typ host',
+      sdpMid: '0',
+      sdpMLineIndex: 0,
+    },
+  } as const;
+
+  it('сигнали WebRTC: offer, answer і ICE-кандидат; решта відкидається', () => {
+    expect(voiceSignalSchema.parse(offer)).toEqual(offer);
+    expect(voiceSignalSchema.parse({ type: 'answer', sdp: 'v=0' })).toEqual({
+      type: 'answer',
+      sdp: 'v=0',
+    });
+    expect(voiceSignalSchema.parse(candidate)).toEqual(candidate);
+    expect(voiceSignalSchema.safeParse({ type: 'offer' }).success).toBe(false);
+    expect(voiceSignalSchema.safeParse({ type: 'hack', sdp: 'x' }).success).toBe(false);
+    expect(
+      voiceSignalSchema.safeParse({ type: 'offer', sdp: 'x'.repeat(VOICE_SDP_MAX_LENGTH + 1) })
+        .success,
+    ).toBe(false);
+  });
+
+  it('клієнт входить у голос, виходить і надсилає сигнал конкретному гравцеві', () => {
+    expect(parseClientMessage('voice:join', {}).ok).toBe(true);
+    expect(parseClientMessage('voice:leave', {}).ok).toBe(true);
+    expect(parseClientMessage('voice:signal', { to: 'p1', signal: offer }).ok).toBe(true);
+    expect(parseClientMessage('voice:signal', { signal: offer }).ok).toBe(false);
+    expect(voiceJoinResponseSchema.parse({ peers: ['p1', 'p2'] })).toEqual({
+      peers: ['p1', 'p2'],
+    });
+  });
+
+  it('сервер повідомляє, хто увійшов у голос і вийшов, і пересилає сигнал від гравця', () => {
+    expect(serverMessageSchemas['voice:joined'].parse({ playerId: 'p1' })).toEqual({
+      playerId: 'p1',
+    });
+    expect(serverMessageSchemas['voice:left'].parse({ playerId: 'p1' })).toEqual({
+      playerId: 'p1',
+    });
+    expect(serverMessageSchemas['voice:signal'].parse({ from: 'p1', signal: candidate })).toEqual({
+      from: 'p1',
+      signal: candidate,
+    });
   });
 });
