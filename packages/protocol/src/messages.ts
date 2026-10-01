@@ -170,6 +170,8 @@ export interface ClientResponses {
 export const serverMessageSchemas = {
   'room:state': roomStateSchema,
   'game:view': playerViewSchema,
+  /** Сервер зупиняється (передеплой, засинання): клієнт чекає й перепідключається. */
+  'server:restarting': z.strictObject({}),
 } as const;
 
 export type ServerEvent = keyof typeof serverMessageSchemas;

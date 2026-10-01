@@ -204,4 +204,20 @@ describe('боти', () => {
     expect(vi.getTimerCount()).toBe(0);
     expect(rooms.get(code)).toBeDefined();
   });
+
+  it('після close() нові ходи ботів не плануються (сервер зупиняється)', async () => {
+    const { rooms, code, players } = await startedRoom(1, 2, 9);
+    rooms.close();
+    const host = players[0]?.playerId as string;
+    // Дія, прийнята під час зупинки, не запускає ботів.
+    while (rooms.get(code)?.game?.turn !== 0) {
+      const room = rooms.get(code);
+      const seat = room?.game?.turn as number;
+      const view = rooms.view(code, room?.seats[seat]?.id as string);
+      unwrap(send(rooms, code, room?.seats[seat]?.id as string, view?.legalActions[0] as Action));
+    }
+    const view = rooms.view(code, host);
+    unwrap(send(rooms, code, host, view?.legalActions[0] as Action));
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

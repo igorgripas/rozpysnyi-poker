@@ -23,10 +23,11 @@ export type ClientResult<T> =
 
 /**
  * Стан зʼєднання: `connecting` — перше підключення, `online` — є звʼязок,
- * `offline` — звʼязку немає (Socket.IO перепідключається сам), `outdated` — сервер
- * відхилив версію протоколу, потрібно оновити сторінку.
+ * `offline` — звʼязку немає (Socket.IO перепідключається сам), `waking` — сервер
+ * попередив про перезапуск і ще не повернувся, `outdated` — сервер відхилив версію
+ * протоколу, потрібно оновити сторінку.
  */
-export type ConnectionStatus = 'connecting' | 'online' | 'offline' | 'outdated';
+export type ConnectionStatus = 'connecting' | 'online' | 'offline' | 'waking' | 'outdated';
 
 /** Подія зʼєднання: стан кімнати, погляд гравця на гру або зміна стану звʼязку. */
 export type ServerUpdate =
@@ -44,6 +45,11 @@ export interface Connection {
   close(): void;
 }
 
+/** Перша затримка перед повторним підключенням, мс. */
+const RECONNECT_DELAY_MS = 1000;
+/** Найбільша затримка між спробами перепідключення, мс. */
+const RECONNECT_DELAY_MAX_MS = 5000;
+
 /** Скільки чекати відповіді сервера, мс. */
 const REQUEST_TIMEOUT_MS = 10_000;
 
@@ -54,7 +60,14 @@ export const NETWORK_ERROR: ClientError = {
 
 /** Зʼєднання Socket.IO; `url` — адреса сервера (за замовчуванням той самий хост). */
 export function createSocketConnection(url?: string): Connection {
-  const options = { auth: { protocolVersion: PROTOCOL_VERSION } };
+  // Перепідключення без ліміту спроб: сервер може прокидатися або передеплоюватися хвилину.
+  const options = {
+    auth: { protocolVersion: PROTOCOL_VERSION },
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: RECONNECT_DELAY_MS,
+    reconnectionDelayMax: RECONNECT_DELAY_MAX_MS,
+  };
   const socket: Socket<ServerToClientEvents, ClientToServerEvents> =
     url === undefined ? io(options) : io(url, options);
   const listeners = new Set<(update: ServerUpdate) => void>();
@@ -75,15 +88,37 @@ export function createSocketConnection(url?: string): Connection {
   });
 
   // Стан звʼязку. Після обриву Socket.IO перепідключається сам, крім розриву сервером.
-  socket.on('connect', () => notify({ type: 'status', status: 'online' }));
+  // Після `server:restarting` обрив очікуваний: до відновлення сервер «прокидається».
+  let waking = false;
+  // Відмову в підключенні від сервера (middleware) Socket.IO не повторює: повторюємо самі.
+  let retryDelay = RECONNECT_DELAY_MS;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  const lost = (): ConnectionStatus => (waking ? 'waking' : 'offline');
+  socket.on('server:restarting', () => {
+    waking = true;
+    notify({ type: 'status', status: 'waking' });
+  });
+  socket.on('connect', () => {
+    waking = false;
+    retryDelay = RECONNECT_DELAY_MS;
+    notify({ type: 'status', status: 'online' });
+  });
   socket.on('disconnect', (reason) => {
-    notify({ type: 'status', status: 'offline' });
+    notify({ type: 'status', status: lost() });
     if (reason === 'io server disconnect') socket.connect();
   });
   socket.on('connect_error', (error) => {
     const data = (error as Error & { data?: { code?: unknown } }).data;
     const outdated = data?.code === 'versionMismatch';
-    notify({ type: 'status', status: outdated ? 'outdated' : 'offline' });
+    if (data?.code === 'unavailable') waking = true;
+    notify({ type: 'status', status: outdated ? 'outdated' : lost() });
+    if (!outdated && !socket.active && retryTimer === null) {
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        socket.connect();
+      }, retryDelay);
+      retryDelay = Math.min(retryDelay * 2, RECONNECT_DELAY_MAX_MS);
+    }
   });
 
   return {
@@ -107,6 +142,7 @@ export function createSocketConnection(url?: string): Connection {
       return () => listeners.delete(listener);
     },
     close() {
+      if (retryTimer !== null) clearTimeout(retryTimer);
       socket.close();
     },
   };

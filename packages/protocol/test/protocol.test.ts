@@ -26,6 +26,7 @@ import {
   playerNameSchema,
   playerViewSchema,
   roomCodeSchema,
+  serverMessageSchemas,
   type WireAction,
   type WireCard,
   type WireJokerCall,
@@ -244,5 +245,11 @@ describe('повідомлення сервера', () => {
       unknown
     >;
     expect(playerViewSchema.safeParse({ ...view, hands: [[], [], []] }).success).toBe(false);
+  });
+});
+
+describe('перезапуск сервера (T55)', () => {
+  it('сервер попереджає клієнтів про перезапуск подією server:restarting', () => {
+    expect(serverMessageSchemas['server:restarting'].parse({})).toEqual({});
   });
 });

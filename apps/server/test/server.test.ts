@@ -297,3 +297,39 @@ describe('сховище кімнат (T54)', () => {
     expect(guest.room?.seats.map((m) => m.name)).toEqual(['Оля', 'Петро']);
   });
 });
+
+describe('зупинка сервера (T55)', () => {
+  it('на зупинці сервер перестає приймати дії, дописує все в базу й попереджає клієнтів', async () => {
+    const store = new GatedStore();
+    store.gated = false;
+    await server.close();
+    server = createPokerServer({ random: testRandom(7), store, botDelayMs: 0, trickPauseMs: 0 });
+    url = await server.listen({ port: 0, host: '127.0.0.1' });
+    const host = client();
+    const session = unwrap(await host.request('room:create', { name: 'Оля' }));
+
+    // Дія прийнята до зупинки, але ще не записана.
+    store.gated = true;
+    const adding = host.request('room:addBot', {});
+    await waitFor(() => store.waiting === 1);
+    const closing = server.close();
+    // Нові дії вже не приймаються.
+    expect(errorCode(await host.request('room:addBot', {}))).toBe('unavailable');
+    // Нові підключення теж: клієнт чекатиме на новий процес.
+    const late = new TestClient(url);
+    clients.push(late);
+    const refused = await new Promise<unknown>((resolve) => {
+      late.socket.on('connect_error', (error) => resolve((error as { data?: unknown }).data));
+      late.socket.on('connect', () => resolve('connected'));
+    });
+    expect(refused).toEqual({ code: 'unavailable' });
+    expect(host.restarting).toBe(false);
+    store.open();
+    // Прийнята дія дописується й підтверджується.
+    unwrap(await adding);
+    await host.until((c) => c.restarting);
+    await closing;
+    expect((await store.load(session.code))?.seats.map((m) => m.kind)).toEqual(['human', 'bot']);
+    // Закритий сервер можна закрити ще раз (afterEach).
+  });
+});

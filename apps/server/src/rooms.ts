@@ -104,6 +104,8 @@ export class RoomManager {
   private readonly writes = new Map<string, Promise<boolean>>();
   /** Кімнати, що зараз підвантажуються зі сховища. */
   private readonly loading = new Map<string, Promise<Room | undefined>>();
+  /** Менеджер зупинено (`close`): ходи ботів і таймери більше не плануються. */
+  private closed = false;
   /** Коди, зайняті кімнатами, які ще створюються. */
   private readonly reserved = new Set<string>();
 
@@ -483,6 +485,7 @@ export class RoomManager {
 
   /** Скасовує заплановані ходи (зупинка сервера); стан лишається у сховищі. */
   close(): void {
+    this.closed = true;
     for (const timer of this.turnTimers.values()) clearTimeout(timer);
     this.turnTimers.clear();
   }
@@ -523,7 +526,7 @@ export class RoomManager {
     this.turnTimers.delete(room.code);
     room.turnDeadline = null;
     const turn = room.game?.turn ?? null;
-    if (turn === null) return;
+    if (turn === null || this.closed) return;
     const member = room.seats[turn] as Member;
     let delay: number;
     let bot: Bot;

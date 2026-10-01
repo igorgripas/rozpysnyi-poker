@@ -56,6 +56,10 @@ export interface PokerServer {
   readonly rooms: RoomManager;
   /** Запускає сервер і повертає його адресу. */
   listen(options: { port: number; host?: string }): Promise<string>;
+  /**
+   * Плавна зупинка (SIGTERM): нові дії не приймаються, прийняті дописуються в базу,
+   * клієнти отримують `server:restarting`, потім зʼєднання закриваються.
+   */
   close(): Promise<void>;
 }
 
@@ -75,6 +79,11 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
   });
 
   app.get('/health', () => ({ ok: true, protocolVersion: PROTOCOL_VERSION }));
+
+  /** Плавна зупинка, якщо вже почалася: нові дії й підключення відхиляються. */
+  let closing: Promise<void> | null = null;
+  /** Запити, на які ще не відповіли: зупинка чекає їх. */
+  const inflight = new Set<Promise<void>>();
 
   /** Зʼєднання кожного гравця: `code/playerId` → сокети. */
   const connections = new Map<string, Set<PokerSocket>>();
@@ -181,6 +190,14 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
     ),
   };
 
+  io.use((_socket, next) => {
+    // Сервер зупиняється: клієнт має дочекатися нового процесу, а не цього.
+    if (closing === null) return next();
+    const error = new Error('Сервер перезапускається') as Error & { data?: unknown };
+    error.data = { code: 'unavailable' };
+    next(error);
+  });
+
   io.use((socket, next) => {
     if (handshakeSchema.safeParse(socket.handshake.auth).success) return next();
     const error = new Error(`Потрібна версія протоколу ${PROTOCOL_VERSION}`) as Error & {
@@ -195,6 +212,9 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
    * переживе рестарт. Збій бази — помилка `unavailable`, клієнт може повторити.
    */
   async function respond(socket: PokerSocket, event: ClientEvent, payload: unknown) {
+    if (closing !== null) {
+      return fail('unavailable', 'Сервер перезапускається, зачекайте хвилину');
+    }
     const parsed = parseClientMessage(event, payload);
     if (!parsed.ok) return parsed;
     const handler = handlers[event] as Handler<ClientEvent>;
@@ -212,6 +232,23 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
   }
 
   let cleanupTimer: ReturnType<typeof setInterval> | null = null;
+
+  async function shutdown(): Promise<void> {
+    if (cleanupTimer !== null) clearInterval(cleanupTimer);
+    rooms.close();
+    // Прийняті дії записуються й підтверджуються до того, як закриються зʼєднання.
+    while (inflight.size > 0) await Promise.all(inflight);
+    await rooms.flush();
+    io.emit('server:restarting', {});
+    // `io.close()` рве транспорт, не дочекавшись відправки: спершу чемно відключаємо
+    // клієнтів і даємо пакетам (відповіді, попередження) піти в мережу.
+    io.disconnectSockets(true);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await io.close();
+    // Відключення гравців теж змінює кімнати: дописуємо все в базу.
+    await rooms.flush();
+    await app.close();
+  }
   function cleanup(): void {
     rooms.cleanup().then(
       (removed) => {
@@ -226,7 +263,9 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
     for (const event of Object.keys(handlers) as ClientEvent[]) {
       socket.on(event, (payload: unknown, ack: unknown) => {
         if (typeof ack !== 'function') return;
-        void respond(socket, event, payload).then(ack as (result: unknown) => void);
+        const answered = respond(socket, event, payload).then(ack as (result: unknown) => void);
+        inflight.add(answered);
+        void answered.finally(() => inflight.delete(answered));
       });
     }
     socket.on('disconnect', () => unbind(socket));
@@ -247,13 +286,9 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
       }
       return address;
     },
-    async close() {
-      if (cleanupTimer !== null) clearInterval(cleanupTimer);
-      rooms.close();
-      await io.close();
-      // Відключення гравців теж змінює кімнати: дописуємо все в базу.
-      await rooms.flush();
-      await app.close();
+    close() {
+      closing ??= shutdown();
+      return closing;
     },
   };
 }
