@@ -3,12 +3,15 @@ import { expect, test } from '@playwright/test';
 const API = process.env.SMOKE_API_URL ?? 'https://rozpysnyi-poker-api.onrender.com';
 
 test('сервер живий: /health', async ({ request }) => {
-  await expect
-    .poll(async () => (await request.get(`${API}/health`, { timeout: 30_000 })).status(), {
-      timeout: 120_000,
-      intervals: [5_000],
-    })
-    .toBe(200);
+  // Безкоштовний сервер Render прокидається до ~1 хв: тайм-аут запиту — не провал, а ще одна спроба.
+  const status = async () => {
+    try {
+      return (await request.get(`${API}/health`, { timeout: 20_000 })).status();
+    } catch {
+      return 0;
+    }
+  };
+  await expect.poll(status, { timeout: 150_000, intervals: [5_000] }).toBe(200);
   const body = await (await request.get(`${API}/health`)).json();
   expect(body.ok).toBe(true);
 });
