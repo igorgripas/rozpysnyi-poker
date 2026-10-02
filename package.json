@@ -18,6 +18,7 @@
     "rules-coverage": "node scripts/rules-coverage.mjs",
     "simulate": "pnpm --filter @poker/engine simulate",
     "benchmark": "pnpm --filter @poker/bots benchmark",
+    "mutation": "pnpm --filter @poker/engine mutation",
     "replay": "tsx packages/engine/scripts/replay.ts"
   },
   "devDependencies": {
