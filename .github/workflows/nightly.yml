@@ -1,0 +1,86 @@
+# Нічні прогони (T53): довга симуляція, mutation testing рушія (коли з'явиться скрипт `mutation`),
+# smoke на проді. Будь-яке падіння — issue `bug` + `agent:ready` (одне відкрите на раз).
+name: Nightly
+on:
+  schedule:
+    - cron: '30 1 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  simulate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - run: npm install -g "pnpm@$(node -p "require('./package.json').packageManager.split('@')[1]")"
+      - run: pnpm install --frozen-lockfile
+      - name: Симуляція 100k ігор
+        run: pnpm --filter @poker/engine simulate --games 100000 --from "$(date +%j)000000"
+
+  mutation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - run: npm install -g "pnpm@$(node -p "require('./package.json').packageManager.split('@')[1]")"
+      - run: pnpm install --frozen-lockfile
+      - name: Mutation testing рушія (поріг — у конфігу Stryker)
+        run: pnpm --filter @poker/engine --if-present mutation
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mutation-report
+          if-no-files-found: ignore
+          path: packages/engine/reports/mutation/
+
+  smoke-prod:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - run: npm install -g "pnpm@$(node -p "require('./package.json').packageManager.split('@')[1]")"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @poker/web exec playwright install --with-deps chromium
+      - name: Smoke на проді (сервер міг заснути — тест чекає пробудження)
+        run: pnpm --filter @poker/web exec playwright test -c smoke/playwright.config.ts
+
+  report:
+    needs: [simulate, mutation, smoke-prod]
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Issue про падіння
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULTS: >-
+            симуляція — ${{ needs.simulate.result }};
+            mutation — ${{ needs.mutation.result }};
+            smoke на проді — ${{ needs.smoke-prod.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          body="Нічний прогін впав: $RESULTS.
+
+          Лог і артефакти: $RUN_URL
+
+          Відтвори локально (симуляція: \`pnpm simulate --games 100000 --from <seed з логу>\`; seed, що впав, додай у \`packages/engine/test/regressions.json\`), знайди причину й виправ."
+          open=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --label bug --search "Nightly in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "Nightly: падіння $(date -u +%F)" \
+              --label "bug,P1,agent:ready" --body "$body"
+          fi
