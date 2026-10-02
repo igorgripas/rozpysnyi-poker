@@ -24,6 +24,9 @@ services:
         value: '24'
       - key: DATABASE_URL
         sync: false
+      # Кнопка «Повідомити про баг»: fine-grained PAT лише на цей репо з правом Issues (read/write).
+      - key: BUG_REPORT_TOKEN
+        sync: false
       # Адреса клієнта для посилань-запрошень у кімнату (ім'я rozpysnyi-poker на Render зайняте — суфікс -pzgu).
       - key: PUBLIC_URL
         value: https://rozpysnyi-poker-pzgu.onrender.com
