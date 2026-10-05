@@ -43,6 +43,8 @@ export interface RoomSnapshot {
     readonly name: string;
     readonly kind: 'human' | 'bot';
     readonly token: string | null;
+    /** Гравець вийшов посеред гри, за нього ходить бот (T180); у старих знімках поля немає. */
+    readonly away?: boolean;
   }[];
   readonly game: { readonly seed: number; readonly log: GameLog } | null;
   /** Ще не опубліковані звіти про баги (у старих знімках поля немає). */
@@ -63,6 +65,8 @@ export interface RoomStore {
   /** Чи зайнятий код збереженою кімнатою. */
   has(code: string): Promise<boolean>;
   save(snapshot: RoomSnapshot): Promise<void>;
+  /** Видаляє кімнату (усі люди вийшли з лобі). */
+  delete(code: string): Promise<void>;
   /** Видаляє завершені ігри старші 30 днів і лобі старші 7 днів; повертає кількість. */
   cleanup(): Promise<number>;
   /**
@@ -124,6 +128,11 @@ export class MemoryRoomStore implements RoomStore {
   save(snapshot: RoomSnapshot): Promise<void> {
     // Копія через JSON: знімок не ділить обʼєкти з живою кімнатою, як і в базі.
     this.snapshots.set(snapshot.code, { json: JSON.stringify(snapshot), updatedAt: this.now() });
+    return Promise.resolve();
+  }
+
+  delete(code: string): Promise<void> {
+    this.snapshots.delete(code);
     return Promise.resolve();
   }
 

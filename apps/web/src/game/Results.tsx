@@ -8,13 +8,15 @@ export interface ResultsProps {
   names: readonly string[];
   /** Відкрити звіт про баг (T52). */
   onReportBug: () => void;
+  /** «Нова гра»: вийти з кімнати на головну (T180). */
+  onNewGame: () => void;
 }
 
 /**
  * Фінальний екран: привітання переможця (за рівних підсумків — усіх, R-9.4), підсумки
  * гравців від найбільшого (R-8.4) і вся таблиця гри.
  */
-export function Results({ view, names, onReportBug }: ResultsProps) {
+export function Results({ view, names, onReportBug, onNewGame }: ResultsProps) {
   const ranking = view.table.summary
     .map((summary, seat) => ({ seat, final: summary.final }))
     .sort((a, b) => b.final - a.final);
@@ -41,6 +43,9 @@ export function Results({ view, names, onReportBug }: ResultsProps) {
             </li>
           ))}
         </ul>
+        <button type="button" className="button button--primary results__new" onClick={onNewGame}>
+          {uk.results.newGame}
+        </button>
       </section>
       <ScoreSheet table={view.table} names={names} />
       <button type="button" className="button bug-report-button" onClick={onReportBug}>

@@ -17,7 +17,14 @@ function withFinals(view: WirePlayerView, finals: readonly number[]): WirePlayer
 }
 
 function renderResults(view: WirePlayerView) {
-  render(<Results view={view} names={PLAYER_NAMES.slice(0, 3)} onReportBug={() => {}} />);
+  render(
+    <Results
+      view={view}
+      names={PLAYER_NAMES.slice(0, 3)}
+      onReportBug={() => {}}
+      onNewGame={() => {}}
+    />,
+  );
   return screen.getByRole('region', { name: 'Результати' });
 }
 

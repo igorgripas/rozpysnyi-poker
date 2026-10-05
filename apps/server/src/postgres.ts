@@ -116,6 +116,10 @@ export class PostgresRoomStore implements RoomStore {
     );
   }
 
+  async delete(code: string): Promise<void> {
+    await this.query('DELETE FROM rooms WHERE code = $1', [code]);
+  }
+
   async cleanup(): Promise<number> {
     const now = this.now();
     const result = await this.query(

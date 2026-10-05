@@ -13,6 +13,7 @@ import { Bidding } from './Bidding';
 import { BugReportDialog } from './BugReportDialog';
 import { BlindHand, Hand } from './Hand';
 import { JokerDialog } from './JokerDialog';
+import { LeaveDialog } from './LeaveDialog';
 import { Results } from './Results';
 import { SheetDialog } from './SheetDialog';
 import { type TrickPause, useTrickPause } from './trickPause';
@@ -83,6 +84,7 @@ export function GameTable({ room, view: latest }: GameTableProps) {
   const [error, setError] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [bugReportOpen, setBugReportOpen] = useState(false);
+  const [leaveOpen, setLeaveOpen] = useState(false);
   const pending = useRef(false);
   const names = room.seats.map((seat) => seat.name);
   const nameOf = (seat: number) => names[seat] ?? `#${seat + 1}`;
@@ -147,7 +149,12 @@ export function GameTable({ room, view: latest }: GameTableProps) {
   if (view.status === 'finished') {
     return (
       <>
-        <Results view={view} names={names} onReportBug={() => setBugReportOpen(true)} />
+        <Results
+          view={view}
+          names={names}
+          onReportBug={() => setBugReportOpen(true)}
+          onNewGame={() => void client.leave()}
+        />
         {bugReport}
       </>
     );
@@ -237,6 +244,9 @@ export function GameTable({ room, view: latest }: GameTableProps) {
           >
             <span className="player__name">
               {nameOf(seat)}
+              {room.seats[seat]?.away === true && (
+                <span className="player__away"> {uk.game.away}</span>
+              )}
               {speaking?.has(room.seats[seat]?.id ?? '') && (
                 <span className="sr-only">, {uk.voice.speaking}</span>
               )}
@@ -247,7 +257,7 @@ export function GameTable({ room, view: latest }: GameTableProps) {
               {seat === lastTaker && (
                 <span className="badge badge--taker">{uk.game.lastTaker}</span>
               )}
-              {room.seats[seat]?.connected === false && (
+              {room.seats[seat]?.connected === false && room.seats[seat].away !== true && (
                 <span className="badge badge--muted">{uk.game.offline}</span>
               )}
             </span>
@@ -339,6 +349,14 @@ export function GameTable({ room, view: latest }: GameTableProps) {
           resetKey={handReset}
           onPlay={(card) => (card.kind === 'joker' ? setJoker(card) : play(card))}
         />
+      )}
+
+      <button type="button" className="button game__leave" onClick={() => setLeaveOpen(true)}>
+        {uk.game.leave}
+      </button>
+
+      {leaveOpen && (
+        <LeaveDialog onLeave={() => void client.leave()} onCancel={() => setLeaveOpen(false)} />
       )}
 
       {sheetOpen && (

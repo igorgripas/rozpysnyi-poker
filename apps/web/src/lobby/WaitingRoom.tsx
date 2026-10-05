@@ -138,6 +138,9 @@ export function WaitingRoom({ room }: { room: RoomState }) {
             {error}
           </p>
         )}
+        <button type="button" className="button waiting__leave" onClick={() => void client.leave()}>
+          {uk.room.leave}
+        </button>
       </div>
     </section>
   );

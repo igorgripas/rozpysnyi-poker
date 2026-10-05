@@ -64,6 +64,17 @@ describe('PostgresRoomStore', () => {
     expect(await second.load('ZZZZZ')).toBeNull();
   });
 
+  it('видаляє кімнату за кодом (усі люди вийшли з лобі, T180)', async () => {
+    const s = store();
+    await s.init();
+    await s.save(snapshot('ABCDE'));
+    await s.save(snapshot('FGHJK'));
+    await s.delete('ABCDE');
+    expect(await s.has('ABCDE')).toBe(false);
+    expect(await s.load('ABCDE')).toBeNull();
+    expect(await s.has('FGHJK')).toBe(true);
+  });
+
   it('пошкоджений або несумісний знімок читається як відсутній', async () => {
     const s = store();
     await s.init();

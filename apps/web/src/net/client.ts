@@ -20,6 +20,11 @@ import {
 
 export const SESSION_STORAGE_KEY = 'poker.session';
 export const NAME_STORAGE_KEY = 'poker.name';
+/** Ігри, з яких гравець вийшов посеред гри й може повернутися (T180). */
+export const UNFINISHED_STORAGE_KEY = 'poker.unfinished';
+
+/** Скільки незавершених ігор памʼятати. */
+const UNFINISHED_LIMIT = 10;
 
 /** Через скільки повторити повернення в кімнату, якщо сервер ще не готовий, мс. */
 export const RESUME_RETRY_MS = 2000;
@@ -28,6 +33,12 @@ export const RESUME_RETRY_MS = 2000;
 export interface StoredSession {
   readonly code: string;
   readonly token: string;
+}
+
+/** Гра, з якої гравець вийшов посеред гри: за нього ходить бот, повернутися можна. */
+export interface UnfinishedGame extends StoredSession {
+  /** Хто грає (імена місць у порядку гри). */
+  readonly players: readonly string[];
 }
 
 export interface ClientState {
@@ -39,12 +50,25 @@ export interface ClientState {
   readonly view: WirePlayerView | null;
   /** Чому не вдалося повернутися в кімнату (напр., гру збережено несумісною версією). */
   readonly resumeError: string | null;
+  /** Мої незавершені ігри: з них гравець вийшов сам, назад — лише за його бажанням. */
+  readonly unfinished: readonly UnfinishedGame[];
 }
 
 type RoomEvent = Exclude<
   ClientEvent,
-  'room:create' | 'room:join' | 'room:resume' | 'game:reportBug' | 'voice:join'
+  'room:create' | 'room:join' | 'room:resume' | 'room:leave' | 'game:reportBug' | 'voice:join'
 >;
+
+function isUnfinishedGame(value: unknown): value is UnfinishedGame {
+  if (typeof value !== 'object' || value === null) return false;
+  const { code, token, players } = value as Record<string, unknown>;
+  return (
+    typeof code === 'string' &&
+    typeof token === 'string' &&
+    Array.isArray(players) &&
+    players.every((name) => typeof name === 'string')
+  );
+}
 
 /** Стан клієнта поверх зʼєднання: сесія, кімната й погляд на гру. */
 export class PokerClient {
@@ -54,7 +78,10 @@ export class PokerClient {
     room: null,
     view: null,
     resumeError: null,
+    unfinished: [],
   };
+  /** Кімната, з якої гравець щойно вийшов: її запізнілі оновлення ігноруються. */
+  private left: string | null = null;
   private readonly listeners = new Set<() => void>();
   private readonly voiceListeners = new Set<(message: VoiceMessage) => void>();
 
@@ -62,10 +89,13 @@ export class PokerClient {
     private readonly connection: Connection,
     private readonly storage: Storage = localStorage,
   ) {
+    this.state = { ...this.state, unfinished: this.loadUnfinished() };
     connection.subscribe((update) => {
-      if (update.type === 'room') this.set({ room: update.room });
-      else if (update.type === 'view') this.set({ view: update.view });
-      else if (update.type === 'voice') {
+      if (update.type === 'room') {
+        if (update.room.code !== this.left) this.set({ room: update.room });
+      } else if (update.type === 'view') {
+        if (this.left === null) this.set({ view: update.view });
+      } else if (update.type === 'voice') {
         for (const listener of this.voiceListeners) listener(update.message);
       } else this.changeConnection(update.status);
     });
@@ -122,6 +152,26 @@ export class PokerClient {
     return this.storage.getItem(NAME_STORAGE_KEY) ?? '';
   }
 
+  private loadUnfinished(): UnfinishedGame[] {
+    try {
+      const value: unknown = JSON.parse(this.storage.getItem(UNFINISHED_STORAGE_KEY) ?? '[]');
+      return Array.isArray(value) ? value.filter(isUnfinishedGame) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private saveUnfinished(unfinished: readonly UnfinishedGame[]): void {
+    this.storage.setItem(UNFINISHED_STORAGE_KEY, JSON.stringify(unfinished));
+    this.set({ unfinished });
+  }
+
+  private forgetUnfinished(code: string): void {
+    if (this.state.unfinished.some((game) => game.code === code)) {
+      this.saveUnfinished(this.state.unfinished.filter((game) => game.code !== code));
+    }
+  }
+
   private enter(result: ClientResult<Session>): ClientError | null {
     if (!result.ok) return result.error;
     this.set({ resumeError: null });
@@ -131,26 +181,41 @@ export class PokerClient {
   }
 
   async create(name: string): Promise<ClientError | null> {
+    this.left = null;
     this.storage.setItem(NAME_STORAGE_KEY, name);
     return this.enter(await this.connection.request('room:create', { name }));
   }
 
   async join(code: string, name: string): Promise<ClientError | null> {
+    this.left = null;
     this.storage.setItem(NAME_STORAGE_KEY, name);
     return this.enter(await this.connection.request('room:join', { code, name }));
   }
 
   /**
-   * Повертається в кімнату за збереженим токеном. Якщо задано `code`, лише в цю кімнату.
+   * Повертається в кімнату за збереженим токеном. Якщо задано `code`, лише в цю кімнату —
+   * за сесією або, якщо це незавершена гра, з якої гравець вийшов, за її токеном.
    * Недійсну сесію забуває, а пояснення зберігає в `resumeError`. Повертає, чи вдалося повернутися.
    */
   async resume(code?: string): Promise<boolean> {
-    const stored = this.storedSession();
-    if (stored === null || (code !== undefined && code !== stored.code)) return false;
+    const session = this.storedSession();
+    const unfinished =
+      code === undefined ? undefined : this.state.unfinished.find((game) => game.code === code);
+    const stored =
+      session !== null && (code === undefined || code === session.code)
+        ? session
+        : unfinished === undefined
+          ? null
+          : { code: unfinished.code, token: unfinished.token };
+    if (stored === null) return false;
     if (this.state.status === 'resuming') return false;
+    this.left = null;
     this.set({ status: 'resuming' });
     const result = await this.connection.request('room:resume', stored);
     if (result.ok) {
+      // Гравець повернувся в гру, з якої виходив: вона знову поточна.
+      this.storage.setItem(SESSION_STORAGE_KEY, JSON.stringify(stored));
+      this.forgetUnfinished(stored.code);
       this.set({ status: 'idle', resumeError: null });
       return true;
     }
@@ -160,9 +225,34 @@ export class PokerClient {
       return false;
     }
     // Повернутися не вийде: сесію забуваємо, а пояснення сервера показуємо в лобі.
-    this.storage.removeItem(SESSION_STORAGE_KEY);
+    if (stored === session) this.storage.removeItem(SESSION_STORAGE_KEY);
+    this.forgetUnfinished(stored.code);
     this.set({ status: 'idle', resumeError: result.error.message });
     return false;
+  }
+
+  /**
+   * Вихід із кімнати (T180): одразу на головну, навіть без звʼязку (помилку сервера ігноруємо).
+   * З гри, що триває, сесія переходить у «мої незавершені ігри» — за гравця ходить бот,
+   * а повернутися можна з головної. З лобі чи завершеної гри сесію забуто.
+   */
+  async leave(): Promise<void> {
+    const { room } = this.state;
+    const session = this.storedSession();
+    if (room !== null) this.left = room.code;
+    this.storage.removeItem(SESSION_STORAGE_KEY);
+    if (session !== null) {
+      const others = this.state.unfinished.filter((game) => game.code !== session.code);
+      if (room?.status === 'playing' && room.code === session.code) {
+        const players = room.seats.map((seat) => seat.name);
+        this.saveUnfinished([{ ...session, players }, ...others].slice(0, UNFINISHED_LIMIT));
+      } else {
+        this.forgetUnfinished(session.code);
+      }
+    }
+    this.set({ room: null, view: null, resumeError: null });
+    globalThis.history?.replaceState(null, '', '/');
+    await this.connection.request('room:leave', {});
   }
 
   /** Дія в кімнаті (хост, гра); повертає помилку або `null`. */

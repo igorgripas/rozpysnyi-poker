@@ -326,6 +326,43 @@ textarea {
   color: var(--muted);
 }
 
+/* Незавершені ігри (T180): з них гравець вийшов, повернутися можна. */
+.unfinished {
+  width: 100%;
+  max-width: 420px;
+  text-align: left;
+}
+
+.unfinished__title {
+  margin: 0 0 var(--space-2);
+  font-size: 1rem;
+}
+
+.unfinished__list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.unfinished__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.unfinished__text {
+  display: grid;
+  min-width: 0;
+}
+
+.unfinished__players {
+  overflow-wrap: anywhere;
+}
+
 /* ── Лобі й кімната очікування ─────────────────────────────────────────── */
 
 .lobby {
@@ -368,6 +405,10 @@ textarea {
 
 .waiting__link {
   overflow-wrap: anywhere;
+}
+
+.waiting__leave {
+  margin-top: var(--space-4);
 }
 
 .waiting__actions {
@@ -504,7 +545,8 @@ textarea {
     'bidding'
     'felt'
     'alert'
-    'hand';
+    'hand'
+    'leave';
   gap: var(--space-3);
 }
 
@@ -1277,6 +1319,22 @@ tfoot .sheet__cell {
   justify-self: start;
 }
 
+/* ── Вихід із гри (T180) ─────────────────────────────────────────────────── */
+
+.game__leave {
+  grid-area: leave;
+  justify-self: start;
+}
+
+.leave-dialog__hint {
+  margin: 0;
+}
+
+.results__new {
+  width: 100%;
+  margin-top: var(--space-3);
+}
+
 .bug-dialog__form {
   display: grid;
   gap: var(--space-2);
@@ -1413,7 +1471,8 @@ tfoot .sheet__cell {
       'players bidding'
       'players felt'
       'players alert'
-      'hand hand';
+      'hand hand'
+      'leave leave';
     align-items: start;
   }
 
