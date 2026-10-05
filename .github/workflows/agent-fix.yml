@@ -9,7 +9,7 @@ on:
       reason:
         required: true
         type: choice
-        options: [ci, review]
+        options: [ci, review, conflict]
       run_id:
         required: false
         type: string

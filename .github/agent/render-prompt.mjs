@@ -41,7 +41,11 @@ if (kind === 'implement') {
   vars.PR_TITLE = pr.title;
   vars.ISSUES = issuesText(closesIssues(pr.body));
   if (kind === 'fix') {
-    vars.REASON = env.REASON === 'ci' ? 'CI впав' : 'рецензент попросив змін';
+    vars.REASON = {
+      ci: 'CI впав',
+      review: 'рецензент попросив змін',
+      conflict: 'конфлікти злиття з main',
+    }[env.REASON];
     vars.CONTEXT = readFileSync(env.CONTEXT_FILE, 'utf8');
   }
 }

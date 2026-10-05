@@ -44,12 +44,20 @@ if (attempts >= MAX_ATTEMPTS) {
   process.exit(0);
 }
 removeLabels(PR, attempts ? [`agent:attempt-${attempts}`] : []);
+if (REASON === 'conflict') removeLabels(PR, ['agent:conflict']);
 addLabels(PR, [`agent:attempt-${attempts + 1}`]);
 
 let context;
 if (REASON === 'ci') {
   const log = gh(['run', 'view', RUN_ID, '--repo', REPO, '--log-failed']);
   context = log.split('\n').slice(-400).join('\n');
+} else if (REASON === 'conflict') {
+  context = [
+    'PR має конфлікти злиття з main (поки він чекав, у main змерджили інші зміни).',
+    "Виконай `git merge origin/main` у поточній гілці, розв'яжи кожен конфлікт так, щоб зберегти зміни ОБОХ",
+    'сторін (і цього PR, і main), закоміть merge-коміт і доведи `pnpm verify` до зеленого стану.',
+    'Візуальні знімки Playwright, що конфліктують, онови прогоном відповідних e2e з `--update-snapshots`.',
+  ].join('\n');
 } else {
   const review = [...pr.comments].reverse().find((c) => c.body.includes('<!-- agent-review -->'));
   context = review?.body ?? '(зауваження рецензента не знайдено)';

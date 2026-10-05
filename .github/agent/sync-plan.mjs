@@ -10,6 +10,7 @@ const LABELS = {
   'agent:attempt-1': ['ededed', 'Спроба фіксу 1'],
   'agent:attempt-2': ['ededed', 'Спроба фіксу 2'],
   'agent:attempt-3': ['ededed', 'Спроба фіксу 3'],
+  'agent:conflict': ['e99695', 'PR конфліктує з main, фіксер зливає'],
   agent: ['1d76db', 'PR створено агентом'],
   'needs-human': ['b60205', 'Потрібне рішення людини'],
   'spec-change': ['5319e7', 'Власник дозволив змінити захищені файли'],

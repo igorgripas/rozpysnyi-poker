@@ -29,16 +29,14 @@ if (report?.status !== 'done' || ahead === 0) {
   process.exit(0);
 }
 
-const touched = run('git', [
-  '-C',
-  GITHUB_WORKSPACE,
-  'diff',
-  '--name-only',
-  `origin/${BRANCH}..HEAD`,
-])
-  .split('\n')
-  .filter(Boolean)
-  .filter(isProtected);
+// Захищені файли, які змінив фіксер і які входять у власні зміни PR (злиття main приносить
+// чужі зміни захищених файлів — вони не потребують повторного схвалення).
+const diffNames = (range) =>
+  run('git', ['-C', GITHUB_WORKSPACE, 'diff', '--name-only', range]).split('\n').filter(Boolean);
+const ownChanges = new Set(diffNames('origin/main...HEAD'));
+const touched = diffNames(`origin/${BRANCH}..HEAD`).filter(
+  (f) => isProtected(f) && ownChanges.has(f),
+);
 try {
   pushFromWorkspace({ workspace: GITHUB_WORKSPACE, branch: BRANCH, token: AGENT_GH_TOKEN });
 } catch (e) {

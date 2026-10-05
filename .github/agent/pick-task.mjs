@@ -6,6 +6,7 @@ import {
   closesIssues,
   comment,
   dependsOn,
+  gh,
   ghJson,
   removeLabels,
   setOutput,
@@ -53,6 +54,26 @@ const waitsForHuman = (pr) =>
   (checkState(pr, 'verify') === 'SUCCESS' &&
     checkState(pr, 'agent-review') === 'SUCCESS' &&
     checkState(pr, 'guard') === 'FAILURE');
+// PR із конфліктом злиття з main сам не змерджиться: запускаємо фіксер (раз на конфлікт).
+for (const pr of openPrs) {
+  const state = gh(['api', `repos/${REPO}/pulls/${pr.number}`, '--jq', '.mergeable_state']).trim();
+  const labels = pr.labels.map((l) => l.name);
+  if (state === 'dirty' && !labels.includes('agent:conflict') && !labels.includes('needs-human')) {
+    console.log(`PR #${pr.number}: конфлікт із main — запускаю фіксер`);
+    addLabels(pr.number, ['agent:conflict']);
+    gh([
+      'workflow',
+      'run',
+      'agent-fix.yml',
+      '--repo',
+      REPO,
+      '-f',
+      `pr=${pr.number}`,
+      '-f',
+      'reason=conflict',
+    ]);
+  }
+}
 const blocking = openPrs.filter((pr) => !waitsForHuman(pr));
 if (blocking.length) done([], `відкритий PR агента #${blocking[0].number}`);
 if (openPrs.length >= MAX_OPEN_PRS) {
