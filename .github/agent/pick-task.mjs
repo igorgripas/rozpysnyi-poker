@@ -60,18 +60,23 @@ for (const pr of openPrs) {
   const labels = pr.labels.map((l) => l.name);
   if (state === 'dirty' && !labels.includes('agent:conflict') && !labels.includes('needs-human')) {
     console.log(`PR #${pr.number}: конфлікт із main — запускаю фіксер`);
-    addLabels(pr.number, ['agent:conflict']);
-    gh([
-      'workflow',
-      'run',
-      'agent-fix.yml',
-      '--repo',
-      REPO,
-      '-f',
-      `pr=${pr.number}`,
-      '-f',
-      'reason=conflict',
-    ]);
+    // Збій тут не має зупиняти вибір задач: наступний запуск спробує знову.
+    try {
+      addLabels(pr.number, ['agent:conflict']);
+      gh([
+        'workflow',
+        'run',
+        'agent-fix.yml',
+        '--repo',
+        REPO,
+        '-f',
+        `pr=${pr.number}`,
+        '-f',
+        'reason=conflict',
+      ]);
+    } catch (e) {
+      console.log(`PR #${pr.number}: не вдалося запустити фіксер: ${e.stderr || e.message}`);
+    }
   }
 }
 const blocking = openPrs.filter((pr) => !waitsForHuman(pr));
