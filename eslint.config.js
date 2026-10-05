@@ -9,6 +9,7 @@ export default tseslint.config(
       '**/dist/**',
       '**/coverage/**',
       '**/reports/**',
+      '**/.stryker-tmp/**',
       '**/node_modules/**',
       '**/playwright-report/**',
       '**/test-results/**',

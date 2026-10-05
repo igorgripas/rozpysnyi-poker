@@ -1,6 +1,7 @@
 import pg from 'pg';
 import { type RetryOptions, withRetry } from './retry.js';
 import {
+  ABANDONED_TTL_MS,
   FINISHED_TTL_MS,
   LOBBY_TTL_MS,
   type RoomSnapshot,
@@ -123,6 +124,17 @@ export class PostgresRoomStore implements RoomStore {
       [new Date(now - FINISHED_TTL_MS), new Date(now - LOBBY_TTL_MS)],
     );
     return result.rowCount ?? 0;
+  }
+
+  async unpublishedBugReports(): Promise<string[]> {
+    const result = await this.query<{ code: string }>(
+      `SELECT code FROM rooms
+       WHERE (status = 'finished' OR (status = 'playing' AND updated_at < $1))
+         AND COALESCE(snapshot->'bugReports', '[]'::jsonb) <> '[]'::jsonb
+       ORDER BY code`,
+      [new Date(this.now() - ABANDONED_TTL_MS)],
+    );
+    return result.rows.map((row) => row.code);
   }
 
   async close(): Promise<void> {

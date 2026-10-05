@@ -15,6 +15,21 @@ export const uk = {
     on: 'Вібрація на свій хід: увімкнена',
     off: 'Вібрація на свій хід: вимкнена',
   },
+  sound: {
+    label: 'Звуки гри',
+    on: 'Звуки гри: увімкнені',
+    off: 'Звуки гри: вимкнені',
+  },
+  voice: {
+    title: 'Голосовий чат',
+    mic: 'Мікрофон',
+    micOn: 'Мікрофон увімкнений: вас чують',
+    micOff: 'Мікрофон вимкнений',
+    muteOthers: 'Вимкнути звук інших',
+    httpsOnly: 'Голосовий чат працює лише через HTTPS — відкрийте гру за адресою https://',
+    denied: 'Немає доступу до мікрофона: дозвольте його в налаштуваннях браузера',
+    speaking: 'говорить',
+  },
   connection: {
     indicator: {
       connecting: 'Підключення до сервера…',
@@ -84,6 +99,7 @@ export const uk = {
     revealed: 'Відкрита карта',
     noTrump: 'Без козиря',
     table: 'Стіл',
+    trick: 'Взятка',
     lastTrick: (name: string) => `Остання взятка: ${name}`,
     takes: (name: string) => `Бере: ${name}`,
     youTake: 'Ви берете',
@@ -139,6 +155,19 @@ export const uk = {
     discardHint: 'Джокер не бере взятку.',
     cancel: 'Скасувати',
   },
+  bugReport: {
+    open: 'Повідомити про баг',
+    title: 'Повідомити про баг',
+    label: 'Що сталося?',
+    hint: 'Разом з описом надішлемо запис цієї гри, щоб баг можна було відтворити.',
+    send: 'Надіслати',
+    sending: 'Надсилаємо…',
+    cancel: 'Скасувати',
+    thanks: 'Дякуємо! Звіт надіслано.',
+    pending: 'Дякуємо! Звіт буде надіслано після завершення гри.',
+    link: 'Відкрити звіт',
+    close: 'Закрити',
+  },
   sheet: {
     title: 'Таблиця гри',
     open: 'Таблиця',
@@ -150,20 +179,28 @@ export const uk = {
     marks: { noTrump: 'Б', misere: 'М', comeback: 'В', dark: 'Тем' },
     row: (n: number, phase: string, cards: string, trump: string, dealer: string) =>
       `Роздача ${n}: ${phase}, ${cards}, козир ${trump}, роздає ${dealer}`,
+    result: { hit: 'влучив', miss: 'не влучив' },
     jokers: 'Джокери × −10',
     final: 'Рахунок',
     /** Легенда після зразка «9♥» (його малює значок масті). */
     legend:
-      '— карт у роздачі й козир, б/к — без козиря · Б — безкозирка · М — мізер · В — відіграш · ◯ — джокер (кружечок навколо замовлення) · ◤ — роздавав',
+      '— карт у роздачі й козир, б/к — без козиря · Б — безкозирка · М — мізер · В — відіграш · 3→2 — замовив→взяв, зафарбовано — влучив · ◯ — джокер (кружечок навколо замовлення) · ◤ — роздавав',
     /** Легенда «Темної» — лише в грі з цією опцією (R-10.2). */
     darkLegend: 'Тем — темна (бали ×2)',
     results: 'Результати',
+  },
+  results: {
+    /** «Вітаємо, Оля! Перемога з 127 очками»; за рівних підсумків — усі імена (R-9.4). */
+    winner: (names: readonly string[], score: string, points: number) =>
+      `Вітаємо, ${listNames(names)}! ${names.length > 1 ? 'Спільна перемога' : 'Перемога'} з ${score} ${plural(points, uk.plural.pointWith)}`,
   },
   plural: {
     trick: ['взятка', 'взятки', 'взяток'],
     card: ['карта', 'карти', 'карт'],
     player: ['гравець', 'гравці', 'гравців'],
     joker: ['джокер', 'джокери', 'джокерів'],
+    /** Орудний відмінок: «з 1 очком», «з 5 очками». */
+    pointWith: ['очком', 'очками', 'очками'],
   },
 } as const satisfies Record<string, unknown>;
 
@@ -250,6 +287,12 @@ export function phaseName(phase: HandPhase): string {
 /** Козир роздачі або «б/к» (R-3.2, R-3.4). */
 export function trumpLabel(trump: Suit | null): string {
   return trump === null ? uk.noTrump : `${suitSymbol(trump)} ${suitName(trump)}`;
+}
+
+/** «Оля», «Оля і Бот 1», «Оля, Бот 1 і Бот 2». */
+export function listNames(names: readonly string[]): string {
+  if (names.length <= 1) return names.join('');
+  return `${names.slice(0, -1).join(', ')} і ${names.at(-1)}`;
 }
 
 /** Форма іменника для числа `n`: 1 взятка, 3 взятки, 5 взяток, 21 взятка. */

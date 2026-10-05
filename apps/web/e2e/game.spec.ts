@@ -1,4 +1,5 @@
-import { type Locator, expect, test } from '@playwright/test';
+import { type Locator, type Page, expect, test } from '@playwright/test';
+import { playUntil } from './support/player';
 
 test('ігровий стіл: рука, гравці й стіл вміщуються в екран', async ({ page }) => {
   await page.goto('/');
@@ -35,10 +36,11 @@ test('R-3.1: відкрита карта-козир не менша за кар�
   await page.getByRole('button', { name: 'Почати гру' }).click();
 
   const info = page.getByRole('region', { name: 'Роздача' });
-  // Перша роздача — «Зростання»: відкрита карта є, але без видимого підпису.
-  const revealed = info.getByRole('figure', { name: 'Відкрита карта' }).locator('.card');
+  const table = page.getByRole('region', { name: 'Стіл' });
+  // Перша роздача — «Зростання»: відкрита карта лежить на столі, але без видимого підпису.
+  const revealed = table.getByRole('figure', { name: 'Відкрита карта' }).locator('.card');
   await expect(revealed).toBeVisible();
-  await expect(info).not.toContainText('Відкрита карта');
+  await expect(table).not.toContainText('Відкрита карта');
   const handCard = page.getByRole('list', { name: 'Ваші карти' }).locator('.card').first();
   await expect(handCard).toBeVisible();
   const [own, open] = await Promise.all([handCard.boundingBox(), revealed.boundingBox()]);
@@ -59,6 +61,76 @@ test('R-3.1: відкрита карта-козир не менша за кар�
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );
   expect(overflow).toBeLessThanOrEqual(0);
+});
+
+/** Козир на столі, взятка, рука й чий хід — на одному екрані, без прокручування між ними. */
+async function expectTrumpWithHand(page: Page): Promise<void> {
+  const table = page.getByRole('region', { name: 'Стіл' });
+  const trump = table.locator('.game__revealed');
+  const hand = page.getByRole('list', { name: 'Ваші карти' });
+  // Гравець тримає руку на екрані (прокручує до неї) — козир і стіл лишаються видимими.
+  await hand.scrollIntoViewIfNeeded();
+  await expect(hand).toBeInViewport({ ratio: 1 });
+  await expect(trump).toBeInViewport({ ratio: 1 });
+  await expect(table.getByRole('group', { name: 'Взятка' })).toBeInViewport();
+  await expect(page.locator('.player[aria-current="true"]')).toBeInViewport();
+  // Козир не перекриває карти взятки.
+  const box = await trump.boundingBox();
+  for (const card of await table.locator('.felt__card').all()) {
+    const other = await card.boundingBox();
+    if (box === null || other === null) continue;
+    const apart =
+      box.x + box.width <= other.x ||
+      other.x + other.width <= box.x ||
+      box.y + box.height <= other.y ||
+      other.y + other.height <= box.y;
+    expect(apart).toBe(true);
+  }
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(0);
+}
+
+/** Перевіряє екран у в'юпорті проєкту, а на телефоні — ще й на типових 390×844 і 412×915. */
+async function expectOnPhones(page: Page, mobile: boolean): Promise<void> {
+  const own = page.viewportSize();
+  const sizes = mobile ? [own, { width: 390, height: 844 }, { width: 412, height: 915 }] : [own];
+  for (const size of sizes) {
+    if (size !== null) await page.setViewportSize(size);
+    await expectTrumpWithHand(page);
+  }
+  if (own !== null) await page.setViewportSize(own);
+}
+
+test('R-3.1: козир на столі видно разом із рукою під час замовлень і розіграшу', async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(3 * 60_000);
+  const mobile = testInfo.project.name === 'mobile-360';
+  await page.goto('/?trickPause=0');
+  await page.getByLabel('Ваше імʼя').fill('Оля');
+  await page.getByRole('button', { name: 'Створити кімнату' }).click();
+  for (let i = 0; i < 3; i++) await page.getByRole('button', { name: 'Додати бота' }).click();
+  await expect(page.getByRole('list', { name: 'Гравці' }).getByRole('listitem')).toHaveCount(4);
+  await page.getByRole('button', { name: 'Почати гру' }).click();
+
+  // Замовлення: козир (відкрита карта першої роздачі) видно разом із рукою.
+  await expect(page.getByRole('group', { name: 'Ваше замовлення' })).toBeVisible();
+  await expectOnPhones(page, mobile);
+
+  // Розіграш посеред роздачі: на столі вже є карти суперників, ваш хід.
+  await playUntil(page, async () => {
+    const onTable = await page
+      .locator('.felt__trick:not(.felt__trick--last, .felt__trick--taken) .felt__card')
+      .count();
+    return (
+      onTable >= 2 &&
+      (await page.locator('.hand__card').count()) >= 2 &&
+      (await page.locator('.hand__card:enabled').count()) > 0
+    );
+  });
+  await expectOnPhones(page, mobile);
 });
 
 test('замовлення: кнопки 0…K, сума замовлень на екрані', async ({ page }) => {
@@ -156,6 +228,61 @@ test('таблиця гри відкривається під час гри й �
   await expect(dialog).toBeHidden();
 });
 
+test('R-8.2: після роздачі в таблиці «замовив→взяв» з влучанням; на 6 гравців усе видно', async ({
+  page,
+}) => {
+  test.setTimeout(2 * 60_000);
+  await page.goto('/?trickPause=0');
+  await page.getByLabel('Ваше імʼя').fill('Оля');
+  await page.getByRole('button', { name: 'Створити кімнату' }).click();
+  for (let i = 0; i < 5; i++) await page.getByRole('button', { name: 'Додати бота' }).click();
+  await expect(page.getByRole('list', { name: 'Гравці' }).getByRole('listitem')).toHaveCount(6);
+  await page.getByRole('button', { name: 'Почати гру' }).click();
+
+  // Перша роздача (1 карта) зіграна: у руці вже 2 карти другої роздачі.
+  await playUntil(page, async () => (await page.locator('.hand__card').count()) === 2);
+
+  await page.getByRole('button', { name: 'Таблиця' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Таблиця гри' });
+  const outcomes = dialog.locator('tbody tr').first().locator('.sheet__outcome');
+  await expect(outcomes).toHaveCount(6);
+  // Між замовленням і «→» — лише текст для екранного читача про джокерів.
+  await expect(outcomes.first()).toHaveText(/^[01](, \d джокер\S*)?→[01], (не )?влучив$/);
+  const scroll = dialog.locator('.sheet__scroll');
+  expect(await scroll.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
+  // Кожне «замовив→взяв» зі значком вміщується у свою клітинку, нічого не обрізано.
+  for (const outcome of await outcomes.all()) {
+    const fits = await outcome.evaluate((el) => {
+      const cell = el.closest('td')?.getBoundingClientRect();
+      const box = el.getBoundingClientRect();
+      return cell !== undefined && box.left >= cell.left - 0.5 && box.right <= cell.right + 0.5;
+    });
+    expect(fits).toBe(true);
+  }
+  // Найширші значення (кружечки за 2 джокери й «−60») теж вміщуються.
+  const widest = await dialog
+    .locator('tbody tr')
+    .first()
+    .evaluate((tr) => {
+      const outcome = tr.querySelector('.sheet__outcome');
+      const bid = outcome?.querySelector('.sheet__bid');
+      const points = tr.querySelector('.sheet__cell--points');
+      if (!outcome || !bid || !points) return false;
+      bid.setAttribute('data-circles', '2');
+      points.textContent = '−60';
+      const range = document.createRange();
+      range.selectNodeContents(points);
+      const cell = outcome.closest('td')?.getBoundingClientRect();
+      const box = outcome.getBoundingClientRect();
+      return (
+        cell !== undefined &&
+        box.width <= cell.width + 0.5 &&
+        range.getBoundingClientRect().width <= points.getBoundingClientRect().width + 0.5
+      );
+    });
+  expect(widest).toBe(true);
+});
+
 test('пауза після взятки: видно, хто бере, і всі карти; у новій роздачі стіл чистий (R-9.2)', async ({
   page,
 }) => {
@@ -179,10 +306,12 @@ test('пауза після взятки: видно, хто бере, і всі
   }
 
   const felt = page.getByRole('region', { name: 'Стіл' });
+  // Карти взятки (окремо від відкритої карти-козиря на столі).
+  const trick = felt.getByRole('group', { name: 'Взятка' });
   const players = page.getByRole('list', { name: 'Гравці за столом' }).getByRole('listitem');
   await expect(felt.locator('.felt__trick--taken')).toBeVisible();
   await expect(felt).toContainText(/Бере: Бот \d|Ви берете/);
-  await expect(felt.getByRole('figure')).toHaveCount(3);
+  await expect(trick.getByRole('figure')).toHaveCount(3);
   await expect(felt.locator('.felt__card[data-winner]')).toHaveCount(1);
   // Хто взяв останню взятку — підсвічено й підписано.
   await expect(players.and(page.locator('[data-last-taker]'))).toHaveCount(1);
@@ -194,7 +323,7 @@ test('пауза після взятки: видно, хто бере, і всі
 
   // Після паузи — друга роздача: замовлення, а на столі нічого з попередньої.
   await expect(page.getByRole('region', { name: 'Роздача' })).toContainText('Роздача 2 з');
-  await expect(felt.getByRole('figure')).toHaveCount(0);
+  await expect(trick.getByRole('figure')).toHaveCount(0);
   await expect(felt).not.toContainText('Остання взятка');
   await expect(players.and(page.locator('[data-last-taker]'))).toHaveCount(0);
 });

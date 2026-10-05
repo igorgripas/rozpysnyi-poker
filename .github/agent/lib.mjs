@@ -13,6 +13,7 @@ export const PROTECTED = [
   /^docs\/RULES\.md$/,
   /^packages\/engine\/test\/golden\//,
   /^\.github\//,
+  /^apps\/web\/smoke\//,
   /^CLAUDE\.md$/,
 ];
 export const isProtected = (file) => PROTECTED.some((re) => re.test(file));

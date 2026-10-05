@@ -6,8 +6,11 @@ import type { ClientError } from '../net/connection';
 import { useClient } from '../net/react';
 import { CardFace } from '../ui/Card';
 import { JokerCallLabel, SuitMark } from '../ui/SuitMark';
+import { useGameSounds } from '../ui/sound';
 import { useTurnVibration } from '../ui/vibration';
+import { VoiceControls, useVoiceState } from '../voice/VoiceControls';
 import { Bidding } from './Bidding';
+import { BugReportDialog } from './BugReportDialog';
 import { BlindHand, Hand } from './Hand';
 import { JokerDialog } from './JokerDialog';
 import { Results } from './Results';
@@ -44,8 +47,9 @@ function pausedView(shown: WirePlayerView, pause: TrickPause, handOver: boolean)
 }
 
 /**
- * Місце відкритої карти в заголовку роздачі (R-3.1): сама карта розміром як у руці, а без неї —
- * великий значок козиря (R-3.3) чи «Без козиря» (R-3.4), щоб макет не стрибав між роздачами.
+ * Місце відкритої карти в кутку столу (R-3.1), щоб на телефоні козир було видно разом із рукою:
+ * сама карта розміром як у руці, а без неї — великий значок козиря (R-3.3) чи «Без козиря» (R-3.4),
+ * щоб макет не стрибав між роздачами.
  */
 function TrumpSlot({ revealed, trump }: { revealed: Card | null; trump: Suit | null }) {
   if (revealed !== null) {
@@ -78,13 +82,17 @@ export function GameTable({ room, view: latest }: GameTableProps) {
   const client = useClient();
   const [error, setError] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [bugReportOpen, setBugReportOpen] = useState(false);
   const pending = useRef(false);
   const names = room.seats.map((seat) => seat.name);
   const nameOf = (seat: number) => names[seat] ?? `#${seat + 1}`;
   const total = createSchedule(view.playerCount, view.options).length;
 
+  const speaking = useVoiceState()?.speaking;
+
   const yourTurn = view.status !== 'finished' && view.turn === view.seat;
   useTurnVibration(yourTurn);
+  useGameSounds(latest, yourTurn);
 
   const plays = view.legalActions.filter((action): action is PlayAction => action.type === 'play');
   const legal =
@@ -134,7 +142,16 @@ export function GameTable({ room, view: latest }: GameTableProps) {
     }
   }, [pause]);
 
-  if (view.status === 'finished') return <Results view={view} names={names} />;
+  const bugReport = bugReportOpen && <BugReportDialog onClose={() => setBugReportOpen(false)} />;
+
+  if (view.status === 'finished') {
+    return (
+      <>
+        <Results view={view} names={names} onReportBug={() => setBugReportOpen(true)} />
+        {bugReport}
+      </>
+    );
+  }
 
   // Суперники за годинниковою стрілкою від вас, ви — останні.
   const order = Array.from(
@@ -187,15 +204,17 @@ export function GameTable({ room, view: latest }: GameTableProps) {
           </strong>
           {view.spec.bidding && <span>{uk.bidding.sum(view.bidSum, view.spec.cards)}</span>}
         </div>
-        <button
-          type="button"
-          className="button game__sheet"
-          aria-haspopup="dialog"
-          onClick={() => setSheetOpen(true)}
-        >
-          {uk.sheet.open}
-        </button>
-        <TrumpSlot revealed={view.revealed} trump={view.trump} />
+        <div className="game__tools">
+          <button
+            type="button"
+            className="button game__sheet"
+            aria-haspopup="dialog"
+            onClick={() => setSheetOpen(true)}
+          >
+            {uk.sheet.open}
+          </button>
+          <VoiceControls />
+        </div>
       </section>
 
       <p role="status" className="game__turn">
@@ -214,8 +233,14 @@ export function GameTable({ room, view: latest }: GameTableProps) {
             aria-current={view.turn === seat ? 'true' : undefined}
             data-you={seat === view.seat || undefined}
             data-last-taker={seat === lastTaker || undefined}
+            data-speaking={speaking?.has(room.seats[seat]?.id ?? '') || undefined}
           >
-            <span className="player__name">{nameOf(seat)}</span>
+            <span className="player__name">
+              {nameOf(seat)}
+              {speaking?.has(room.seats[seat]?.id ?? '') && (
+                <span className="sr-only">, {uk.voice.speaking}</span>
+              )}
+            </span>
             <span className="player__badges">
               {seat === view.seat && <span className="badge badge--accent">{uk.game.you}</span>}
               {seat === view.dealer && <span className="badge">{uk.game.dealer}</span>}
@@ -244,48 +269,58 @@ export function GameTable({ room, view: latest }: GameTableProps) {
       )}
 
       <section className="felt" aria-label={uk.game.table}>
-        {caption !== null && (
-          <p
-            className={['felt__caption', pause !== null && 'felt__caption--takes']
+        <TrumpSlot revealed={view.revealed} trump={view.trump} />
+        <div className="felt__play">
+          {caption !== null && (
+            <p
+              className={['felt__caption', pause !== null && 'felt__caption--takes']
+                .filter(Boolean)
+                .join(' ')}
+            >
+              {caption}
+            </p>
+          )}
+          <div
+            ref={trickRef}
+            role="group"
+            aria-label={uk.game.trick}
+            className={[
+              'felt__trick',
+              lastTrick !== null && 'felt__trick--last',
+              pause !== null && 'felt__trick--taken',
+              pause?.phase === 'collect' && 'felt__trick--collect',
+            ]
               .filter(Boolean)
               .join(' ')}
           >
-            {caption}
-          </p>
-        )}
-        <div
-          ref={trickRef}
-          className={[
-            'felt__trick',
-            lastTrick !== null && 'felt__trick--last',
-            pause !== null && 'felt__trick--taken',
-            pause?.phase === 'collect' && 'felt__trick--collect',
-          ]
-            .filter(Boolean)
-            .join(' ')}
-        >
-          {trick.map((played, position) => {
-            const seat = (trickLeader + position) % view.playerCount;
-            const winner = pause !== null && seat === pause.trick.winner;
-            return (
-              <figure
-                key={cardId(played)}
-                className={['felt__card', winner && 'felt__card--winner'].filter(Boolean).join(' ')}
-                data-winner={winner || undefined}
-              >
-                <CardFace card={played} {...(lastTrick !== null && { className: 'card--small' })} />
-                <figcaption>
-                  {nameOf(seat)}
-                  {played.kind === 'joker' && ' '}
-                  {played.kind === 'joker' && (
-                    <span className="felt__call">
-                      <JokerCallLabel call={played.call} />
-                    </span>
-                  )}
-                </figcaption>
-              </figure>
-            );
-          })}
+            {trick.map((played, position) => {
+              const seat = (trickLeader + position) % view.playerCount;
+              const winner = pause !== null && seat === pause.trick.winner;
+              return (
+                <figure
+                  key={cardId(played)}
+                  className={['felt__card', winner && 'felt__card--winner']
+                    .filter(Boolean)
+                    .join(' ')}
+                  data-winner={winner || undefined}
+                >
+                  <CardFace
+                    card={played}
+                    {...(lastTrick !== null && { className: 'card--small' })}
+                  />
+                  <figcaption>
+                    {nameOf(seat)}
+                    {played.kind === 'joker' && ' '}
+                    {played.kind === 'joker' && (
+                      <span className="felt__call">
+                        <JokerCallLabel call={played.call} />
+                      </span>
+                    )}
+                  </figcaption>
+                </figure>
+              );
+            })}
+          </div>
         </div>
       </section>
 
@@ -307,8 +342,18 @@ export function GameTable({ room, view: latest }: GameTableProps) {
       )}
 
       {sheetOpen && (
-        <SheetDialog table={view.table} names={names} onClose={() => setSheetOpen(false)} />
+        <SheetDialog
+          table={view.table}
+          names={names}
+          onClose={() => setSheetOpen(false)}
+          onReportBug={() => {
+            setSheetOpen(false);
+            setBugReportOpen(true);
+          }}
+        />
       )}
+
+      {bugReport}
 
       {joker !== null && jokerCalls.length > 0 && (
         <JokerDialog

@@ -3,6 +3,7 @@ import type { ClientEvent, ClientMessageInput, RoomState } from '@poker/protocol
 import { useId, useState } from 'react';
 import { uk } from '../i18n';
 import { useClient } from '../net/react';
+import { VoiceControls, useVoiceState } from '../voice/VoiceControls';
 import { shareLink } from './share';
 
 type HostEvent = 'room:addBot' | 'room:removeBot' | 'room:shuffle' | 'room:options' | 'room:start';
@@ -15,6 +16,7 @@ export function WaitingRoom({ room }: { room: RoomState }) {
   const isHost = room.hostId === room.you;
   const count = room.seats.length;
   const url = new URL(room.link, window.location.origin).href;
+  const speaking = useVoiceState()?.speaking;
 
   async function send<E extends HostEvent & ClientEvent>(event: E, payload: ClientMessageInput<E>) {
     setError(null);
@@ -48,14 +50,20 @@ export function WaitingRoom({ room }: { room: RoomState }) {
       </div>
 
       <div className="panel waiting__players">
-        <h3>
-          {uk.room.players} · {count}/{MAX_PLAYERS}
-        </h3>
+        <div className="waiting__heading">
+          <h3>
+            {uk.room.players} · {count}/{MAX_PLAYERS}
+          </h3>
+          <VoiceControls />
+        </div>
         <ol className="seats" aria-label={uk.room.players}>
           {room.seats.map((seat, index) => (
-            <li key={seat.id} className="seat">
+            <li key={seat.id} className="seat" data-speaking={speaking?.has(seat.id) || undefined}>
               <span className="seat__number">{index + 1}</span>
-              <span className="seat__name">{seat.name}</span>
+              <span className="seat__name">
+                {seat.name}
+                {speaking?.has(seat.id) && <span className="sr-only">, {uk.voice.speaking}</span>}
+              </span>
               <span className="seat__badges">
                 {seat.id === room.hostId && <span className="badge">{uk.room.host}</span>}
                 {seat.id === room.you && <span className="badge badge--accent">{uk.room.you}</span>}

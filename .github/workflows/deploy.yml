@@ -1,0 +1,65 @@
+# Перевірка деплою (T51): Render деплоїть кожен коміт у main (render.yaml); цей workflow чекає
+# деплою цього коміту, проганяє smoke на проді, а при збої відкочує сервіси й заводить bug P0.
+name: Deploy check
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+concurrency:
+  group: deploy-check
+  cancel-in-progress: false
+permissions:
+  contents: read
+  issues: write
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 45
+    env:
+      SHA: ${{ github.sha }}
+      RENDER_SERVICES: rozpysnyi-poker-api,rozpysnyi-poker
+      RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Деплой цього коміту на Render
+        id: wait
+        run: node .github/agent/render-deploy.mjs wait
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - run: npm install -g "pnpm@$(node -p "require('./package.json').packageManager.split('@')[1]")"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @poker/web exec playwright install --with-deps chromium
+      - name: Smoke на проді
+        id: smoke
+        run: pnpm --filter @poker/web exec playwright test -c smoke/playwright.config.ts
+      - name: Відкат
+        if: failure() && steps.smoke.outcome == 'failure'
+        run: node .github/agent/render-deploy.mjs rollback
+        env:
+          DEPLOYED: ${{ steps.wait.outputs.deployed }}
+      - name: Задача bug P0
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FAILURES: ${{ steps.wait.outputs.failures }}
+          SMOKE: ${{ steps.smoke.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -n "$FAILURES" ]; then what="Render не зміг задеплоїти коміт: $FAILURES"; else what="smoke-тест на проді впав (сервіси відкочено до попереднього деплою)"; fi
+          gh issue create --repo "$GITHUB_REPOSITORY" --label "bug,P0,agent:ready" \
+            --title "Деплой ${SHA:0:7}: $( [ -n "$FAILURES" ] && echo 'збірка впала' || echo 'smoke впав')" \
+            --body "$what
+
+          Коміт: $SHA
+          Лог і звіт Playwright: $RUN_URL
+
+          Відтвори локально (\`pnpm verify\`, \`pnpm e2e\`), знайди причину й виправ. Smoke-тест: \`apps/web/smoke/prod.smoke.ts\`."
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: smoke-report
+          if-no-files-found: ignore
+          path: apps/web/smoke/playwright-report/

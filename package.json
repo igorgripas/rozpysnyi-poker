@@ -17,7 +17,9 @@
     "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm rules-coverage && pnpm test && pnpm simulate && pnpm benchmark && pnpm build",
     "rules-coverage": "node scripts/rules-coverage.mjs",
     "simulate": "pnpm --filter @poker/engine simulate",
-    "benchmark": "pnpm --filter @poker/bots benchmark"
+    "benchmark": "pnpm --filter @poker/bots benchmark",
+    "mutation": "pnpm --filter @poker/engine mutation",
+    "replay": "tsx packages/engine/scripts/replay.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

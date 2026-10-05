@@ -278,6 +278,32 @@ describe.each(STORES)('персистентність: %s', (_name, makeStore) =
     after.close();
   });
 
+  it('AUTOPILOT §6: відкладений звіт про баг зберігається в знімку й готовий до публікації, коли гру покинуто', async () => {
+    const before = manager(store);
+    const { code, players } = await startedRoom(before, 2, 1);
+    const host = players[0]?.playerId as string;
+    playHumans(before, code, 2);
+    const reported = before.get(code)?.game as GameState;
+    expect(unwrap(before.reportBug(code, host, 'баг')).queued).toBe(true);
+    playHumans(before, code, 1);
+    await shutdown(before);
+    expect(await store.unpublishedBugReports()).toEqual([]);
+
+    const after = manager(store, 2);
+    vi.advanceTimersByTime(24 * 60 * 60 * 1000 + 1);
+    expect(await store.unpublishedBugReports()).toEqual([code]);
+    const [queued] = await after.unpublishedBugReports();
+    expect(queued?.description).toBe('баг');
+    expect(queued?.context.game).toEqual(reported);
+    expect(queued?.final.actions).toHaveLength(reported.actions.length + 1);
+    // Покинуту кімнату не відновлюємо в памʼяті: боти не продовжують гру.
+    expect(after.get(code)).toBeUndefined();
+    await after.bugReportPublished(code, queued?.id as string);
+    expect(await store.unpublishedBugReports()).toEqual([]);
+    expect((await store.load(code))?.bugReportsSent).toEqual({ [host]: 1 });
+    after.close();
+  });
+
   it('очищення сховища: завершені ігри старші 30 днів, лобі старші 7 днів', async () => {
     const rooms = manager(store);
     const lobby = unwrap(await rooms.create('Оля'));

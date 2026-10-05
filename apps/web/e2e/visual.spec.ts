@@ -87,6 +87,11 @@ test('гра: замовлення, стіл, джокер, таблиця й р
 
   await playUntil(page);
   await expect(page.getByRole('region', { name: 'Результати' })).toBeVisible();
+  // prefers-reduced-motion: привітання переможця без анімації.
+  const animation = await page
+    .locator('.results__trophy')
+    .evaluate((el) => getComputedStyle(el).animationName);
+  expect(animation).toBe('none');
   await checkScreen(page, 'results');
 });
 

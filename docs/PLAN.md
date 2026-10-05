@@ -69,7 +69,8 @@
 - **T56 — Сумісність збережених ігор між версіями** · T54 · Фікстури логів незавершених ігор у `packages/engine/test/golden/compat/` (`spec-change`); CI перевіряє, що поточний рушій їх відтворює. Для несумісних змін — `ENGINE_LOG_VERSION` і міграція або зрозуміле повідомлення гравцям.
 - **T51 — Деплой-пайплайн (Render + Neon)** · T55 · `render.yaml` (Blueprint): web service сервера (регіон frankfurt, `healthCheckPath: /health`, `DATABASE_URL` і `PUBLIC_URL` з оточення) і static site клієнта (`VITE_SERVER_URL`); автодеплой з main. `deploy.yml` чекає завершення деплою через Render API, проганяє smoke e2e на проді, при падінні відкочує через Render API і створює issue `bug P0`.
 - **T52 — Кнопка «Повідомити про баг»** · T51 · issue з replay-файлом, AUTOPILOT §6.
-- **T53 — Nightly-прогони** · T51 · `nightly.yml`: 100k симуляцій, mutation testing рушія (поріг ≥80%), e2e на проді. Кожне падіння створює issue `agent:ready` з міткою `bug`.
+- **T53 — Nightly-прогони** · T51 · Зроблено власником: `.github/workflows/nightly.yml` — 100k симуляцій, mutation (скрипт `mutation`, якщо є), smoke на проді; падіння → issue `bug` + `agent:ready`.
+- **T57 — Mutation testing рушія (Stryker)** · T53 · `packages/engine`: Stryker для Vitest, скрипт `pnpm mutation` (звіт у `packages/engine/reports/mutation/`), поріг `break` ≥ 80% mutation score; не в `pnpm verify` (лише nightly). Якщо score нижче — дописати тести, а не знижувати поріг.
 
 ## M6 — Покращення після першої гри (ідеї власника, 01.10)
 

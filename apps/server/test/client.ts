@@ -6,9 +6,16 @@ import {
   PROTOCOL_VERSION,
   type Result,
   type RoomState,
+  type ServerMessage,
   type ServerToClientEvents,
   type WirePlayerView,
 } from '@poker/protocol';
+
+/** Подія голосового чату, яку отримав клієнт (T63). */
+export type VoiceEvent =
+  | ({ type: 'joined' } & ServerMessage<'voice:joined'>)
+  | ({ type: 'left' } & ServerMessage<'voice:left'>)
+  | ({ type: 'signal' } & ServerMessage<'voice:signal'>);
 import { type Socket, io } from 'socket.io-client';
 
 /** Віртуальний клієнт для тестів: памʼятає останні стан кімнати й погляд гравця. */
@@ -20,11 +27,18 @@ export class TestClient {
   readonly views: WirePlayerView[] = [];
   /** Сервер попередив про перезапуск. */
   restarting = false;
+  /** Події голосового чату в порядку отримання. */
+  readonly voice: VoiceEvent[] = [];
   private readonly waiters: (() => void)[] = [];
 
-  constructor(url: string, protocolVersion: number = PROTOCOL_VERSION) {
+  constructor(
+    url: string,
+    protocolVersion: number = PROTOCOL_VERSION,
+    extraHeaders?: Record<string, string>,
+  ) {
     this.socket = io(url, {
       auth: { protocolVersion },
+      ...(extraHeaders !== undefined && { extraHeaders }),
       transports: ['websocket'],
       forceNew: true,
       reconnection: false,
@@ -35,6 +49,18 @@ export class TestClient {
     });
     this.socket.on('server:restarting', () => {
       this.restarting = true;
+      this.notify();
+    });
+    this.socket.on('voice:joined', (payload) => {
+      this.voice.push({ type: 'joined', ...payload });
+      this.notify();
+    });
+    this.socket.on('voice:left', (payload) => {
+      this.voice.push({ type: 'left', ...payload });
+      this.notify();
+    });
+    this.socket.on('voice:signal', (payload) => {
+      this.voice.push({ type: 'signal', ...payload });
       this.notify();
     });
     this.socket.on('game:view', (view) => {

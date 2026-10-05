@@ -68,6 +68,39 @@ export const playRequestSchema = z.strictObject({
   card: cardSchema,
   call: jokerCallSchema.optional(),
 });
+/** Найбільша довжина опису бага від гравця. */
+export const BUG_DESCRIPTION_MAX_LENGTH = 2000;
+/** Звіт про баг (AUTOPILOT §6): опис гравця; replay гри сервер додає сам. */
+export const bugReportRequestSchema = z.strictObject({
+  description: z.string().trim().min(1).max(BUG_DESCRIPTION_MAX_LENGTH),
+});
+
+/** Найбільша довжина SDP-опису WebRTC (голосовий чат, T63). */
+export const VOICE_SDP_MAX_LENGTH = 20_000;
+
+/**
+ * Сигнал WebRTC між двома гравцями (T63): сервер лише пересилає його адресатові.
+ * `offer`/`answer` — опис сесії, `candidate` — ICE-кандидат.
+ */
+export const voiceSignalSchema = z.discriminatedUnion('type', [
+  z.strictObject({ type: z.literal('offer'), sdp: z.string().min(1).max(VOICE_SDP_MAX_LENGTH) }),
+  z.strictObject({ type: z.literal('answer'), sdp: z.string().min(1).max(VOICE_SDP_MAX_LENGTH) }),
+  z.strictObject({
+    type: z.literal('candidate'),
+    candidate: z.strictObject({
+      candidate: z.string().max(2000),
+      sdpMid: z.string().max(64).nullable(),
+      sdpMLineIndex: z.number().int().min(0).max(64).nullable(),
+    }),
+  }),
+]);
+export type VoiceSignal = z.infer<typeof voiceSignalSchema>;
+
+/** Сигнал WebRTC конкретному гравцеві кімнати, який теж у голосі. */
+export const voiceSignalRequestSchema = z.strictObject({
+  to: playerIdSchema,
+  signal: voiceSignalSchema,
+});
 
 /** Схеми корисного навантаження всіх подій клієнта. */
 export const clientMessageSchemas = {
@@ -83,6 +116,11 @@ export const clientMessageSchemas = {
   'room:replaceWithBot': replaceWithBotRequestSchema,
   'game:bid': bidRequestSchema,
   'game:play': playRequestSchema,
+  'game:reportBug': bugReportRequestSchema,
+  /** Увійти в голосовий чат кімнати (T63); у відповідь — хто вже в ньому. */
+  'voice:join': emptyRequestSchema,
+  'voice:leave': emptyRequestSchema,
+  'voice:signal': voiceSignalRequestSchema,
 } as const;
 
 export type ClientEvent = keyof typeof clientMessageSchemas;
@@ -107,6 +145,15 @@ export const seatInfoSchema = z.strictObject({
   kind: z.enum(['human', 'bot']),
   connected: z.boolean(),
 });
+
+/**
+ * Відповідь на звіт про баг: адреса створеного issue або `null`, якщо гра ще йде —
+ * тоді звіт опублікується після її завершення (replay розкрив би чужі карти).
+ */
+export const bugReportResponseSchema = z.strictObject({ url: z.string().min(1).nullable() });
+
+/** Відповідь на вхід у голос: гравці кімнати, які вже в голосі (окрім вас). */
+export const voiceJoinResponseSchema = z.strictObject({ peers: z.array(playerIdSchema) });
 
 export const roomStatusSchema = z.enum(['lobby', 'playing', 'finished']);
 
@@ -142,6 +189,8 @@ export const ERROR_CODES = [
   'playerConnected',
   /** Сервер не зміг зберегти дію в базу (T54). */
   'unavailable',
+  /** Забагато запитів (напр., звітів про баги) від гравця. */
+  'rateLimited',
 ] as const;
 
 export const errorCodeSchema = z.enum(ERROR_CODES);
@@ -161,6 +210,8 @@ export type Session = z.infer<typeof sessionSchema>;
 export type SeatInfo = z.infer<typeof seatInfoSchema>;
 export type RoomStatus = z.infer<typeof roomStatusSchema>;
 export type RoomState = z.infer<typeof roomStateSchema>;
+export type BugReportResponse = z.infer<typeof bugReportResponseSchema>;
+export type VoiceJoinResponse = z.infer<typeof voiceJoinResponseSchema>;
 
 /** Дані успішної відповіді на кожну подію клієнта. */
 export interface ClientResponses {
@@ -176,6 +227,10 @@ export interface ClientResponses {
   'room:replaceWithBot': null;
   'game:bid': null;
   'game:play': null;
+  'game:reportBug': BugReportResponse;
+  'voice:join': VoiceJoinResponse;
+  'voice:leave': null;
+  'voice:signal': null;
 }
 
 /** Схеми подій сервера. */
@@ -184,6 +239,12 @@ export const serverMessageSchemas = {
   'game:view': playerViewSchema,
   /** Сервер зупиняється (передеплой, засинання): клієнт чекає й перепідключається. */
   'server:restarting': z.strictObject({}),
+  /** Гравець увійшов у голосовий чат кімнати (T63). */
+  'voice:joined': z.strictObject({ playerId: playerIdSchema }),
+  /** Гравець вийшов із голосового чату (або відключився). */
+  'voice:left': z.strictObject({ playerId: playerIdSchema }),
+  /** Сигнал WebRTC від іншого гравця. */
+  'voice:signal': z.strictObject({ from: playerIdSchema, signal: voiceSignalSchema }),
 } as const;
 
 export type ServerEvent = keyof typeof serverMessageSchemas;
