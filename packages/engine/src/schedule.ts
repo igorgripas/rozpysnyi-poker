@@ -29,6 +29,22 @@ export type TrumpRule =
   | { readonly kind: 'fixed'; readonly suit: Suit }
   | { readonly kind: 'none' };
 
+/**
+ * Версія правил, за якими йде гра. Гра фіксує її на старті й догравається за нею,
+ * навіть якщо правила потім змінилися:
+ * 1 — мізер і відіграш без козиря;
+ * 2 — у мізері й відіграші козир — відкрита карта (R-3.1, рішення власника 02.10).
+ */
+export const RULES_VERSION = 2;
+
+export function assertRulesVersion(rulesVersion: number): void {
+  if (!Number.isInteger(rulesVersion) || rulesVersion < 1 || rulesVersion > RULES_VERSION) {
+    throw new RangeError(
+      `Версія правил має бути від 1 до ${RULES_VERSION}, отримано ${rulesVersion}`,
+    );
+  }
+}
+
 /** Опис однієї роздачі в розкладі гри. */
 export interface HandSpec {
   /** Порядковий номер роздачі в грі, від 0. */
@@ -41,11 +57,16 @@ export interface HandSpec {
   readonly bidding: boolean;
 }
 
-/** Генерує фіксовану послідовність роздач для N гравців (R-2.1, R-10.2). */
+/**
+ * Генерує фіксовану послідовність роздач для N гравців (R-2.1, R-10.2) за версією правил
+ * `rulesVersion` (за замовчуванням — поточною).
+ */
 export function createSchedule(
   playerCount: number,
   options: GameOptions = DEFAULT_OPTIONS,
+  rulesVersion: number = RULES_VERSION,
 ): HandSpec[] {
+  assertRulesVersion(rulesVersion);
   const max = maxCardsPerHand(playerCount);
   const specs: Omit<HandSpec, 'index'>[] = [];
   const revealed: TrumpRule = { kind: 'revealed' };
@@ -67,8 +88,10 @@ export function createSchedule(
     // R-10.2: козир — з відкритої карти колоди, як у R-3.1.
     specs.push({ phase: 'dark', cards: max, trump: revealed, bidding: true });
   }
-  specs.push({ phase: 'misere', cards: max, trump: none, bidding: false });
-  specs.push({ phase: 'comeback', cards: max, trump: none, bidding: false });
+  // R-3.1: у мізері й відіграші козир — відкрита карта; до версії правил 2 — без козиря.
+  const lastTrump = rulesVersion >= 2 ? revealed : none;
+  specs.push({ phase: 'misere', cards: max, trump: lastTrump, bidding: false });
+  specs.push({ phase: 'comeback', cards: max, trump: lastTrump, bidding: false });
 
   return specs.map((spec, index) => ({ index, ...spec }));
 }

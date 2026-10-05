@@ -228,6 +228,43 @@ describe('евристичний бот: мізер і відіграш', () => 
   });
 });
 
+describe('евристичний бот: мізер і відіграш з козирем', () => {
+  it('R-3.1, R-7.5: у мізері без масті заходу кладе найстаршого козиря, що не бере', () => {
+    const view = scenario({
+      phase: 'misere',
+      trump: 'spades',
+      hand: 'S14 S9 S6 D7',
+      trick: [played('H12'), played('S10')],
+    });
+    expect(playOf(bot.act(view)).card).toEqual(card('S9'));
+  });
+
+  it('R-3.1, R-7.5: у мізері останнім, коли козирем однаково брати, позбувається найстаршого', () => {
+    const view = scenario({
+      phase: 'misere',
+      trump: 'spades',
+      hand: 'S14 S7 D6',
+      trick: [played('H9'), played('H10'), played('H12')],
+    });
+    expect(playOf(bot.act(view)).card).toEqual(card('S14'));
+  });
+
+  it('R-3.1, R-7.6: у відіграші перебиває масть найменшим козирем', () => {
+    const view = scenario({
+      phase: 'comeback',
+      trump: 'spades',
+      hand: 'S7 S12 D6',
+      trick: [played('H9'), played('H10'), played('H14')],
+    });
+    expect(playOf(bot.act(view)).card).toEqual(card('S7'));
+  });
+
+  it('R-3.1, R-6.1, R-7.6: у відіграші з козирем заходить джокером «старший козир»', () => {
+    const view = scenario({ phase: 'comeback', trump: 'spades', hand: 'J0 D7 C9 H8' });
+    expect(playOf(bot.act(view))).toMatchObject({ card: card('J0'), call: { type: 'highTrump' } });
+  });
+});
+
 describe('евристичний бот: повні ігри', () => {
   it.each(Array.from({ length: MAX_PLAYERS - MIN_PLAYERS + 1 }, (_, i) => MIN_PLAYERS + i))(
     'R-2.1: грає лише легальні дії до кінця гри на %i гравців, лог відтворюється (R-2.3)',

@@ -24,7 +24,13 @@ export { createRng, shuffle } from './rng.js';
 export type { Rng } from './rng.js';
 export { deal } from './deal.js';
 export type { DealResult } from './deal.js';
-export { DEFAULT_OPTIONS, chooseFirstDealer, createSchedule, dealerForHand } from './schedule.js';
+export {
+  DEFAULT_OPTIONS,
+  RULES_VERSION,
+  chooseFirstDealer,
+  createSchedule,
+  dealerForHand,
+} from './schedule.js';
 export type { GameOptions, HandPhase, HandSpec, TrumpRule } from './schedule.js';
 export { determineTrump } from './trump.js';
 export type { TrumpResult } from './trump.js';

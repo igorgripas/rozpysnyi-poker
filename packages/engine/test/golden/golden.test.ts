@@ -7,6 +7,7 @@
  * `старша <масть>`, `маленька <масть>`. Об'єкт `{ "illegal": … }` — дія, яку рушій
  * має відхилити в цей момент (після неї хід лишається за тим самим гравцем).
  * `options` — опції кімнати (§10); без них усі вимкнені (R-10.1).
+ * `revealed` — відкрита карта з решти колоди (R-3.1); `trump` має їй відповідати (R-3.2).
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
@@ -50,6 +51,8 @@ interface DealScenario {
   readonly dealer: number;
   /** Масть козиря або `null` («б/к»). */
   readonly trump: string | null;
+  /** Відкрита карта з решти колоди (R-3.1, R-3.2), якщо роздача її відкриває. */
+  readonly revealed?: string;
   /** Руки одразу після роздачі за порядком місць. */
   readonly hands: readonly (readonly string[])[];
   /** Замовлення в порядку черги R-4.2. */
@@ -155,11 +158,17 @@ function stateForDeal(scenario: DealScenario): GameState {
   const trump = scenario.trump === null ? null : parseSuit(scenario.trump);
   if (spec.trump.kind === 'fixed') expect(trump).toBe(spec.trump.suit);
   if (spec.trump.kind === 'none') expect(trump).toBeNull();
+  const revealed = scenario.revealed === undefined ? null : parseCard(scenario.revealed);
+  if (revealed !== null) {
+    // R-3.1, R-3.2: козир — масть відкритої карти; відкритий джокер — без козиря.
+    expect(spec.trump.kind).toBe('revealed');
+    expect(trump).toBe(revealed.kind === 'joker' ? null : revealed.suit);
+  }
 
   const hands = scenario.hands.map((hand) => hand.map(parseCard));
   expect(hands).toHaveLength(players);
   for (const hand of hands) expect(hand).toHaveLength(spec.cards);
-  const ids = hands.flat().map(cardId);
+  const ids = [...hands.flat(), ...(revealed === null ? [] : [revealed])].map(cardId);
   expect(new Set(ids).size).toBe(ids.length);
 
   const game = createGame(1, players, options);
@@ -174,7 +183,7 @@ function stateForDeal(scenario: DealScenario): GameState {
       spec,
       dealer,
       trump,
-      revealed: null,
+      revealed,
       dealt: hands,
       hands,
       bids: hands.map(() => null),
