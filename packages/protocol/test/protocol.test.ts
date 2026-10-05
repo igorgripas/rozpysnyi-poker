@@ -209,7 +209,7 @@ describe('перепідключення й таймер ходу', () => {
       status: 'playing',
       hostId: 'p1',
       you: 'p1',
-      seats: [{ id: 'p1', name: 'Оля', kind: 'human', connected: false }],
+      seats: [{ id: 'p1', name: 'Оля', kind: 'human', connected: false, away: false }],
       turnTimerSec: 30,
       turnDeadline: 1_700_000_000_000,
       options: { dark: false, zeroLimit: false },
@@ -231,8 +231,8 @@ describe('повідомлення сервера', () => {
       hostId: 'p1',
       you: 'p1',
       seats: [
-        { id: 'p1', name: 'Оля', kind: 'human', connected: true },
-        { id: 'b1', name: 'Бот 1', kind: 'bot', connected: true },
+        { id: 'p1', name: 'Оля', kind: 'human', connected: true, away: false },
+        { id: 'b1', name: 'Бот 1', kind: 'bot', connected: true, away: false },
       ],
       turnTimerSec: null,
       turnDeadline: null,
@@ -374,5 +374,35 @@ describe('голосовий чат (T63)', () => {
       from: 'p1',
       signal: candidate,
     });
+  });
+});
+
+describe('вихід із кімнати (T180)', () => {
+  it('клієнт виходить із кімнати порожнім запитом room:leave', () => {
+    expect(CLIENT_EVENTS).toContain('room:leave');
+    expect(parseClientMessage('room:leave', {}).ok).toBe(true);
+    expect(parseClientMessage('room:leave', { code: 'ABCDE' }).ok).toBe(false);
+  });
+
+  it('R-9.3: місце гравця, що вийшов посеред гри, позначене away: за нього ходить бот', () => {
+    const seat = { id: 'p2', name: 'Петро', kind: 'human', connected: false, away: true };
+    const room = {
+      code: 'ABCDE',
+      link: '/r/ABCDE',
+      status: 'playing',
+      hostId: 'p1',
+      you: 'p1',
+      seats: [{ id: 'p1', name: 'Оля', kind: 'human', connected: true, away: false }, seat],
+      turnTimerSec: null,
+      turnDeadline: null,
+      options: { dark: false, zeroLimit: false },
+    };
+    expect(roomStateSchema.parse(room)).toEqual(room);
+    const withoutAway = { id: 'p2', name: 'Петро', kind: 'human', connected: false };
+    expect(roomStateSchema.safeParse({ ...room, seats: [withoutAway] }).success).toBe(false);
+  });
+
+  it('нова подія й нове поле — нова версія протоколу', () => {
+    expect(PROTOCOL_VERSION).toBe(4);
   });
 });

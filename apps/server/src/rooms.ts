@@ -40,14 +40,16 @@ export interface Member {
   readonly id: string;
   readonly name: string;
   readonly kind: 'human' | 'bot';
-  /** Секрет для повернення в кімнату; у ботів його немає. */
-  readonly token: string | null;
+  /** Секрет для повернення в кімнату; у ботів його немає, після виходу із завершеної гри — теж. */
+  token: string | null;
   connected: boolean;
+  /** Гравець вийшов посеред гри (T180): за нього ходить бот, доки він не повернеться. */
+  away: boolean;
 }
 
 export interface Room {
   readonly code: string;
-  readonly hostId: string;
+  hostId: string;
   status: RoomStatus;
   /** Місця в порядку гри (R-9.1): індекс — номер місця в рушії. */
   seats: Member[];
@@ -127,6 +129,11 @@ function queuedReports(
     description,
     final,
   }));
+}
+
+/** Чи щойно завершилася взятка: стіл порожній після карти. */
+function afterTrick(game: GameState): boolean {
+  return game.actions.at(-1)?.type === 'play' && game.hand.trick.length === 0;
 }
 
 /** Кімнати в памʼяті: створення, вхід за кодом, повернення за токеном і керування хостом. */
@@ -217,7 +224,11 @@ export class RoomManager {
       code: snapshot.code,
       hostId: snapshot.hostId,
       status: snapshot.status,
-      seats: snapshot.seats.map((seat) => ({ ...seat, connected: seat.kind === 'bot' })),
+      seats: snapshot.seats.map((seat) => ({
+        ...seat,
+        connected: seat.kind === 'bot',
+        away: seat.away ?? false,
+      })),
       game,
       turnTimerSec: snapshot.turnTimerSec,
       // Знімки, збережені до §10, опцій не мають — вони вимкнені.
@@ -232,8 +243,7 @@ export class RoomManager {
     this.rooms.set(room.code, room);
     if (room.status === 'playing' && game !== null) {
       // Рестарт міг статися одразу після взятки: пауза взятки починається заново.
-      const last = game.actions.at(-1);
-      this.scheduleTurn(room, last?.type === 'play' && game.hand.trick.length === 0);
+      this.scheduleTurn(room, afterTrick(game));
     }
     return room;
   }
@@ -246,7 +256,7 @@ export class RoomManager {
       status: room.status,
       turnTimerSec: room.turnTimerSec,
       options: room.options,
-      seats: room.seats.map(({ id, name, kind, token }) => ({ id, name, kind, token })),
+      seats: room.seats.map(({ id, name, kind, token, away }) => ({ id, name, kind, token, away })),
       game: room.game === null ? null : { seed: room.game.seed, log: gameLog(room.game) },
       bugReports: [...room.bugReports],
       bugReportsSent: { ...room.bugReportsSent },
@@ -269,9 +279,14 @@ export class RoomManager {
     const store = this.store;
     if (store === null) return;
     const snapshot = this.snapshot(room);
-    const previous = this.writes.get(room.code) ?? Promise.resolve(true);
+    this.enqueue(room.code, () => store.save(snapshot));
+  }
+
+  /** Ставить запис у чергу кімнати `code`. */
+  private enqueue(code: string, write: () => Promise<void>): void {
+    const previous = this.writes.get(code) ?? Promise.resolve(true);
     const next = previous.then(() =>
-      store.save(snapshot).then(
+      write().then(
         () => true,
         (error: unknown) => {
           this.onStoreError(error);
@@ -279,10 +294,19 @@ export class RoomManager {
         },
       ),
     );
-    this.writes.set(room.code, next);
+    this.writes.set(code, next);
     void next.then(() => {
-      if (this.writes.get(room.code) === next) this.writes.delete(room.code);
+      if (this.writes.get(code) === next) this.writes.delete(code);
     });
+  }
+
+  /** Закриває кімнату: прибирає її з памʼяті й зі сховища. */
+  private remove(room: Room): void {
+    this.rooms.delete(room.code);
+    for (const member of room.seats) this.bots.delete(member.id);
+    const store = this.store;
+    if (store !== null) this.enqueue(room.code, () => store.delete(room.code));
+    for (const listener of this.listeners) listener(room.code);
   }
 
   /**
@@ -348,6 +372,7 @@ export class RoomManager {
       kind: 'human',
       token: this.random.token(),
       connected: false,
+      away: false,
     };
   }
 
@@ -433,7 +458,49 @@ export class RoomManager {
     if (room === undefined) return this.missing(code);
     const member = room.seats.find((m) => m.token === token);
     if (member === undefined) return fail('badToken', 'Невідомий токен');
+    if (member.away) {
+      // Гравець забирає місце назад: бот більше не ходить за нього.
+      member.away = false;
+      if (room.game?.turn === room.seats.indexOf(member)) this.scheduleTurn(room);
+      this.changed(room.code);
+    }
     return ok(this.session(room, member));
+  }
+
+  /**
+   * Гравець виходить (T180). У лобі місце звільняється й токен більше не діє; якщо виходить
+   * хост — хостом стає наступна людина, а без людей кімната закривається. Посеред гри місце
+   * лишається за гравцем: за нього ходить бот, поки він не повернеться за токеном.
+   * Із завершеної гри — токен анулюється.
+   */
+  leave(code: string, playerId: string): Result<null> {
+    const access = this.access(code, playerId);
+    if (!access.ok) return access;
+    const { room, member } = access.data;
+    if (room.status === 'playing') {
+      member.away = true;
+      const game = room.game as GameState;
+      if (game.turn === room.seats.indexOf(member)) this.scheduleTurn(room, afterTrick(game));
+    } else if (room.status === 'finished') {
+      member.token = null;
+    } else {
+      const index = room.seats.indexOf(member);
+      room.seats.splice(index, 1);
+      if (room.hostId === playerId) {
+        // Наступна людина за місцем того, хто вийшов (по колу).
+        const humans = [...room.seats.slice(index), ...room.seats.slice(0, index)].filter(
+          (m) => m.kind === 'human',
+        );
+        const next = humans[0];
+        if (next === undefined) {
+          this.remove(room);
+          return ok(null);
+        }
+        room.hostId = next.id;
+      }
+    }
+    this.changed(room.code);
+    return ok(null);
   }
 
   /** Хост додає бота на наступне місце (R-1.2: будь-яке місце може зайняти бот). */
@@ -460,6 +527,7 @@ export class RoomManager {
       kind: 'bot',
       token: null,
       connected: true,
+      away: false,
     };
     this.bots.set(bot.id, createHeuristicBot());
     return bot;
@@ -714,9 +782,10 @@ export class RoomManager {
     const member = room.seats[turn] as Member;
     let delay: number;
     let bot: Bot;
-    if (member.kind === 'bot') {
+    if (member.kind === 'bot' || member.away) {
+      // За гравця, що вийшов (T180), ходить евристичний бот — так само швидко, як звичайний.
       delay = afterTrick ? Math.max(this.botDelayMs, this.trickPauseMs) : this.botDelayMs;
-      bot = this.bots.get(member.id) as Bot;
+      bot = member.kind === 'bot' ? (this.bots.get(member.id) as Bot) : createHeuristicBot();
     } else if (room.turnTimerSec !== null) {
       delay = room.turnTimerSec * 1000;
       room.turnDeadline = Date.now() + delay;
@@ -751,7 +820,13 @@ export class RoomManager {
       status: room.status,
       hostId: room.hostId,
       you: playerId,
-      seats: room.seats.map(({ id, name, kind, connected }) => ({ id, name, kind, connected })),
+      seats: room.seats.map(({ id, name, kind, connected, away }) => ({
+        id,
+        name,
+        kind,
+        connected,
+        away,
+      })),
       turnTimerSec: room.turnTimerSec,
       turnDeadline: room.turnDeadline,
       options: room.options,

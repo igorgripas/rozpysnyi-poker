@@ -46,6 +46,9 @@ export const uk = {
   },
   home: {
     tagline: 'Карткова гра на 3–6 гравців. Грайте з друзями або з ботами.',
+    unfinished: 'Незавершені ігри',
+    unfinishedGame: (code: string) => `Гра ${code}`,
+    returnToGame: 'Повернутися в гру',
   },
   lobby: {
     name: 'Ваше імʼя',
@@ -85,6 +88,7 @@ export const uk = {
     darkHint: 'Роздача наосліп перед мізером, бали ×2',
     zeroLimit: 'Не більше трьох нулів поспіль',
     zeroLimitHint: 'Четвертий 0 поспіль замовити не можна',
+    leave: 'Вийти з кімнати',
   },
   card: {
     joker: 'Джокер',
@@ -118,6 +122,13 @@ export const uk = {
     taken: (n: number) => `Взято: ${n}`,
     cardsLeft: (n: number) => `Карт: ${n}`,
     offline: 'не в мережі',
+    /** Біля імені гравця, що вийшов: за нього ходить бот (T180). */
+    away: '(бот)',
+    leave: 'Вийти з гри',
+    leaveTitle: 'Вийти з гри?',
+    leaveHint: 'Поки вас немає, за вас ходитиме бот. Повернутися можна з головної.',
+    leaveConfirm: 'Вийти',
+    leaveCancel: 'Залишитися',
     blindHint: 'Темна: замовляйте наосліп — карти відкриються, коли замовить роздаючий',
   },
   bidding: {
@@ -190,6 +201,7 @@ export const uk = {
     results: 'Результати',
   },
   results: {
+    newGame: 'Нова гра',
     /** «Вітаємо, Оля! Перемога з 127 очками»; за рівних підсумків — усі імена (R-9.4). */
     winner: (names: readonly string[], score: string, points: number) =>
       `Вітаємо, ${listNames(names)}! ${names.length > 1 ? 'Спільна перемога' : 'Перемога'} з ${score} ${plural(points, uk.plural.pointWith)}`,

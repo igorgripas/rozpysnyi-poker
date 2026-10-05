@@ -363,9 +363,12 @@ describe('ігровий стіл', () => {
     renderAt(state, 0);
     const bot = seatItem('Бот 1');
     expect(bot).toHaveTextContent(`Карт: ${defined(state.hand.hands[1]).length}`);
-    // Кнопки — лише власні карти (і кнопка таблиці гри).
+    // Кнопки — лише власні карти (і кнопки таблиці гри та виходу з гри).
     const sheetButton = screen.getByRole('button', { name: 'Таблиця' });
-    const buttons = screen.getAllByRole('button').filter((button) => button !== sheetButton);
+    const leaveButton = screen.getByRole('button', { name: 'Вийти з гри' });
+    const buttons = screen
+      .getAllByRole('button')
+      .filter((button) => button !== sheetButton && button !== leaveButton);
     expect(buttons.length).toBe(defined(state.hand.hands[0]).length);
   });
 

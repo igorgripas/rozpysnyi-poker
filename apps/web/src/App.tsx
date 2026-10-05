@@ -3,6 +3,7 @@ import { GameTable } from './game/GameTable';
 import { TRICK_PAUSE_MS, TrickPauseContext } from './game/trickPause';
 import { uk } from './i18n';
 import { Lobby } from './lobby/Lobby';
+import { UnfinishedGames } from './lobby/UnfinishedGames';
 import { WaitingRoom } from './lobby/WaitingRoom';
 import { type PokerClient, inviteCodeFromPath } from './net/client';
 import { ClientProvider, useClientState } from './net/react';
@@ -65,6 +66,8 @@ export function App({
 function Screen({ client }: { client: PokerClient }) {
   const { status, room, view } = useClientState();
   const [inviteCode, setInviteCode] = useState(() => inviteCodeFromPath(window.location.pathname));
+  // Гравець уже в кімнаті: запрошення використане, після виходу — звичайна головна.
+  if (room !== null && inviteCode !== null) setInviteCode(null);
 
   // Повертаємося в кімнату за збереженим токеном; запрошення в іншу кімнату його не використовує.
   useEffect(() => {
@@ -94,6 +97,7 @@ function Screen({ client }: { client: PokerClient }) {
         <CardFace card={{ kind: 'joker', index: 0 }} />
       </div>
       <p className="home__tagline">{uk.home.tagline}</p>
+      <UnfinishedGames />
       <Lobby
         inviteCode={inviteCode}
         onForgetInvite={() => {

@@ -121,7 +121,7 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
   /** Надсилає гравцеві стан кімнати й, якщо гра йде, його `viewFor`. */
   function sendState(socket: PokerSocket): void {
     const session = socket.data.session;
-    if (session === null) return;
+    if (session === null || rooms.get(session.code) === undefined) return;
     socket.emit('room:state', rooms.roomState(session.code, session.playerId));
     const view = rooms.view(session.code, session.playerId);
     if (view !== null) socket.emit('game:view', view as ServerMessage<'game:view'>);
@@ -338,6 +338,17 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
     'room:replaceWithBot': withSession(({ code, playerId }, { seat }) =>
       rooms.replaceWithBot(code, playerId, seat),
     ),
+    'room:leave': withSocket(async (_socket, { code, playerId }) => {
+      const result = rooms.leave(code, playerId);
+      if (!result.ok) return result;
+      // Усі вкладки гравця виходять із кімнати: вони більше не отримують її стан.
+      for (const socket of [...(connections.get(key(code, playerId)) ?? [])]) unbind(socket);
+      // Сесію вже відвʼязано, тож `respond` не чекатиме запису — чекаємо тут.
+      if (!(await rooms.persisted(code))) {
+        return fail('unavailable', 'Не вдалося зберегти зміни, спробуйте ще раз');
+      }
+      return result;
+    }),
     'game:bid': withSession(({ code, playerId }, { bid }) => rooms.bid(code, playerId, bid)),
     'game:play': withSession(({ code, playerId }, { card, call }) =>
       rooms.play(code, playerId, card, call),

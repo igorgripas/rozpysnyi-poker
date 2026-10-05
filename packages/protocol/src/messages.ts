@@ -114,6 +114,11 @@ export const clientMessageSchemas = {
   'room:options': roomOptionsRequestSchema,
   'room:start': emptyRequestSchema,
   'room:replaceWithBot': replaceWithBotRequestSchema,
+  /**
+   * Вийти з кімнати (T180): у лобі місце звільняється, посеред гри за гравця ходить бот,
+   * доки він не повернеться за своїм токеном.
+   */
+  'room:leave': emptyRequestSchema,
   'game:bid': bidRequestSchema,
   'game:play': playRequestSchema,
   'game:reportBug': bugReportRequestSchema,
@@ -144,6 +149,8 @@ export const seatInfoSchema = z.strictObject({
   name: playerNameSchema,
   kind: z.enum(['human', 'bot']),
   connected: z.boolean(),
+  /** Гравець вийшов посеред гри (T180): за нього ходить бот, поки він не повернеться. */
+  away: z.boolean(),
 });
 
 /**
@@ -225,6 +232,7 @@ export interface ClientResponses {
   'room:options': null;
   'room:start': null;
   'room:replaceWithBot': null;
+  'room:leave': null;
   'game:bid': null;
   'game:play': null;
   'game:reportBug': BugReportResponse;

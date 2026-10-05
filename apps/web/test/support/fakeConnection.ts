@@ -72,11 +72,11 @@ export function session(code = 'ABCDE', playerId = 'p1') {
 }
 
 export function human(id: string, name: string, connected = true): SeatInfo {
-  return { id, name, kind: 'human', connected };
+  return { id, name, kind: 'human', connected, away: false };
 }
 
 export function bot(id: string, name: string): SeatInfo {
-  return { id, name, kind: 'bot', connected: true };
+  return { id, name, kind: 'bot', connected: true, away: false };
 }
 
 export function roomState(overrides: Partial<RoomState> = {}): RoomState {
