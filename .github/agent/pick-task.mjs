@@ -58,8 +58,8 @@ const waitsForHuman = (pr) =>
 for (const pr of openPrs) {
   // GitHub обчислює mergeable_state ліниво: перший запит після зміни main дає `unknown`.
   let state = 'unknown';
-  for (let attempt = 0; attempt < 5 && state === 'unknown'; attempt++) {
-    if (attempt) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3000);
+  for (let attempt = 0; attempt < 12 && state === 'unknown'; attempt++) {
+    if (attempt) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5000);
     state = gh(['api', `repos/${REPO}/pulls/${pr.number}`, '--jq', '.mergeable_state']).trim();
   }
   const labels = pr.labels.map((l) => l.name);
