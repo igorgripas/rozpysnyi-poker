@@ -1,7 +1,7 @@
 import type { GameLog } from './game.js';
 
 /** Версія формату логу дій; збільшується при несумісних змінах replay. */
-export const ENGINE_LOG_VERSION = 1;
+export const ENGINE_LOG_VERSION = 2;
 
 /** Лог дій без прив'язки до типів рушія: мігрується до розбору дій. */
 export interface VersionedLog {
@@ -20,7 +20,11 @@ export type LogMigration = (log: MigratableLog) => MigratableLog;
  * перетворення з попередньої версії. Якщо гру перенести неможливо, міграції немає —
  * `migrateLog` кидає `UnsupportedLogVersionError`, і сервер пояснює це гравцям.
  */
-export const LOG_MIGRATIONS: Readonly<Record<number, LogMigration>> = {};
+export const LOG_MIGRATIONS: Readonly<Record<number, LogMigration>> = {
+  // 1 → 2: гра, почата до рішення власника 02.10, догравається за правилами версії 1
+  // (мізер і відіграш без козиря, R-3.1).
+  1: (log) => ({ ...log, version: 2, rulesVersion: 1 }),
+};
 
 /** Лог, який поточний рушій не може відтворити: новішої версії або без шляху міграції. */
 export class UnsupportedLogVersionError extends Error {

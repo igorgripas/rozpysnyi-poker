@@ -2,19 +2,23 @@ import { describe, expect, it } from 'vitest';
 import {
   ENGINE_LOG_VERSION,
   IllegalActionError,
+  RULES_VERSION,
   UnsupportedLogVersionError,
   apply,
   biddingOrder,
   cardId,
   createGame,
   createRng,
+  createDeck,
   createSchedule,
+  deal,
   gameLog,
   isJoker,
   legalActions,
   migrateLog,
   replay,
   scoreTable,
+  shuffle,
   viewFor,
 } from '../src/index.js';
 import type { Action, Card, GameState, LogMigration, Rng } from '../src/index.js';
@@ -487,3 +491,107 @@ describe('viewFor', () => {
     expect(() => viewFor(createGame(1, 3), 3)).toThrow(RangeError);
   });
 });
+
+describe('козир у мізері й відіграші', () => {
+  const noBids = (state: GameState) => !state.hand.spec.bidding;
+
+  /** Відкрита карта роздачі `phase` гри з `seed` — без розіграшу попередніх роздач. */
+  function revealedIn(seed: number, playerCount: number, phase: 'misere' | 'comeback'): Card {
+    const game = createGame(seed, playerCount);
+    const spec = createSchedule(playerCount).find((hand) => hand.phase === phase);
+    const deck = shuffle(createDeck(), createRng(game.handSeeds[spec?.index ?? -1] as number));
+    return deal(deck, playerCount, spec?.cards ?? 0).rest[0] as Card;
+  }
+
+  it('R-3.1: у мізері й відіграші козир — масть відкритої карти з решти колоди', () => {
+    for (const n of [3, 4, 5, 6]) {
+      let state = playUntil(createGame(400 + n, n), createRng(n), noBids);
+      for (const phase of ['misere', 'comeback'] as const) {
+        expect(state.hand.spec.phase).toBe(phase);
+        const revealed = state.hand.revealed as Card;
+        expect(revealed).not.toBeNull();
+        expect(revealed).toEqual(revealedIn(400 + n, n, phase));
+        expect(state.hand.trump).toBe(isJoker(revealed) ? null : revealed.suit);
+        const dealt = state.hand.dealt.flat().map(cardId);
+        expect(dealt).not.toContain(cardId(revealed));
+        const view = viewFor(state, 0);
+        expect(view.trump).toBe(state.hand.trump);
+        expect(view.revealed).toEqual(revealed);
+        const index = state.hand.spec.index;
+        state = playUntil(state, createRng(n), (s) => s.hand.spec.index > index || s.turn === null);
+      }
+      expect(state.status).toBe('finished');
+    }
+  });
+
+  it('R-3.2: відкритий джокер у відіграші — роздача без козиря', () => {
+    let seed = 0;
+    while (seed < 1000 && !isJoker(revealedIn(seed, 4, 'comeback'))) seed++;
+    const state = playUntil(
+      createGame(seed, 4),
+      createRng(1),
+      (s) => s.hand.spec.phase === 'comeback',
+    );
+    expect(isJoker(state.hand.revealed as Card)).toBe(true);
+    expect(state.hand.trump).toBeNull();
+    // R-6.1: без козиря «старший козир» оголосити не можна.
+    const calls = legalActions(state).flatMap((action) =>
+      action.type === 'play' && action.call !== undefined ? [action.call.type] : [],
+    );
+    expect(calls).not.toContain('highTrump');
+  });
+
+  it('R-6.1: у мізері з козирем можна зайти джокером «старший козир»', () => {
+    for (let seed = 0; seed < 100; seed++) {
+      const state = playUntil(createGame(seed, 3), createRng(seed), noBids);
+      const seat = state.turn as number;
+      const hasJoker = (state.hand.hands[seat] as readonly Card[]).some(isJoker);
+      if (state.hand.trump === null || !hasJoker) continue;
+      const calls = legalActions(state).flatMap((action) =>
+        action.type === 'play' && action.call !== undefined ? [action.call.type] : [],
+      );
+      expect(calls).toContain('highTrump');
+      return;
+    }
+    expect.unreachable('немає мізеру з козирем і джокером на заході');
+  });
+
+  it('R-3.1: гра, почата до зміни правил (лог версії 1), догравається без козиря в мізері й відіграші', () => {
+    const legacy = playUntil(createGame(21, 4, undefined, 1), createRng(5), noBids);
+    expect(legacy.rulesVersion).toBe(1);
+    expect(legacy.hand.spec.phase).toBe('misere');
+    expect(legacy.hand.trump).toBeNull();
+    expect(legacy.hand.revealed).toBeNull();
+
+    // Так лог зберігав сервер до зміни: версія 1, без версії правил.
+    const old = { version: 1, playerCount: 4, actions: legacy.actions };
+    const restored = replay(21, JSON.parse(JSON.stringify(old)));
+    expect(restored).toEqual(legacy);
+    const done = playUntil(restored, createRng(6), (s) => s.status === 'finished');
+    expect(done.history.filter(noBidsRecord).map((record) => record.trump)).toEqual([null, null]);
+
+    const migrated = migrateLog(old);
+    expect(migrated.version).toBe(ENGINE_LOG_VERSION);
+    expect(migrated.rulesVersion).toBe(1);
+    expect(gameLog(done).rulesVersion).toBe(1);
+    expect(replay(21, gameLog(done))).toEqual(done);
+  });
+
+  it('R-3.1: нова гра йде за поточними правилами, і лог це зберігає', () => {
+    const state = createGame(3, 5);
+    expect(state.rulesVersion).toBe(RULES_VERSION);
+    expect(gameLog(state)).toMatchObject({ version: ENGINE_LOG_VERSION, rulesVersion: 2 });
+    // Лог поточної версії без версії правил (напр., написаний вручну) — поточні правила.
+    const bare = { ...gameLog(state), rulesVersion: undefined };
+    expect(replay(3, JSON.parse(JSON.stringify(bare))).rulesVersion).toBe(RULES_VERSION);
+  });
+
+  it('R-3.1: createGame rejects an unknown rules version', () => {
+    expect(() => createGame(1, 3, undefined, 0)).toThrow(RangeError);
+    expect(() => createGame(1, 3, undefined, RULES_VERSION + 1)).toThrow(RangeError);
+  });
+});
+
+function noBidsRecord(record: { readonly spec: { readonly bidding: boolean } }): boolean {
+  return !record.spec.bidding;
+}

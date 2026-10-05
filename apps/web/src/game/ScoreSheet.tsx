@@ -16,9 +16,10 @@ type Column = 'bid' | 'taken' | 'points' | 'total';
 const ALL_COLUMNS: readonly Column[] = ['bid', 'taken', 'points', 'total'];
 const COMPACT_COLUMNS: readonly Column[] = ['bid', 'points'];
 
-/** Етапи, які позначаються літерою замість кількості карт і козиря. */
+/** Етапи, які позначаються літерою замість кількості карт; безкозирка — і замість козиря. */
 const PHASE_MARKS: Partial<Record<HandPhase, string>> = {
   noTrump: uk.sheet.marks.noTrump,
+  dark: uk.sheet.marks.dark,
   misere: uk.sheet.marks.misere,
   comeback: uk.sheet.marks.comeback,
 };
@@ -152,23 +153,14 @@ export function ScoreSheet({ table, names }: ScoreSheetProps) {
   );
 }
 
-/** Компактне позначення роздачі: «9♥», «9б/к» (відкрито джокера), «Б», «М», «В», «Тем♥». */
+/** Компактне позначення роздачі: «9♥», «9б/к» (відкрито джокера), «Б», «М♦», «В♣», «Тем♥». */
 function dealLabel(row: Row): ReactNode {
+  if (row.phase === 'noTrump') return PHASE_MARKS.noTrump;
   const trump = row.trump === null ? uk.noTrump : <SuitMark suit={row.trump} />;
-  // R-10.2: «Темна» позначена окремо, а козир у ній відкривається з колоди.
-  if (row.phase === 'dark') {
-    return (
-      <>
-        {uk.sheet.marks.dark}
-        {trump}
-      </>
-    );
-  }
-  const mark = PHASE_MARKS[row.phase];
-  if (mark !== undefined) return mark;
+  // R-10.2, R-3.1: у «Темній», мізері й відіграші козир відкривається з колоди — після літери.
   return (
     <>
-      {row.cards}
+      {PHASE_MARKS[row.phase] ?? row.cards}
       {trump}
     </>
   );

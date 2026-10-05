@@ -7,6 +7,8 @@ import {
   DEFAULT_OPTIONS,
   type GameOptions,
   type HandSpec,
+  RULES_VERSION,
+  assertRulesVersion,
   chooseFirstDealer,
   createSchedule,
   dealerForHand,
@@ -41,6 +43,8 @@ export interface GameLog {
   readonly playerCount: number;
   /** Опції кімнати (R-10.1); у логах, збережених до §10, їх немає — тоді всі вимкнені. */
   readonly options?: GameOptions;
+  /** Версія правил гри (`RULES_VERSION` на її старті); якщо її немає — поточна. */
+  readonly rulesVersion?: number;
   readonly actions: readonly Action[];
 }
 
@@ -79,6 +83,8 @@ export interface GameState {
   readonly playerCount: number;
   /** Опції кімнати, зафіксовані на старті гри (R-10.1). */
   readonly options: GameOptions;
+  /** Версія правил, зафіксована на старті: за нею гра й догравається (`RULES_VERSION`). */
+  readonly rulesVersion: number;
   readonly firstDealer: number;
   /** Seed тасування кожної роздачі, виведені з головного seed (R-2.3). */
   readonly handSeeds: readonly number[];
@@ -112,7 +118,7 @@ function startHand(
   index: number,
 ): Pick<GameState, 'hand' | 'status' | 'turn'> {
   const { playerCount } = state;
-  const spec = createSchedule(playerCount, state.options)[index] as HandSpec;
+  const spec = createSchedule(playerCount, state.options, state.rulesVersion)[index] as HandSpec;
   const dealer = dealerForHand(state.firstDealer, index, playerCount);
   const deck = shuffle(createDeck(), createRng(state.handSeeds[index] as number));
   const { hands, rest } = deal(deck, playerCount, spec.cards);
@@ -147,22 +153,26 @@ function normalizeOptions(options: Partial<GameOptions> | undefined): GameOption
 
 /**
  * Нова гра: seed визначає першого роздаючого (R-2.2) і тасування всіх роздач (R-2.3).
- * Опції кімнати фіксуються разом із грою й далі не змінюються (R-10.1).
+ * Опції кімнати фіксуються разом із грою й далі не змінюються (R-10.1); так само й версія
+ * правил — стару гру відтворюють і догравають за правилами її версії.
  */
 export function createGame(
   seed: number,
   playerCount: number,
   options: Partial<GameOptions> = DEFAULT_OPTIONS,
+  rulesVersion: number = RULES_VERSION,
 ): GameState {
   assertPlayerCount(playerCount);
+  assertRulesVersion(rulesVersion);
   const fixed = normalizeOptions(options);
   const rng = createRng(seed);
   const firstDealer = chooseFirstDealer(rng, playerCount);
-  const handSeeds = createSchedule(playerCount, fixed).map(() => rng.nextInt(UINT32));
+  const handSeeds = createSchedule(playerCount, fixed, rulesVersion).map(() => rng.nextInt(UINT32));
   const base = {
     seed,
     playerCount,
     options: fixed,
+    rulesVersion,
     firstDealer,
     handSeeds,
     history: [],
@@ -334,6 +344,7 @@ export function gameLog(state: GameState): GameLog {
     version: ENGINE_LOG_VERSION,
     playerCount: state.playerCount,
     options: state.options,
+    rulesVersion: state.rulesVersion,
     actions: state.actions,
   };
 }
@@ -343,8 +354,8 @@ export function gameLog(state: GameState): GameLog {
  * Лог старої версії спершу мігрується; несумісний — `UnsupportedLogVersionError`.
  */
 export function replay(seed: number, log: GameLog): GameState {
-  const { playerCount, options, actions } = migrateLog(log);
-  return actions.reduce(apply, createGame(seed, playerCount, options));
+  const { playerCount, options, rulesVersion, actions } = migrateLog(log);
+  return actions.reduce(apply, createGame(seed, playerCount, options, rulesVersion));
 }
 
 /** Таблиця гри (R-8.1–R-8.4): завершені роздачі й поточна, якщо гра триває. */

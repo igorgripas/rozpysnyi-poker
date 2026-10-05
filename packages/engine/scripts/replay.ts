@@ -21,8 +21,8 @@ if (path === undefined) {
 }
 
 const file = parseReplayFile(readFileSync(path, 'utf8'));
-const { playerCount, actions } = migrateLog(file.log);
-let state: GameState = createGame(file.seed, playerCount);
+const { playerCount, options, rulesVersion, actions } = migrateLog(file.log);
+let state: GameState = createGame(file.seed, playerCount, options, rulesVersion);
 for (const [index, action] of actions.entries()) {
   try {
     state = apply(state, action);

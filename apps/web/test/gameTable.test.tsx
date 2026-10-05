@@ -188,6 +188,56 @@ describe('ігровий стіл', () => {
     expect(slot.querySelector('.suit-mark')).toHaveAttribute('data-color', 'red');
   });
 
+  it('R-3.1: у мізері й відіграші відкрита карта-козир на столі, як в інших роздачах', () => {
+    for (const phase of ['misere', 'comeback'] as const) {
+      const state = findState(
+        3,
+        (s) => s.hand.spec.phase === phase && s.hand.revealed?.kind === 'standard',
+      );
+      const { unmount } = renderAt(state, 0);
+      const revealed = defined(state.hand.revealed);
+      const info = screen.getByRole('region', { name: 'Роздача' });
+      expect(info).toHaveTextContent(phase === 'misere' ? 'Мізер' : 'Відіграш');
+      expect(info.querySelector('.game__trump .suit-mark')).toHaveAttribute(
+        'data-suit',
+        defined(state.hand.trump),
+      );
+      const table = screen.getByRole('region', { name: 'Стіл' });
+      expect(within(table).getByRole('img', { name: cardName(revealed) })).toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it('R-3.1, R-3.2: у відіграші відкрився джокер — без козиря, джокер на столі', () => {
+    const view = wireView(createGame(1, 3), 0);
+    renderTable(gameRoom(3, 0), {
+      ...view,
+      status: 'playing',
+      spec: { ...view.spec, phase: 'comeback', bidding: false, trump: { kind: 'revealed' } },
+      bids: [null, null, null],
+      trump: null,
+      revealed: { kind: 'joker', index: 1 },
+    });
+    const info = screen.getByRole('region', { name: 'Роздача' });
+    expect(info).toHaveTextContent('Козир: б/к');
+    const table = screen.getByRole('region', { name: 'Стіл' });
+    expect(within(table).getByRole('img', { name: 'Джокер' })).toBeInTheDocument();
+  });
+
+  it('R-3.1: мізер гри, почато до зміни правил, — на столі «Без козиря»', () => {
+    const view = wireView(createGame(1, 3), 0);
+    renderTable(gameRoom(3, 0), {
+      ...view,
+      status: 'playing',
+      spec: { ...view.spec, phase: 'misere', bidding: false, trump: { kind: 'none' } },
+      bids: [null, null, null],
+      trump: null,
+      revealed: null,
+    });
+    const table = screen.getByRole('region', { name: 'Стіл' });
+    expect(defined(table.querySelector('.game__revealed'))).toHaveTextContent('Без козиря');
+  });
+
   it('R-3.4: у безкозирці на столі — «Без козиря»', () => {
     const view = wireView(createGame(1, 3), 0);
     renderTable(gameRoom(3, 0), {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  RULES_VERSION,
   SUITS,
   chooseFirstDealer,
   createRng,
@@ -101,14 +102,35 @@ describe('розклад гри', () => {
     }
   });
 
-  it('R-2.1: ascending and maximum reveal trump, noTrump/misere/comeback have none', () => {
-    for (const hand of createSchedule(5)) {
-      if (hand.phase === 'ascending' || hand.phase === 'maximum') {
-        expect(hand.trump).toEqual({ kind: 'revealed' });
-      } else if (hand.phase !== 'suits') {
-        expect(hand.trump).toEqual({ kind: 'none' });
+  it('R-3.1, R-3.4: ascending, maximum, misere and comeback reveal trump, noTrump has none', () => {
+    for (const n of [3, 4, 5, 6]) {
+      for (const hand of createSchedule(n)) {
+        if (hand.phase === 'suits') continue;
+        expect(hand.trump, `${n}: ${hand.phase}`).toEqual(
+          hand.phase === 'noTrump' ? { kind: 'none' } : { kind: 'revealed' },
+        );
       }
     }
+  });
+
+  it('R-3.1: games started under rules version 1 play misere and comeback without trump', () => {
+    expect(RULES_VERSION).toBe(2);
+    const current = createSchedule(4);
+    const legacy = createSchedule(4, undefined, 1);
+    expect(legacy).toHaveLength(current.length);
+    legacy.forEach((hand, index) => {
+      const expected =
+        hand.phase === 'misere' || hand.phase === 'comeback'
+          ? { ...current[index], trump: { kind: 'none' } }
+          : current[index];
+      expect(hand).toEqual(expected);
+    });
+  });
+
+  it('R-3.1: schedule rejects an unknown rules version', () => {
+    expect(() => createSchedule(4, undefined, 0)).toThrow(RangeError);
+    expect(() => createSchedule(4, undefined, RULES_VERSION + 1)).toThrow(RangeError);
+    expect(() => createSchedule(4, undefined, 1.5)).toThrow(RangeError);
   });
 
   it('R-2.1: misere and comeback have no bidding, other hands do', () => {

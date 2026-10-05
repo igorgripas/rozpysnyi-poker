@@ -68,6 +68,7 @@ export function formatFixture(fixture: CompatFixture): string {
     '{',
     `    "version": ${log.version},`,
     `    "playerCount": ${log.playerCount},`,
+    ...(log.rulesVersion === undefined ? [] : [`    "rulesVersion": ${log.rulesVersion},`]),
     `    "actions": [\n${actions}\n    ]`,
     '  }',
   ].join('\n');
