@@ -33,10 +33,18 @@ export async function startSeededServer(seed: number, publicUrl: string): Promis
   return {
     url,
     async close() {
-      // Keep-alive зʼєднання браузера інакше тримають HTTP-сервер відкритим.
+      // Keep-alive зʼєднання браузера інакше тримають HTTP-сервер відкритим. Клієнт
+      // перепідключається, поки сервер закривається (`io.close()` чекає на всі зʼєднання),
+      // тож рвемо їх, доки закриття не завершиться.
+      const http = server.app.server;
       const closing = server.close();
-      server.app.server.closeAllConnections();
-      await closing;
+      http.closeAllConnections();
+      const timer = setInterval(() => http.closeAllConnections(), 50);
+      try {
+        await closing;
+      } finally {
+        clearInterval(timer);
+      }
     },
   };
 }
