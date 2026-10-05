@@ -8,7 +8,7 @@ import {
   determineTrump,
   shuffle,
 } from '../src/index.js';
-import type { Card, TrumpRule } from '../src/index.js';
+import type { Card, HandSpec, TrumpRule } from '../src/index.js';
 
 const revealed: TrumpRule = { kind: 'revealed' };
 const joker: Card = { kind: 'joker', index: 0 };
@@ -62,10 +62,10 @@ describe('козир', () => {
     expect(trumps).toEqual([...SUITS]);
   });
 
-  it('R-3.4: no-trump, misere and comeback hands of the schedule have no trump', () => {
+  it('R-3.4: no-trump hands of the schedule have no trump', () => {
     for (const n of [3, 4, 5, 6]) {
       for (const spec of createSchedule(n)) {
-        if (spec.phase === 'noTrump' || spec.phase === 'misere' || spec.phase === 'comeback') {
+        if (spec.phase === 'noTrump') {
           const result = determineTrump(spec.trump, [queenOfClubs]);
           expect(result).toEqual({ trump: null, revealed: null });
         }
@@ -73,10 +73,28 @@ describe('козир', () => {
     }
   });
 
-  it('R-3.1: ascending and maximum hands of a real deal reveal the top card of the rest', () => {
+  it('R-3.1: misere and comeback reveal the top card; under rules version 1 they had no trump', () => {
+    for (const n of [3, 4, 5, 6]) {
+      for (const phase of ['misere', 'comeback'] as const) {
+        const current = createSchedule(n).find((spec) => spec.phase === phase) as HandSpec;
+        expect(determineTrump(current.trump, [queenOfClubs])).toEqual({
+          trump: 'clubs',
+          revealed: queenOfClubs,
+        });
+        const legacy = createSchedule(n, undefined, 1).find((spec) => spec.phase === phase);
+        expect(determineTrump((legacy as HandSpec).trump, [queenOfClubs])).toEqual({
+          trump: null,
+          revealed: null,
+        });
+      }
+    }
+  });
+
+  it('R-3.1: ascending, maximum, misere and comeback hands of a real deal reveal the top card of the rest', () => {
+    const revealing = ['ascending', 'maximum', 'misere', 'comeback'];
     for (const n of [3, 4, 5, 6]) {
       for (const spec of createSchedule(n)) {
-        if (spec.phase !== 'ascending' && spec.phase !== 'maximum') continue;
+        if (!revealing.includes(spec.phase)) continue;
         const { rest } = deal(shuffle(createDeck(), createRng(spec.index + n)), n, spec.cards);
         const result = determineTrump(spec.trump, rest);
         const top = rest[0] as Card;

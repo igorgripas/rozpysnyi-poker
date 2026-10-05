@@ -85,33 +85,33 @@ describe('таблиця гри (розписка)', () => {
     });
   });
 
-  it('R-8.1: колонка роздачі компактна — 9♥, Б, М, В, «б/к» без козиря; легенда під таблицею', () => {
+  it('R-8.1, R-3.1: колонка роздачі компактна — 9♥, Б, М♦, В♣, «б/к» без козиря; легенда під таблицею', () => {
     const table = wireView(finishedGame(), 0).table;
-    const rows = table.rows.map((row, i) => (i === 0 ? { ...row, trump: null } : row));
+    // Перша роздача — з відкритим джокером; мізер — гра до зміни правил, без козиря.
+    const rows = table.rows.map((row, i) =>
+      i === 0 || row.phase === 'misere' ? { ...row, trump: null } : row,
+    );
+    expect(rows.find((row) => row.phase === 'comeback')?.trump).not.toBeNull();
     renderSheet({ ...table, rows });
     const labels = bodyRows().map((row) => row.querySelector('.sheet__deal')?.textContent ?? '');
     const symbols = { spades: '♠', clubs: '♣', diamonds: '♦', hearts: '♥' } as const;
     rows.forEach((row, i) => {
+      const trump = row.trump === null ? 'б/к' : `${symbols[row.trump]}\uFE0E`;
       const expected =
         row.phase === 'noTrump'
           ? 'Б'
           : row.phase === 'misere'
-            ? 'М'
+            ? `М${trump}`
             : row.phase === 'comeback'
-              ? 'В'
-              : `${row.cards}${row.trump === null ? 'б/к' : `${symbols[row.trump]}\uFE0E`}`;
+              ? `В${trump}`
+              : `${row.cards}${trump}`;
       expect(labels[i]).toBe(expected);
     });
     // Масть у колонці роздачі — спільний значок масті: ♦ ♥ червоні, ♠ ♣ — ні.
     bodyRows().forEach((element, i) => {
       const row = defined(rows[i]);
       const mark = element.querySelector('.sheet__deal .suit-mark');
-      if (
-        row.trump === null ||
-        row.phase === 'noTrump' ||
-        row.phase === 'misere' ||
-        row.phase === 'comeback'
-      ) {
+      if (row.trump === null || row.phase === 'noTrump') {
         expect(mark).toBeNull();
         return;
       }
