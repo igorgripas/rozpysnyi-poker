@@ -24,16 +24,18 @@ export { createRng, shuffle } from './rng.js';
 export type { Rng } from './rng.js';
 export { deal } from './deal.js';
 export type { DealResult } from './deal.js';
-export { chooseFirstDealer, createSchedule, dealerForHand } from './schedule.js';
-export type { HandPhase, HandSpec, TrumpRule } from './schedule.js';
+export { DEFAULT_OPTIONS, chooseFirstDealer, createSchedule, dealerForHand } from './schedule.js';
+export type { GameOptions, HandPhase, HandSpec, TrumpRule } from './schedule.js';
 export { determineTrump } from './trump.js';
 export type { TrumpResult } from './trump.js';
 export {
+  MAX_ZERO_STREAK,
   biddingOrder,
   forbiddenDealerBid,
   handHasBidding,
   isLegalBid,
   legalBids,
+  zeroBidForbidden,
 } from './bidding.js';
 export {
   firstLeader,
@@ -44,7 +46,14 @@ export {
   trickWinner,
 } from './trick.js';
 export type { JokerCall, PlayedJoker, TrickCard } from './trick.js';
-export { JOKER_PENALTY, buildScoreTable, countJokers, finalScore, scoreHand } from './score.js';
+export {
+  DARK_MULTIPLIER,
+  JOKER_PENALTY,
+  buildScoreTable,
+  countJokers,
+  finalScore,
+  scoreHand,
+} from './score.js';
 export type { HandRecord, ScoreCell, ScoreRow, ScoreSummary, ScoreTable } from './score.js';
 export {
   IllegalActionError,

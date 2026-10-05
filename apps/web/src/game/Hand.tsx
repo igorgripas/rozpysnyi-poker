@@ -1,7 +1,7 @@
 import { type Card, SUITS, cardId } from '@poker/engine';
 import { type CSSProperties, useState } from 'react';
 import { cardName, uk } from '../i18n';
-import { CardFace } from '../ui/Card';
+import { CardBack, CardFace } from '../ui/Card';
 
 /** Порядок у руці: джокери, далі масті ♠ ♣ ♦ ♥, у масті — від старшої карти. */
 function sortKey(card: Card): number {
@@ -70,5 +70,27 @@ export function Hand({ cards, legal, onPlay, resetKey = 0 }: HandProps) {
         );
       })}
     </ul>
+  );
+}
+
+/** Рука наосліп у «Темній» (R-10.2): лише сорочки, доки не замовить роздаючий. */
+export function BlindHand({ count }: { count: number }) {
+  return (
+    <div className="blind-hand">
+      <p className="blind-hand__hint muted">{uk.game.blindHint}</p>
+      <ul
+        className="hand hand--blind"
+        aria-label={uk.game.yourCards}
+        style={{ '--hand-size': count } as CSSProperties}
+      >
+        {Array.from({ length: count }, (_, index) => (
+          <li key={index} className="hand__slot">
+            <span className="hand__card">
+              <CardBack />
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

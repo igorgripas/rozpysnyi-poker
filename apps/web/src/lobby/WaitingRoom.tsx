@@ -1,12 +1,12 @@
 import { MAX_PLAYERS, MIN_PLAYERS } from '@poker/engine';
 import type { ClientEvent, ClientMessageInput, RoomState } from '@poker/protocol';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { uk } from '../i18n';
 import { useClient } from '../net/react';
 import { VoiceControls, useVoiceState } from '../voice/VoiceControls';
 import { shareLink } from './share';
 
-type HostEvent = 'room:addBot' | 'room:removeBot' | 'room:shuffle' | 'room:start';
+type HostEvent = 'room:addBot' | 'room:removeBot' | 'room:shuffle' | 'room:options' | 'room:start';
 
 /** Кімната очікування: гравці на місцях (R-9.1), запрошення й керування хоста. */
 export function WaitingRoom({ room }: { room: RoomState }) {
@@ -84,6 +84,24 @@ export function WaitingRoom({ room }: { room: RoomState }) {
           ))}
         </ol>
 
+        <fieldset className="waiting__options">
+          <legend>{uk.room.options}</legend>
+          <OptionSwitch
+            label={uk.room.dark}
+            hint={uk.room.darkHint}
+            checked={room.options.dark}
+            disabled={!isHost}
+            onChange={(dark) => void send('room:options', { ...room.options, dark })}
+          />
+          <OptionSwitch
+            label={uk.room.zeroLimit}
+            hint={uk.room.zeroLimitHint}
+            checked={room.options.zeroLimit}
+            disabled={!isHost}
+            onChange={(zeroLimit) => void send('room:options', { ...room.options, zeroLimit })}
+          />
+        </fieldset>
+
         {isHost ? (
           <div className="waiting__actions">
             <button
@@ -122,5 +140,37 @@ export function WaitingRoom({ room }: { room: RoomState }) {
         )}
       </div>
     </section>
+  );
+}
+
+interface OptionSwitchProps {
+  label: string;
+  hint: string;
+  checked: boolean;
+  disabled: boolean;
+  onChange: (checked: boolean) => void;
+}
+
+/** Перемикач опції кімнати (§10): змінює лише хост, бачать усі (R-10.1). */
+function OptionSwitch({ label, hint, checked, disabled, onChange }: OptionSwitchProps) {
+  const hintId = useId();
+  return (
+    <label className="option">
+      <input
+        type="checkbox"
+        role="switch"
+        className="option__input"
+        checked={checked}
+        disabled={disabled}
+        aria-describedby={hintId}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <span className="option__text">
+        <span className="option__label">{label}</span>
+        <span id={hintId} className="option__hint muted">
+          {hint}
+        </span>
+      </span>
+    </label>
   );
 }

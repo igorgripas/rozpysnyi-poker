@@ -150,6 +150,32 @@ describe('гра', () => {
   );
 });
 
+describe('опції кімнати (§10)', () => {
+  it(
+    'R-10.1, R-10.2: з «Темною» клієнти не отримують своїх карт до замовлення роздаючого; гра доходить до кінця',
+    async () => {
+      const { players, host, code } = await lobby(['Оля', 'Петро'], 1);
+      unwrap(await host.request('room:options', { dark: true, zeroLimit: true }));
+      unwrap(await host.request('room:start', {}));
+      await play(players);
+      expectFinishedReplayable(code);
+      expect(game(code).options).toEqual({ dark: true, zeroLimit: true });
+      for (const c of players) {
+        const dark = c.views.filter((view) => view.spec.phase === 'dark');
+        const blind = dark.filter((view) => view.status === 'bidding');
+        expect(blind.length).toBeGreaterThan(0);
+        for (const view of blind) {
+          expect(view).toMatchObject({ blind: true, hand: [] });
+          expect(playerViewSchema.parse(view)).toEqual(view);
+        }
+        const open = dark.filter((view) => view.status === 'playing');
+        expect(open[0]?.hand).toHaveLength(12);
+      }
+    },
+    TIMEOUT,
+  );
+});
+
 describe('перепідключення', () => {
   it(
     'R-9.3: відключений гравець чекає на своє місце: гра стоїть, доки він не повернеться за токеном',

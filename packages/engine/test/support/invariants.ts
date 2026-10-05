@@ -5,6 +5,8 @@
  */
 import { isDeepStrictEqual } from 'node:util';
 import {
+  DEFAULT_OPTIONS,
+  MAX_ZERO_STREAK,
   apply,
   cardId,
   countJokers,
@@ -20,7 +22,14 @@ import {
   scoreTable,
   trickWinner,
 } from '../../src/index.js';
-import type { Action, GameState, HandRecord, ScoreTable, TrickCard } from '../../src/index.js';
+import type {
+  Action,
+  GameOptions,
+  GameState,
+  HandRecord,
+  ScoreTable,
+  TrickCard,
+} from '../../src/index.js';
 
 type PlayAction = Extract<Action, { type: 'play' }>;
 
@@ -30,9 +39,13 @@ function movesSeedFor(seed: number): number {
 }
 
 /** Повна гра, де на кожному кроці обирається випадкова легальна дія (seed RNG). */
-export function playRandomGame(seed: number, playerCount: number): GameState {
+export function playRandomGame(
+  seed: number,
+  playerCount: number,
+  options: GameOptions = DEFAULT_OPTIONS,
+): GameState {
   const rng = createRng(movesSeedFor(seed));
-  let state = createGame(seed, playerCount);
+  let state = createGame(seed, playerCount, options);
   while (state.status !== 'finished') {
     const actions = legalActions(state);
     if (actions.length === 0) throw new Error(`Немає легальних дій (гравець ${state.turn})`);
@@ -178,8 +191,29 @@ export function checkScoreFromLog(state: GameState): string[] {
       errors.push(`гравець ${seat}: фінал ${summary.final} ≠ перерахованого ${expected}`);
     }
   });
-  if (state.status === 'finished' && state.history.length !== createSchedule(n).length) {
+  if (
+    state.status === 'finished' &&
+    state.history.length !== createSchedule(n, state.options).length
+  ) {
     errors.push(`гру завершено після ${state.history.length} роздач`);
+  }
+  return errors;
+}
+
+/** R-10.3: з опцією жоден гравець не замовив 0 більше трьох разів поспіль. */
+export function checkZeroStreaks(state: GameState): string[] {
+  if (!state.options.zeroLimit) return [];
+  const errors: string[] = [];
+  for (let seat = 0; seat < state.playerCount; seat++) {
+    let streak = 0;
+    for (const record of state.history) {
+      const bid = record.bids[seat] ?? null;
+      if (bid === null) continue;
+      streak = bid === 0 ? streak + 1 : 0;
+      if (streak > MAX_ZERO_STREAK) {
+        errors.push(`${label(record)}: гравець ${seat} замовив 0 вже ${streak}-й раз поспіль`);
+      }
+    }
   }
   return errors;
 }
@@ -201,6 +235,7 @@ export function checkGame(state: GameState): string[] {
     ...checkCardsPlayedOnce(state),
     ...checkTrickSums(state),
     ...checkBidSums(state),
+    ...checkZeroStreaks(state),
     ...checkScoreFromLog(state),
     ...checkReplay(state),
   ];

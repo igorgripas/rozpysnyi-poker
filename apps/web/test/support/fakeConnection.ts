@@ -89,6 +89,7 @@ export function roomState(overrides: Partial<RoomState> = {}): RoomState {
     seats: [human('p1', 'Оля')],
     turnTimerSec: null,
     turnDeadline: null,
+    options: { dark: false, zeroLimit: false },
     ...overrides,
   };
 }

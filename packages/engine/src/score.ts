@@ -10,8 +10,11 @@ function assertCount(value: number, label: string): void {
   }
 }
 
+/** Множник балів за «Темну» (R-10.2). */
+export const DARK_MULTIPLIER = 2;
+
 /**
- * Бали гравця за роздачу (R-7.1–R-7.6).
+ * Бали гравця за роздачу (R-7.1–R-7.6); у «Темній» — удвічі більше (R-10.2).
  * `bid` — замовлення (`null` у «Мізері» й «Відіграші», R-4.1), `taken` — взято взяток.
  */
 export function scoreHand(spec: HandSpec, bid: number | null, taken: number): number {
@@ -26,6 +29,12 @@ export function scoreHand(spec: HandSpec, bid: number | null, taken: number): nu
   }
   if (bid === null) throw new RangeError('У роздачі із замовленням потрібне замовлення');
   assertCount(bid, 'Замовлення');
+  const multiplier = spec.phase === 'dark' ? DARK_MULTIPLIER : 1;
+  return multiplier * scoreBid(bid, taken);
+}
+
+/** Бали за роздачу із замовленням (R-7.1–R-7.4). */
+function scoreBid(bid: number, taken: number): number {
   if (taken === bid) return bid === 0 ? 5 : 10 * bid; // R-7.2, R-7.1
   if (taken > bid) return taken; // R-7.3
   return -10 * (bid - taken); // R-7.4

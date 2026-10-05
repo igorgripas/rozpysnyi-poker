@@ -1,4 +1,4 @@
-import type { GameLog } from '@poker/engine';
+import type { GameLog, GameOptions } from '@poker/engine';
 import type { RoomStatus } from '@poker/protocol';
 
 /** Версія формату знімка кімнати; збільшується при несумісних змінах. */
@@ -36,6 +36,8 @@ export interface RoomSnapshot {
   readonly hostId: string;
   readonly status: RoomStatus;
   readonly turnTimerSec: number | null;
+  /** Опції кімнати (§10); у знімках, збережених до них, поля немає — опції вимкнені. */
+  readonly options?: GameOptions;
   readonly seats: readonly {
     readonly id: string;
     readonly name: string;

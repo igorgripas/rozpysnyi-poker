@@ -6,6 +6,7 @@
  * Джокери: `🃏0`, `🃏1`, за ними — оголошення: `беру`, `скидаю`, `старший козир`,
  * `старша <масть>`, `маленька <масть>`. Об'єкт `{ "illegal": … }` — дія, яку рушій
  * має відхилити в цей момент (після неї хід лишається за тим самим гравцем).
+ * `options` — опції кімнати (§10); без них усі вимкнені (R-10.1).
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
@@ -21,8 +22,18 @@ import {
   firstLeader,
   legalActions,
   scoreTable,
+  viewFor,
 } from '../../src/index.js';
-import type { Action, Card, GameState, HandPhase, JokerCall, Rank, Suit } from '../../src/index.js';
+import type {
+  Action,
+  Card,
+  GameOptions,
+  GameState,
+  HandPhase,
+  JokerCall,
+  Rank,
+  Suit,
+} from '../../src/index.js';
 
 type Illegal<T> = { readonly illegal: T };
 
@@ -30,6 +41,7 @@ interface DealScenario {
   readonly kind: 'deal';
   readonly title: string;
   readonly rules: readonly string[];
+  readonly options?: Partial<GameOptions>;
   readonly players: number;
   /** Номер роздачі в розкладі гри, від 1 (R-2.1). */
   readonly hand: number;
@@ -71,7 +83,19 @@ interface SeedScenario {
   }[];
 }
 
-type Scenario = DealScenario | SeedScenario;
+/** Замовлення в роздачах гри від першої; розіграш — першими легальними ходами. */
+interface BidsScenario {
+  readonly kind: 'bids';
+  readonly title: string;
+  readonly rules: readonly string[];
+  readonly options?: Partial<GameOptions>;
+  readonly seed: number;
+  readonly players: number;
+  /** Для кожної роздачі — замовлення в порядку черги R-4.2. */
+  readonly hands: readonly (readonly (number | Illegal<number>)[])[];
+}
+
+type Scenario = DealScenario | SeedScenario | BidsScenario;
 
 const SUIT_SYMBOLS: Record<string, Suit> = {
   '♠': 'spades',
@@ -123,8 +147,8 @@ function playAction(seat: number, text: string): Action {
 
 /** Стан гри на початку роздачі `scenario.hand` з заданими руками; ця роздача — остання. */
 function stateForDeal(scenario: DealScenario): GameState {
-  const { players, dealer } = scenario;
-  const spec = createSchedule(players)[scenario.hand - 1];
+  const { players, dealer, options } = scenario;
+  const spec = createSchedule(players, base(options)).at(scenario.hand - 1);
   if (spec === undefined) throw new Error(`У розкладі немає роздачі ${scenario.hand}`);
   expect(spec.phase).toBe(scenario.phase);
   expect(spec.cards).toBe(scenario.cards);
@@ -138,12 +162,12 @@ function stateForDeal(scenario: DealScenario): GameState {
   const ids = hands.flat().map(cardId);
   expect(new Set(ids).size).toBe(ids.length);
 
-  const base = createGame(1, players);
+  const game = createGame(1, players, options);
   const leader = firstLeader(dealer, players);
   return {
-    ...base,
+    ...game,
     firstDealer: (((dealer - spec.index) % players) + players) % players,
-    handSeeds: base.handSeeds.slice(0, spec.index + 1),
+    handSeeds: game.handSeeds.slice(0, spec.index + 1),
     status: spec.bidding ? 'bidding' : 'playing',
     turn: leader,
     hand: {
@@ -159,6 +183,41 @@ function stateForDeal(scenario: DealScenario): GameState {
       trick: [],
     },
   };
+}
+
+/** Опції з усіма полями (R-10.1). */
+function base(options: Partial<GameOptions> | undefined): GameOptions {
+  return createGame(1, 3, options).options;
+}
+
+/** R-10.2: у «Темній», доки не замовить роздаючий, гравці не бачать своїх карт. */
+function expectBlind(state: GameState): void {
+  const blind = state.hand.spec.phase === 'dark' && state.status === 'bidding';
+  for (let seat = 0; seat < state.playerCount; seat++) {
+    const view = viewFor(state, seat);
+    expect(view.blind).toBe(blind);
+    expect(view.hand).toEqual(blind ? [] : state.hand.hands[seat]);
+  }
+}
+
+/** Замовлення роздачі в порядку R-4.2; недопустимі мають бути відхилені. */
+function runBids(
+  state: GameState,
+  bids: readonly (number | Illegal<number>)[],
+  dealer: number,
+): GameState {
+  const order = biddingOrder(dealer, state.playerCount);
+  let current = state;
+  let turn = 0;
+  for (const step of bids) {
+    expectBlind(current);
+    const seat = order[turn] as number;
+    current = applyOrReject(current, step, (bid) => ({ type: 'bid', seat, bid }));
+    if (typeof step === 'number') turn++;
+  }
+  expect(current.status).toBe('playing');
+  expectBlind(current);
+  return current;
 }
 
 function applyOrReject<T>(
@@ -178,14 +237,7 @@ function runDeal(scenario: DealScenario): void {
   let state = stateForDeal(scenario);
 
   if (state.hand.spec.bidding) {
-    const order = biddingOrder(scenario.dealer, players);
-    let turn = 0;
-    for (const step of scenario.bids ?? []) {
-      const seat = order[turn] as number;
-      state = applyOrReject(state, step, (bid) => ({ type: 'bid', seat, bid }));
-      if (typeof step === 'number') turn++;
-    }
-    expect(state.status).toBe('playing');
+    state = runBids(state, scenario.bids ?? [], scenario.dealer);
   } else {
     // R-4.1: у «Мізері» й «Відіграші» замовлень немає.
     expect(scenario.bids).toBeUndefined();
@@ -232,6 +284,18 @@ function runSeed(scenario: SeedScenario): void {
   });
 }
 
+function runBidsScenario(scenario: BidsScenario): void {
+  let state = createGame(scenario.seed, scenario.players, scenario.options);
+  scenario.hands.forEach((bids, index) => {
+    expect(state.hand.spec.index).toBe(index);
+    if (state.hand.spec.bidding) state = runBids(state, bids, state.hand.dealer);
+    else expect(bids).toEqual([]);
+    while (state.status !== 'finished' && state.hand.spec.index === index) {
+      state = apply(state, legalActions(state)[0] as Action);
+    }
+  });
+}
+
 const dir = new URL('./', import.meta.url);
 const files = readdirSync(dir)
   .filter((file) => file.endsWith('.json'))
@@ -248,6 +312,7 @@ describe('golden-сценарії', () => {
     const scenario = JSON.parse(readFileSync(new URL(file, dir), 'utf8')) as Scenario;
     it(`${file}: ${scenario.title} (${scenario.rules.join(', ')})`, () => {
       if (scenario.kind === 'deal') runDeal(scenario);
+      else if (scenario.kind === 'bids') runBidsScenario(scenario);
       else runSeed(scenario);
     });
   }

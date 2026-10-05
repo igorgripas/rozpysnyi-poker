@@ -378,6 +378,53 @@ textarea {
   margin-top: var(--space-3);
 }
 
+/* Опції кімнати (§10): перемикачі хоста, які бачать усі. */
+.waiting__options {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.waiting__options legend {
+  margin-bottom: var(--space-2);
+  padding: 0;
+  font-weight: 600;
+}
+
+.option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  cursor: pointer;
+}
+
+.option__input {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0.125rem 0 0;
+  accent-color: var(--accent);
+}
+
+.option__input:disabled {
+  cursor: default;
+}
+
+.option__text {
+  display: grid;
+  min-width: 0;
+}
+
+.option__label {
+  font-weight: 500;
+}
+
+.option__hint {
+  font-size: 0.875rem;
+}
+
 .seats {
   display: grid;
   gap: var(--space-2);
@@ -831,6 +878,20 @@ textarea {
   font-weight: 600;
 }
 
+/* Рука наосліп у «Темній» (R-10.2): сорочки й підказка на місці руки. */
+.blind-hand {
+  grid-area: hand;
+}
+
+.blind-hand__hint {
+  margin: 0;
+  text-align: center;
+}
+
+.hand--blind .hand__card {
+  cursor: default;
+}
+
 /* Рука: карти перекриваються, щоб до 12 карт вміщалися в ширину екрана. */
 .hand {
   grid-area: hand;
@@ -1039,6 +1100,16 @@ textarea {
 
 .sheet__deal {
   font-weight: 600;
+}
+
+/* R-10.2: «Темна» в розписці виділена окремо. */
+tr[data-phase='dark'] .sheet__row,
+tr[data-phase='dark'] .sheet__cell {
+  background: var(--surface-2);
+}
+
+tr[data-phase='dark'] .sheet__deal {
+  font-style: italic;
 }
 
 /* Підписи підсумку переносяться, щоб ліва колонка лишалась вузькою. */

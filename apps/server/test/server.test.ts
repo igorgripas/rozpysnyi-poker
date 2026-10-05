@@ -194,6 +194,28 @@ describe('перепідключення й рестарт (R-9.3)', () => {
     unwrap(await again.request('game:bid', { bid: action?.type === 'bid' ? action.bid : 0 }));
   });
 
+  it('R-10.1: хост вмикає опції кімнати, гості бачать їх у стані кімнати', async () => {
+    const host = client();
+    const guest = client();
+    const session = unwrap(await host.request('room:create', { name: 'Оля' }));
+    unwrap(await guest.request('room:join', { code: session.code, name: 'Петро' }));
+    await guest.until((c) => c.room?.seats.length === 2);
+    expect(guest.room?.options).toEqual({ dark: false, zeroLimit: false });
+    const on = { dark: true, zeroLimit: true };
+    expect(errorCode(await guest.request('room:options', on))).toBe('notHost');
+    expect(errorCode(await host.request('room:options', { dark: true } as never))).toBe(
+      'badRequest',
+    );
+    unwrap(await host.request('room:options', on));
+    await guest.until((c) => c.room?.options.dark === true);
+    expect(guest.room?.options).toEqual(on);
+    unwrap(await host.request('room:addBot', {}));
+    unwrap(await host.request('room:start', {}));
+    await guest.until((c) => c.view !== null);
+    expect(guest.view?.options).toEqual(on);
+    expect(errorCode(await host.request('room:options', on))).toBe('alreadyStarted');
+  });
+
   it('R-9.3: хост налаштовує таймер і віддає боту місце відключеного гравця', async () => {
     const host = client();
     const guest = client();

@@ -94,7 +94,7 @@ export function ScoreSheet({ table, names }: ScoreSheetProps) {
           </thead>
           <tbody>
             {table.rows.map((row) => (
-              <tr key={row.number}>
+              <tr key={row.number} data-phase={row.phase}>
                 <th
                   scope="row"
                   className="sheet__row"
@@ -146,19 +146,30 @@ export function ScoreSheet({ table, names }: ScoreSheetProps) {
       </div>
       <p role="note" className="sheet__legend muted">
         9<SuitMark suit="hearts" /> {uk.sheet.legend}
+        {table.rows.some((row) => row.phase === 'dark') && ` · ${uk.sheet.darkLegend}`}
       </p>
     </div>
   );
 }
 
-/** Компактне позначення роздачі: «9♥», «9б/к» (відкрито джокера), «Б», «М», «В». */
+/** Компактне позначення роздачі: «9♥», «9б/к» (відкрито джокера), «Б», «М», «В», «Тем♥». */
 function dealLabel(row: Row): ReactNode {
+  const trump = row.trump === null ? uk.noTrump : <SuitMark suit={row.trump} />;
+  // R-10.2: «Темна» позначена окремо, а козир у ній відкривається з колоди.
+  if (row.phase === 'dark') {
+    return (
+      <>
+        {uk.sheet.marks.dark}
+        {trump}
+      </>
+    );
+  }
   const mark = PHASE_MARKS[row.phase];
   if (mark !== undefined) return mark;
   return (
     <>
       {row.cards}
-      {row.trump === null ? uk.noTrump : <SuitMark suit={row.trump} />}
+      {trump}
     </>
   );
 }
