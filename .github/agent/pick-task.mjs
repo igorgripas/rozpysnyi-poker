@@ -56,7 +56,12 @@ const waitsForHuman = (pr) =>
     checkState(pr, 'guard') === 'FAILURE');
 // PR із конфліктом злиття з main сам не змерджиться: запускаємо фіксер (раз на конфлікт).
 for (const pr of openPrs) {
-  const state = gh(['api', `repos/${REPO}/pulls/${pr.number}`, '--jq', '.mergeable_state']).trim();
+  // GitHub обчислює mergeable_state ліниво: перший запит після зміни main дає `unknown`.
+  let state = 'unknown';
+  for (let attempt = 0; attempt < 5 && state === 'unknown'; attempt++) {
+    if (attempt) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 3000);
+    state = gh(['api', `repos/${REPO}/pulls/${pr.number}`, '--jq', '.mergeable_state']).trim();
+  }
   const labels = pr.labels.map((l) => l.name);
   if (state === 'dirty' && !labels.includes('agent:conflict') && !labels.includes('needs-human')) {
     console.log(`PR #${pr.number}: конфлікт із main — запускаю фіксер`);
