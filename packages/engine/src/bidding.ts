@@ -1,4 +1,4 @@
-import { assertPlayerCount } from './cards.js';
+import { assertPlayerCount, assertSeat } from './cards.js';
 import type { HandSpec } from './schedule.js';
 
 /** Чи робляться замовлення в роздачі (R-4.1): усі, крім «Мізеру» і «Відіграшу». */
@@ -12,11 +12,7 @@ export function handHasBidding(spec: HandSpec): boolean {
  */
 export function biddingOrder(dealer: number, playerCount: number): number[] {
   assertPlayerCount(playerCount);
-  if (!Number.isInteger(dealer) || dealer < 0 || dealer >= playerCount) {
-    throw new RangeError(
-      `Місце роздаючого має бути від 0 до ${playerCount - 1}, отримано ${dealer}`,
-    );
-  }
+  assertSeat(dealer, playerCount, 'Місце роздаючого');
   return Array.from({ length: playerCount }, (_, i) => (dealer + 1 + i) % playerCount);
 }
 

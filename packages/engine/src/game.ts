@@ -1,5 +1,13 @@
 import { biddingOrder, forbiddenDealerBid, legalBids, zeroBidForbidden } from './bidding.js';
-import { type Card, type Suit, assertPlayerCount, cardId, createDeck, isJoker } from './cards.js';
+import {
+  type Card,
+  type Suit,
+  assertPlayerCount,
+  assertSeat,
+  cardId,
+  createDeck,
+  isJoker,
+} from './cards.js';
 import { deal } from './deal.js';
 import { ENGINE_LOG_VERSION, migrateLog } from './log.js';
 import { createRng, shuffle } from './rng.js';
@@ -105,12 +113,6 @@ export class IllegalActionError extends Error {
 }
 
 const UINT32 = 2 ** 32;
-
-function assertSeat(seat: number, playerCount: number): void {
-  if (!Number.isInteger(seat) || seat < 0 || seat >= playerCount) {
-    throw new RangeError(`Місце має бути від 0 до ${playerCount - 1}, отримано ${seat}`);
-  }
-}
 
 /** Роздає роздачу `index` і визначає козир (R-2.2, R-2.3, R-3.1–R-3.4). */
 function startHand(

@@ -1,4 +1,4 @@
-import { SUITS, type Suit, assertPlayerCount, maxCardsPerHand } from './cards.js';
+import { SUITS, type Suit, assertPlayerCount, assertSeat, maxCardsPerHand } from './cards.js';
 import type { Rng } from './rng.js';
 
 /**
@@ -108,11 +108,7 @@ export function chooseFirstDealer(rng: Rng, playerCount: number): number {
  */
 export function dealerForHand(firstDealer: number, handIndex: number, playerCount: number): number {
   assertPlayerCount(playerCount);
-  if (!Number.isInteger(firstDealer) || firstDealer < 0 || firstDealer >= playerCount) {
-    throw new RangeError(
-      `Місце роздаючого має бути від 0 до ${playerCount - 1}, отримано ${firstDealer}`,
-    );
-  }
+  assertSeat(firstDealer, playerCount, 'Місце роздаючого');
   if (!Number.isInteger(handIndex) || handIndex < 0) {
     throw new RangeError(`Номер роздачі має бути невідʼємним цілим, отримано ${handIndex}`);
   }
