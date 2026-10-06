@@ -1,6 +1,6 @@
 import { type Card, type JokerCall, type Suit, cardId, createSchedule } from '@poker/engine';
 import type { RoomState, WireAction, WirePlayerView } from '@poker/protocol';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { phaseName, plural, suitName, uk } from '../i18n';
 import type { ClientError } from '../net/connection';
 import { useClient } from '../net/react';
@@ -91,6 +91,7 @@ export function GameTable({ room, view: latest }: GameTableProps) {
   const total = createSchedule(view.playerCount, view.options).length;
 
   const speaking = useVoiceState()?.speaking;
+  const isHost = room.hostId === room.you;
 
   const yourTurn = view.status !== 'finished' && view.turn === view.seat;
   useTurnVibration(yourTurn);
@@ -224,9 +225,18 @@ export function GameTable({ room, view: latest }: GameTableProps) {
         </div>
       </section>
 
-      <p role="status" className="game__turn">
-        {handOver ? uk.game.handOver : turnText(view, nameOf)}
-      </p>
+      <div className="game__turn-row">
+        <p role="status" className="game__turn">
+          {handOver ? uk.game.handOver : turnText(view, nameOf)}
+        </p>
+        {!handOver && room.turnTimerSec !== null && room.turnDeadline !== null && (
+          <TurnCountdown
+            key={room.turnDeadline}
+            deadline={room.turnDeadline}
+            limitSec={room.turnTimerSec}
+          />
+        )}
+      </div>
 
       <ul className="players" aria-label={uk.game.players}>
         {order.map((seat) => (
@@ -261,6 +271,16 @@ export function GameTable({ room, view: latest }: GameTableProps) {
                 <span className="badge badge--muted">{uk.game.offline}</span>
               )}
             </span>
+            {isHost && canReplace(room, seat) && (
+              <button
+                type="button"
+                className="button player__replace"
+                aria-label={uk.game.replaceWithBotLabel(nameOf(seat))}
+                onClick={() => void send(() => client.send('room:replaceWithBot', { seat }))}
+              >
+                {uk.game.replaceWithBot}
+              </button>
+            )}
             {view.spec.bidding && <PlayerBid bid={view.bids[seat] ?? null} />}
             <span className="player__stats">
               <span>{uk.game.taken(view.taken[seat] ?? 0)}</span>
@@ -398,6 +418,42 @@ function PlayerBid({ bid }: { bid: number | null }) {
       {bid === null && <span className="sr-only">{uk.game.noBid}</span>}
     </span>
   );
+}
+
+/** Хост може віддати боту місце іншого відключеного гравця-людини (R-9.3). */
+function canReplace(room: RoomState, seat: number): boolean {
+  const member = room.seats[seat];
+  return member?.kind === 'human' && member.id !== room.hostId && !member.connected && !member.away;
+}
+
+/**
+ * Відлік часу ходу (R-9.3). Годинник клієнта може розходитися із сервером, тому від дедлайну
+ * береться лише залишок, і він не більший за сам таймер; далі відлік іде за локальним часом.
+ */
+function TurnCountdown({ deadline, limitSec }: { deadline: number; limitSec: number }) {
+  // Новий дедлайн — новий екземпляр (`key`), тож кінець відліку рахується один раз.
+  const [end] = useState(() => localDeadline(deadline, limitSec));
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const left = Math.max(0, Math.ceil((end - now) / 1000));
+  return (
+    <span
+      role="timer"
+      aria-label={uk.game.timeLeft}
+      className="game__countdown"
+      data-urgent={left <= 5 || undefined}
+    >
+      {uk.game.seconds(left)}
+    </span>
+  );
+}
+
+function localDeadline(deadline: number, limitSec: number): number {
+  const now = Date.now();
+  return now + Math.min(Math.max(0, deadline - now), limitSec * 1000);
 }
 
 function turnText(view: WirePlayerView, nameOf: (seat: number) => string): string {

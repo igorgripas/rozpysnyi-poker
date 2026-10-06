@@ -297,7 +297,7 @@ describe('передача місця боту й таймер ходу', () => 
       (players[2] as TestClient).close();
       await host.until((x) => x.room?.seats[2]?.connected === false);
       unwrap(await host.request('room:replaceWithBot', { seat: 2 }));
-      await host.until((x) => x.room?.seats[2]?.kind === 'bot');
+      await host.until((x) => x.room?.seats[2]?.away === true);
       await play(players.slice(0, 2), () => host.room?.status === 'finished');
       expectFinishedReplayable(code);
     },

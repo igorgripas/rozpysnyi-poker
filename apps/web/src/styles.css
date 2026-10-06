@@ -462,6 +462,23 @@ textarea {
   font-weight: 500;
 }
 
+.option--select {
+  align-items: center;
+  justify-content: space-between;
+  cursor: default;
+}
+
+.option__select {
+  flex: none;
+  min-height: 44px;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: inherit;
+  font: inherit;
+}
+
 .option__hint {
   font-size: 0.875rem;
 }
@@ -625,11 +642,32 @@ textarea {
   --card-w: 36px;
 }
 
-.game__turn {
+.game__turn-row {
   grid-area: turn;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.game__turn {
   margin: 0;
   font-weight: 600;
   text-align: center;
+}
+
+/* Відлік часу ходу (R-9.3); останні секунди — акцентом. */
+.game__countdown {
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+
+.game__countdown[data-urgent] {
+  border-color: var(--accent);
+  font-weight: 700;
 }
 
 .game > [role='alert'] {
@@ -725,6 +763,14 @@ textarea {
   font-size: 1.5rem;
   font-weight: 700;
   line-height: 1.1;
+}
+
+/* Хост віддає боту місце відключеного гравця (R-9.3). */
+.player__replace {
+  justify-self: start;
+  min-height: 36px;
+  padding: var(--space-1) var(--space-2);
+  font-size: inherit;
 }
 
 .player__stats {

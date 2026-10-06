@@ -6,7 +6,16 @@ import { useClient } from '../net/react';
 import { VoiceControls, useVoiceState } from '../voice/VoiceControls';
 import { shareLink } from './share';
 
-type HostEvent = 'room:addBot' | 'room:removeBot' | 'room:shuffle' | 'room:options' | 'room:start';
+type HostEvent =
+  | 'room:addBot'
+  | 'room:removeBot'
+  | 'room:shuffle'
+  | 'room:settings'
+  | 'room:options'
+  | 'room:start';
+
+/** Варіанти таймера ходу в кімнаті очікування, секунди (R-9.3). */
+const TURN_TIMER_CHOICES = [15, 30, 60] as const;
 
 /** Кімната очікування: гравці на місцях (R-9.1), запрошення й керування хоста. */
 export function WaitingRoom({ room }: { room: RoomState }) {
@@ -100,6 +109,11 @@ export function WaitingRoom({ room }: { room: RoomState }) {
             disabled={!isHost}
             onChange={(zeroLimit) => void send('room:options', { ...room.options, zeroLimit })}
           />
+          <TurnTimerSelect
+            value={room.turnTimerSec}
+            disabled={!isHost}
+            onChange={(turnTimerSec) => void send('room:settings', { turnTimerSec })}
+          />
         </fieldset>
 
         {isHost ? (
@@ -175,5 +189,50 @@ function OptionSwitch({ label, hint, checked, disabled, onChange }: OptionSwitch
         </span>
       </span>
     </label>
+  );
+}
+
+interface TurnTimerSelectProps {
+  value: number | null;
+  disabled: boolean;
+  onChange: (value: number | null) => void;
+}
+
+/** Таймер ходу (R-9.3): за замовчуванням вимкнений, змінює лише хост, бачать усі. */
+function TurnTimerSelect({ value, disabled, onChange }: TurnTimerSelectProps) {
+  const id = useId();
+  const hintId = useId();
+  const choices: readonly number[] =
+    value === null || (TURN_TIMER_CHOICES as readonly number[]).includes(value)
+      ? TURN_TIMER_CHOICES
+      : [...TURN_TIMER_CHOICES, value].sort((a, b) => a - b);
+  return (
+    <div className="option option--select">
+      <span className="option__text">
+        <label htmlFor={id} className="option__label">
+          {uk.room.turnTimer}
+        </label>
+        <span id={hintId} className="option__hint muted">
+          {uk.room.turnTimerHint}
+        </span>
+      </span>
+      <select
+        id={id}
+        className="option__select"
+        value={value === null ? 'off' : String(value)}
+        disabled={disabled}
+        aria-describedby={hintId}
+        onChange={(event) =>
+          onChange(event.target.value === 'off' ? null : Number(event.target.value))
+        }
+      >
+        <option value="off">{uk.room.turnTimerOff}</option>
+        {choices.map((sec) => (
+          <option key={sec} value={sec}>
+            {uk.room.seconds(sec)}
+          </option>
+        ))}
+      </select>
+    </div>
   );
 }

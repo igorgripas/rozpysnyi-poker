@@ -297,7 +297,8 @@ describe('перепідключення й рестарт (R-9.3)', () => {
     guest.close();
     await host.until((c) => c.room?.seats[1]?.connected === false);
     unwrap(await host.request('room:replaceWithBot', { seat: 1 }));
-    await host.until((c) => c.room?.seats[1]?.kind === 'bot');
+    await host.until((c) => c.room?.seats[1]?.away === true);
+    expect(host.room?.seats[1]?.kind).toBe('human');
   });
 });
 
