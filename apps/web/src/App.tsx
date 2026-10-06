@@ -9,10 +9,9 @@ import { type PokerClient, inviteCodeFromPath } from './net/client';
 import { ClientProvider, useClientState } from './net/react';
 import { CardFace } from './ui/Card';
 import { ConnectionBanner, ConnectionIndicator } from './ui/ConnectionStatus';
-import { SoundToggle } from './ui/sound';
-import { ThemeProvider, ThemeToggle } from './ui/theme';
+import { SettingsMenu } from './ui/SettingsMenu';
+import { ThemeProvider } from './ui/theme';
 import { AppUpdates } from './update';
-import { VibrationToggle } from './ui/vibration';
 import { VoiceChat, browserVoiceEnv } from './voice/VoiceChat';
 import { VoiceProvider } from './voice/VoiceControls';
 
@@ -51,9 +50,7 @@ export function App({
                 <h1 className="app__title">{uk.appTitle}</h1>
                 <div className="app__tools">
                   <ConnectionIndicator />
-                  <VibrationToggle />
-                  <SoundToggle />
-                  <ThemeToggle />
+                  <SettingsMenu />
                 </div>
               </header>
               <ConnectionBanner updates={updates} />

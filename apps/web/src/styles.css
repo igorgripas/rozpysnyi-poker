@@ -115,8 +115,12 @@ textarea {
 }
 
 .app__title {
+  min-width: 0;
   margin: 0;
+  overflow: hidden;
   font-size: 1.125rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .app__main {
@@ -132,6 +136,51 @@ textarea {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+/* ── Меню налаштувань ⚙ ─────────────────────────────────────────────────── */
+
+.settings {
+  position: relative;
+}
+
+.settings__panel {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  z-index: 20;
+  display: grid;
+  gap: var(--space-2);
+  width: max-content;
+  max-width: calc(100vw - 2 * var(--space-4));
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.2);
+}
+
+.settings__panel[hidden] {
+  display: none;
+}
+
+.settings__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings__item[aria-pressed='false'] {
+  color: var(--muted);
 }
 
 /* ── Стан звʼязку ───────────────────────────────────────────────────────── */
@@ -624,7 +673,12 @@ textarea {
 }
 
 .game__revealed--none {
-  font-size: calc(var(--card-w) * 0.2);
+  /* Не дрібніше за текст гравців (0.875rem) навіть на телефоні, де карта вузька. */
+  font-size: max(0.875rem, calc(var(--card-w) * 0.2));
+  /* Довше слово «козиря» не вилазить за рамку: слот щонайменше як карта, але не вужчий за нього. */
+  width: min-content;
+  min-width: var(--card-w);
+  padding: 0 2px;
 }
 
 /* Значок масті поза картою: розмір як у тексту поруч, ♦ ♥ — червоні, ♠ ♣ — кольору тексту. */

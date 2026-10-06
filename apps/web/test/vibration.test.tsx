@@ -51,8 +51,9 @@ describe('вібрація на свій хід', () => {
     expect(vibrate).not.toHaveBeenCalled();
   });
 
-  it('перемикач у шапці вмикає й вимикає вібрацію та запамʼятовує вибір', async () => {
+  it('перемикач у меню налаштувань вмикає й вимикає вібрацію та запамʼятовує вибір', async () => {
     render(<App client={new PokerClient(new FakeConnection())} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Налаштування' }));
     const toggle = screen.getByRole('button', { name: 'Вібрація на свій хід' });
     expect(toggle).toHaveAttribute('aria-pressed', 'true');
     await userEvent.click(toggle);
@@ -63,9 +64,10 @@ describe('вібрація на свій хід', () => {
     expect(localStorage.getItem(VIBRATION_STORAGE_KEY)).toBe('on');
   });
 
-  it('без підтримки вібрації перемикача немає', () => {
+  it('без підтримки вібрації перемикача немає', async () => {
     Reflect.deleteProperty(navigator, 'vibrate');
     render(<App client={new PokerClient(new FakeConnection())} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Налаштування' }));
     expect(screen.queryByRole('button', { name: 'Вібрація на свій хід' })).not.toBeInTheDocument();
   });
 });

@@ -63,6 +63,36 @@ test('R-3.1: відкрита карта-козир не менша за кар�
   expect(overflow).toBeLessThanOrEqual(0);
 });
 
+test('R-3.4: «Без козиря» на місці відкритої карти не дрібніше за текст гравців і вміщується', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.getByLabel('Ваше імʼя').fill('Оля');
+  await page.getByRole('button', { name: 'Створити кімнату' }).click();
+  await page.getByRole('button', { name: 'Додати бота' }).click();
+  await page.getByRole('button', { name: 'Додати бота' }).click();
+  await page.getByRole('button', { name: 'Почати гру' }).click();
+  const table = page.getByRole('region', { name: 'Стіл' });
+  await expect(table.locator('.game__revealed')).toBeVisible();
+
+  // Безкозирні роздачі йдуть наприкінці гри, тож слот підмінюємо на той, що без козиря.
+  const slot = await table.locator('.game__revealed').evaluate((element) => {
+    const none = document.createElement('span');
+    none.className = 'game__revealed game__revealed--none';
+    none.textContent = 'Без козиря';
+    element.replaceWith(none);
+    const size = (node: Element) => parseFloat(getComputedStyle(node).fontSize);
+    const player = document.querySelector('.player') as Element;
+    return {
+      size: size(none),
+      text: size(player),
+      overflow: none.scrollWidth - none.clientWidth,
+    };
+  });
+  expect(slot.size).toBeGreaterThanOrEqual(slot.text);
+  expect(slot.overflow).toBeLessThanOrEqual(0);
+});
+
 /** Козир на столі, взятка, рука й чий хід — на одному екрані, без прокручування між ними. */
 async function expectTrumpWithHand(page: Page): Promise<void> {
   const table = page.getByRole('region', { name: 'Стіл' });
@@ -214,6 +244,14 @@ test('таблиця гри відкривається під час гри й �
   await expect(table).toBeVisible();
   await expect(table.getByRole('rowheader').first()).toHaveText(/^1(б\/к|[♠♣♦♥]\uFE0E)$/);
   await expect(dialog.getByRole('note')).toContainText('Б — безкозирка');
+  // R-3.1: легенда пояснює козир після літери мізеру й відіграшу й не виходить за екран.
+  const legend = dialog.getByRole('note');
+  await expect(legend).toContainText('М — мізер · В — відіграш (після літери — козир)');
+  const legendBox = await legend.boundingBox();
+  const viewport = page.viewportSize();
+  expect((legendBox?.x ?? -1) >= 0).toBe(true);
+  expect((legendBox?.x ?? 0) + (legendBox?.width ?? 0)).toBeLessThanOrEqual(viewport?.width ?? 0);
+  expect(await legend.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
 
   const scroll = dialog.locator('.sheet__scroll');
   const overflow = await scroll.evaluate((el) => el.scrollWidth - el.clientWidth);

@@ -140,6 +140,7 @@ describe('звуки гри', () => {
   it('перемикач звуку поруч із вібрацією вмикає й вимикає звук і запамʼятовує вибір', async () => {
     Object.defineProperty(navigator, 'vibrate', { value: () => true, configurable: true });
     render(<App client={new PokerClient(new FakeConnection())} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Налаштування' }));
     const toggle = screen.getByRole('button', { name: 'Звуки гри' });
     expect(toggle).toHaveAttribute('aria-pressed', 'true');
     // Поруч із перемикачем вібрації.
@@ -153,9 +154,10 @@ describe('звуки гри', () => {
     Reflect.deleteProperty(navigator, 'vibrate');
   });
 
-  it('без Web Audio перемикача немає', () => {
+  it('без Web Audio перемикача немає', async () => {
     vi.stubGlobal('AudioContext', undefined);
     render(<App client={new PokerClient(new FakeConnection())} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Налаштування' }));
     expect(screen.queryByRole('button', { name: 'Звуки гри' })).not.toBeInTheDocument();
   });
 });
