@@ -284,7 +284,11 @@ export function GameTable({ room, view: latest }: GameTableProps) {
             {view.spec.bidding && <PlayerBid bid={view.bids[seat] ?? null} />}
             <span className="player__stats">
               <span>{uk.game.taken(view.taken[seat] ?? 0)}</span>
-              {seat !== view.seat && <span>{uk.game.cardsLeft(view.handSizes[seat] ?? 0)}</span>}
+              {seat !== view.seat && (
+                <span className="player__cards">
+                  {uk.game.cardsLeft(view.handSizes[seat] ?? 0)}
+                </span>
+              )}
             </span>
           </li>
         ))}
@@ -411,7 +415,12 @@ export function GameTable({ room, view: latest }: GameTableProps) {
 function PlayerBid({ bid }: { bid: number | null }) {
   return (
     <span className="player__bid" data-empty={bid === null || undefined}>
-      <span className="player__bid-label">{uk.game.bid}</span>
+      <span className="player__bid-label">
+        <span className="player__bid-long">{uk.game.bid}</span>
+        <span className="player__bid-short" aria-hidden="true">
+          {uk.game.bidShort}
+        </span>
+      </span>
       <span className="player__bid-value" aria-hidden={bid === null || undefined}>
         {bid ?? '—'}
       </span>

@@ -765,6 +765,10 @@ textarea {
   font-size: 0.625rem;
 }
 
+.player__bid-short {
+  display: none;
+}
+
 .player__bid-value {
   font-size: 1.5rem;
   font-weight: 700;
@@ -1470,6 +1474,100 @@ tfoot .sheet__cell {
 }
 
 /* ── Адаптивність ───────────────────────────────────────────────────────── */
+
+/*
+ * Телефон: кожен гравець — один вузький рядок «імʼя · позначки · замовлення · взяв»,
+ * щоб «Ваш хід» і панель замовлення вміщувалися на першому екрані навіть із 6 гравцями.
+ */
+@media (max-width: 599.98px) {
+  /* minmax(0, …): довге імʼя з позначками не розпирає колонку ширше за екран. */
+  .players {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .player {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 32px;
+    padding: 2px var(--space-2);
+    border-width: 1px;
+  }
+
+  .player[aria-current='true'] {
+    box-shadow: inset 0 0 0 1px var(--accent);
+  }
+
+  .player[data-last-taker] {
+    outline-width: 1px;
+    outline-offset: 1px;
+  }
+
+  /* Імʼя забирає вільне місце, але не менше кількох літер; позначки стискаються після нього. */
+  .player__name {
+    flex: 1 1 0;
+    min-width: 4.5em;
+  }
+
+  .player__badges {
+    flex: 0 1 auto;
+    flex-wrap: nowrap;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .player__badges .badge {
+    white-space: nowrap;
+  }
+
+  .player__bid {
+    flex: none;
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--space-1);
+    min-width: 0;
+    padding: 0 var(--space-1);
+    border-width: 1px;
+  }
+
+  /* На телефоні підпис короткий («зам»), повний лишається для читачів екрана. */
+  .player__bid-long {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .player__bid-short {
+    display: inline;
+  }
+
+  .player__bid-value {
+    min-width: 1ch;
+    font-size: 1rem;
+    text-align: center;
+  }
+
+  .player__stats {
+    flex: none;
+  }
+
+  /* Скільки карт у суперників — деталь: на телефоні не показуємо, у всіх їх зазвичай порівну. */
+  .player__cards {
+    display: none;
+  }
+
+  .player__replace {
+    flex: none;
+    min-height: 28px;
+    padding: 0 var(--space-2);
+  }
+}
 
 @media (min-width: 600px) {
   :root {
