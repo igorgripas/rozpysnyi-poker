@@ -228,6 +228,8 @@ export class RoomManager {
       const store = this.store;
       pending = (async () => {
         try {
+          // Кімнату могли щойно вивантажити (`sweep`): спершу дописуємо її останні зміни.
+          await this.writes.get(code);
           const snapshot = await store.load(code);
           // Поки читали, кімнату могли завантажити або створити.
           const existing = this.rooms.get(code);
@@ -365,10 +367,10 @@ export class RoomManager {
 
   /**
    * Прибирає з памʼяті покинуті кімнати: без підключених людей і без змін довше `idleTtlMs`.
+   * Зі сховищем кімната лише вивантажується: `load` поверне її за кодом, і гра продовжиться.
    * Без сховища кімната зникає назавжди. Повертає кількість прибраних кімнат.
    */
   sweep(): number {
-    if (this.store !== null) return 0;
     const since = this.now() - this.idleTtlMs;
     let removed = 0;
     for (const room of [...this.rooms.values()]) {
