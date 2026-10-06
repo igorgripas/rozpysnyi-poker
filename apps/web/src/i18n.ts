@@ -195,6 +195,7 @@ export const uk = {
     title: 'Таблиця гри',
     open: 'Таблиця',
     close: 'Закрити',
+    noOptions: 'Опції гри: немає',
     deal: 'Роздача',
     showAll: 'Показати взяті й підсумок',
     columns: { bid: 'замовлення', taken: 'взяв', points: 'бали', total: 'разом' },

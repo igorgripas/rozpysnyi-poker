@@ -395,6 +395,7 @@ export function GameTable({ room, view: latest }: GameTableProps) {
       {sheetOpen && (
         <SheetDialog
           table={view.table}
+          options={view.options}
           names={names}
           onClose={() => setSheetOpen(false)}
           onReportBug={() => {
