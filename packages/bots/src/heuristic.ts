@@ -249,8 +249,25 @@ function suitByCount(hand: readonly Card[], pick: 'most' | 'fewest', exclude?: S
   return pick === 'most' ? maxBy(suits, count) : minBy(suits, count);
 }
 
+/**
+ * Мізер з козирем (R-3.1, R-7.5): заходимо найменшим козирем, поки в суперників можуть бути
+ * старші козирі. На козирний захід кладуть козир (R-5.2), тож у них їх меншає — пізніше нічим
+ * буде перебити наші старші карти, а наші козирі не доведеться класти на чужу масть.
+ */
+function lowTrumpLead(k: Knowledge): StandardCard | undefined {
+  const trump = k.view.trump;
+  if (trump === null || holders(k, trump).length === 0) return undefined;
+  const lowest = standardOf(k.view.hand)
+    .filter((card) => card.suit === trump)
+    .sort(byRank)[0];
+  if (lowest === undefined || countUnknown(k, trump, lowest.rank) === 0) return undefined;
+  return lowest;
+}
+
 function lead(k: Knowledge, goal: Goal): PlayAction {
   const { view } = k;
+  const drawTrump = goal === 'avoid' && view.spec.phase === 'misere' ? lowTrumpLead(k) : undefined;
+  if (drawTrump !== undefined) return playAction(view, drawTrump);
   const standard = standardOf(view.hand);
   const joker = view.hand.find(isJoker);
   const chance = (card: StandardCard): number => leadChance(k, card) + card.rank / 1000;
@@ -331,7 +348,8 @@ function holdChance(k: Knowledge, card: StandardCard): number {
  * У розіграші бере, поки не добрав замовлення, і скидає, коли добрав; у мізері завжди
  * скидає, у відіграші завжди бере. З козирем (у мізері й відіграші теж, R-3.1) у мізері
  * кладе найстаршого козиря, що не бере, а коли взятку однаково брати — позбувається
- * найстаршого; у відіграші перебиває найменшим козирем і заходить джокером «старший козир».
+ * найстаршого, а заходить найменшим козирем, поки старші козирі в суперників; у відіграші
+ * перебиває найменшим козирем і заходить джокером «старший козир».
  * Джокера береже для взяток, які інакше не взяти. Памʼятає зіграні в роздачі карти
  * (`played`) і з ходів суперників виводить, яких мастей і козирів у них уже немає (R-5.2).
  */

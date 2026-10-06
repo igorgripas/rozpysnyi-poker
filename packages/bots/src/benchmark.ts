@@ -1,4 +1,4 @@
-import { MAX_PLAYERS, MIN_PLAYERS, scoreHand, scoreTable } from '@poker/engine';
+import { type HandSpec, MAX_PLAYERS, MIN_PLAYERS, scoreHand, scoreTable } from '@poker/engine';
 import type { Bot } from './bot.js';
 import { createHeuristicBot } from './heuristic.js';
 import { playGame } from './play.js';
@@ -38,6 +38,10 @@ export interface BenchmarkResult {
   readonly z: number;
   readonly significant: boolean;
   readonly winRate: number;
+  /** Середні бали евристичного бота за мізер (R-7.5). */
+  readonly heuristicMisere: number;
+  /** Середні бали випадкового бота за мізер. */
+  readonly randomMisere: number;
   /** Частка перемог випадкового бота — скільки вигравав би бот без переваги. */
   readonly baselineWinRate: number;
   readonly byPlayers: readonly BenchmarkRow[];
@@ -49,6 +53,8 @@ interface GameOutcome {
   readonly random: number;
   readonly win: number;
   readonly randomWin: number;
+  readonly heuristicMisere: number;
+  readonly randomMisere: number;
 }
 
 const mean = (values: readonly number[]): number =>
@@ -64,7 +70,12 @@ function playOne(seed: number, index: number): GameOutcome {
   const bots: Bot[] = Array.from({ length: players }, (_, s) =>
     s === seat ? createHeuristicBot() : createRandomBot((seed * MAX_PLAYERS + s) % 2 ** 32),
   );
-  const finals = scoreTable(playGame(seed, bots)).summary.map((row) => row.final);
+  const state = playGame(seed, bots);
+  const finals = scoreTable(state).summary.map((row) => row.final);
+  const misere = state.history.find((record) => record.spec.phase === 'misere');
+  const miserePoints = (misere?.taken ?? []).map((taken) =>
+    scoreHand(misere?.spec as HandSpec, null, taken),
+  );
   const best = Math.max(...finals);
   const others = finals.filter((_, s) => s !== seat);
   return {
@@ -73,6 +84,8 @@ function playOne(seed: number, index: number): GameOutcome {
     random: mean(others),
     win: finals[seat] === best ? 1 : 0,
     randomWin: mean(others.map((score) => (score === best ? 1 : 0))),
+    heuristicMisere: miserePoints[seat] ?? 0,
+    randomMisere: mean(miserePoints.filter((_, s) => s !== seat)),
   };
 }
 
@@ -112,6 +125,8 @@ export function runBenchmark({ games, from }: BenchmarkOptions): BenchmarkResult
     significant: z > SIGNIFICANCE_Z,
     winRate: mean(outcomes.map((o) => o.win)),
     baselineWinRate: mean(outcomes.map((o) => o.randomWin)),
+    heuristicMisere: mean(outcomes.map((o) => o.heuristicMisere)),
+    randomMisere: mean(outcomes.map((o) => o.randomMisere)),
     byPlayers,
   };
 }
@@ -203,6 +218,7 @@ export function formatBenchmark(result: BenchmarkResult): string {
     `- Середній фінальний підсумок: евристичний **${num(result.heuristicMean)}**, випадковий **${num(result.randomMean)}**.`,
     `- Середня різниця: **${num(result.meanDiff)}** ± ${num(result.standardError)} (z = ${result.z.toFixed(1)}).`,
     `- Перемоги: евристичний **${pct(result.winRate)}**, випадковий ${pct(result.baselineWinRate)}.`,
+    `- Бали за мізер: евристичний **${num(result.heuristicMisere)}**, випадковий ${num(result.randomMisere)}.`,
     `- ${verdict}.`,
     '',
     '| N | Ігор | Евристичний | Випадковий | Перемоги евристичного |',

@@ -20,6 +20,13 @@ describe('бенчмарк ботів', () => {
     expect(result.winRate).toBeGreaterThan(result.baselineWinRate);
   });
 
+  it('R-7.5: у мізері евристичний бот набирає більше за випадкового', () => {
+    expect(result.heuristicMisere).toBeGreaterThan(result.randomMisere);
+    expect(formatBenchmark(result)).toContain(
+      `мізер: евристичний **${result.heuristicMisere.toFixed(1)}**`,
+    );
+  });
+
   it('детермінований: ті самі seed дають ті самі результати', () => {
     expect(runBenchmark({ games: 8, from: 5 })).toEqual(runBenchmark({ games: 8, from: 5 }));
   });

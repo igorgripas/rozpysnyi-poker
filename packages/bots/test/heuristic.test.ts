@@ -293,6 +293,36 @@ describe('евристичний бот: мізер і відіграш з ко�
     expect(playOf(bot.act(view)).card).toEqual(card('S14'));
   });
 
+  it('R-3.1, R-7.5: у мізері заходить найменшим козирем, поки старші козирі в суперників', () => {
+    const view = scenario({ phase: 'misere', trump: 'spades', hand: 'S9 S13 H6 D7 C8' });
+    expect(playOf(bot.act(view)).card).toEqual(card('S9'));
+  });
+
+  it('R-3.1, R-5.2, R-7.5: у мізері не заходить козирем, коли старших козирів у суперників немає', () => {
+    // Усі старші пікові карти вже вийшли — козир узяв би взятку.
+    const view = scenario({
+      phase: 'misere',
+      trump: 'spades',
+      hand: 'S9 H6 D7',
+      earlier: [
+        { leader: 1, cards: 'S10 S11 S12 S6' },
+        { leader: 1, cards: 'S13 S14 S7 S8' },
+      ],
+    });
+    expect(playOf(bot.act(view)).card).not.toEqual(card('S9'));
+  });
+
+  it('R-3.1, R-5.2, R-7.5: у мізері не заходить козирем, коли в суперників козирів не лишилося', () => {
+    // Усі троє суперників не поклали козир на козирний захід — козирів у них немає.
+    const view = scenario({
+      phase: 'misere',
+      trump: 'spades',
+      hand: 'S7 H6 D7',
+      earlier: [{ leader: 0, cards: 'S6 H14 D14 C14' }],
+    });
+    expect(playOf(bot.act(view)).card).not.toEqual(card('S7'));
+  });
+
   it('R-3.1, R-7.6: у відіграші перебиває масть найменшим козирем', () => {
     const view = scenario({
       phase: 'comeback',
