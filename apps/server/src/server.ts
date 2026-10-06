@@ -94,6 +94,11 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
     ...(options.trickPauseMs !== undefined && { trickPauseMs: options.trickPauseMs }),
     ...(options.store && { store: options.store }),
     onStoreError: (error) => app.log.error({ err: error }, 'Не вдалося зберегти кімнату'),
+    onBotError: (error, context) =>
+      app.log.error(
+        { err: error, ...context },
+        'Бот зробив нелегальний хід, зіграно першу легальну дію',
+      ),
   });
   const io: PokerIo = new Server(app.server, {
     cors: { origin: options.corsOrigin ?? true },

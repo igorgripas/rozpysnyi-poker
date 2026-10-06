@@ -3,6 +3,7 @@ import {
   type Action,
   type Card,
   DEFAULT_OPTIONS,
+  type GameLog,
   type GameOptions,
   type GameState,
   IllegalActionError,
@@ -14,6 +15,7 @@ import {
   apply,
   createGame,
   gameLog,
+  legalActions,
   replay,
   viewFor,
 } from '@poker/engine';
@@ -88,6 +90,21 @@ export interface RoomManagerOptions {
   store?: RoomStore;
   /** Помилка запису у сховище (після всіх повторних спроб). */
   onStoreError?: (error: unknown) => void;
+  /** Створює бота для місця бота чи гравця, за якого ходить сервер (у тестах — підмінний). */
+  createBot?: () => Bot;
+  /**
+   * Бот кинув виняток або повернув нелегальну дію: замість неї зіграно першу легальну.
+   * У контексті — seed і лог гри до цього ходу, щоб відтворити баг.
+   */
+  onBotError?: (error: unknown, context: BotErrorContext) => void;
+}
+
+/** Що потрібно, щоб відтворити помилку бота: кімната, seed і лог гри до його ходу. */
+export interface BotErrorContext {
+  readonly code: string;
+  readonly seat: number;
+  readonly seed: number;
+  readonly log: GameLog;
 }
 
 /** Затримка ходу бота за замовчуванням: щоб люди встигали бачити карти. */
@@ -150,6 +167,8 @@ export class RoomManager {
   /** Боти за ідентифікатором учасника. */
   private readonly bots = new Map<string, Bot>();
   private readonly onStoreError: (error: unknown) => void;
+  private readonly createBot: () => Bot;
+  private readonly onBotError: (error: unknown, context: BotErrorContext) => void;
   /** Остання черга записів кожної кімнати: записи однієї кімнати йдуть послідовно. */
   private readonly writes = new Map<string, Promise<boolean>>();
   /** Збережені ігри, які цей рушій не може продовжити: код → пояснення для гравців. */
@@ -168,6 +187,8 @@ export class RoomManager {
     this.trickPauseMs = options.trickPauseMs ?? TRICK_PAUSE_MS;
     this.store = options.store ?? null;
     this.onStoreError = options.onStoreError ?? (() => undefined);
+    this.createBot = options.createBot ?? createHeuristicBot;
+    this.onBotError = options.onBotError ?? (() => undefined);
   }
 
   /** Готує сховище під час старту сервера (схема бази). */
@@ -238,7 +259,7 @@ export class RoomManager {
       bugReportsSent: { ...snapshot.bugReportsSent },
     };
     for (const member of room.seats) {
-      if (member.kind === 'bot') this.bots.set(member.id, createHeuristicBot());
+      if (member.kind === 'bot') this.bots.set(member.id, this.createBot());
     }
     this.rooms.set(room.code, room);
     if (room.status === 'playing' && game !== null) {
@@ -529,7 +550,7 @@ export class RoomManager {
       connected: true,
       away: false,
     };
-    this.bots.set(bot.id, createHeuristicBot());
+    this.bots.set(bot.id, this.createBot());
     return bot;
   }
 
@@ -785,11 +806,11 @@ export class RoomManager {
     if (member.kind === 'bot' || member.away) {
       // За гравця, що вийшов (T180), ходить евристичний бот — так само швидко, як звичайний.
       delay = afterTrick ? Math.max(this.botDelayMs, this.trickPauseMs) : this.botDelayMs;
-      bot = member.kind === 'bot' ? (this.bots.get(member.id) as Bot) : createHeuristicBot();
+      bot = member.kind === 'bot' ? (this.bots.get(member.id) as Bot) : this.createBot();
     } else if (room.turnTimerSec !== null) {
       delay = room.turnTimerSec * 1000;
       room.turnDeadline = Date.now() + delay;
-      bot = createHeuristicBot();
+      bot = this.createBot();
     } else {
       return;
     }
@@ -797,9 +818,25 @@ export class RoomManager {
       this.turnTimers.delete(room.code);
       const game = room.game as GameState;
       if (game.turn !== turn) return;
-      this.applyAction(room, bot.act(viewFor(game, turn)));
+      this.botTurn(room, game, turn, bot);
     }, delay);
     this.turnTimers.set(room.code, timer);
+  }
+
+  /**
+   * Хід бота з таймера. Баг бота (виняток чи нелегальна дія) не має валити процес:
+   * помилка логується із seed і логом гри, а замість ходу бота грається перша легальна дія.
+   */
+  private botTurn(room: Room, game: GameState, turn: number, bot: Bot): void {
+    let action: Action;
+    try {
+      action = bot.act(viewFor(game, turn));
+      apply(game, action);
+    } catch (error) {
+      this.onBotError(error, { code: room.code, seat: turn, seed: game.seed, log: gameLog(game) });
+      action = legalActions(game)[0] as Action;
+    }
+    this.applyAction(room, action);
   }
 
   /** Позначає, чи підключений гравець (є хоч одне активне зʼєднання). */
