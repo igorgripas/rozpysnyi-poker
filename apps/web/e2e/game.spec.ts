@@ -244,6 +244,14 @@ test('таблиця гри відкривається під час гри й �
   await expect(table).toBeVisible();
   await expect(table.getByRole('rowheader').first()).toHaveText(/^1(б\/к|[♠♣♦♥]\uFE0E)$/);
   await expect(dialog.getByRole('note')).toContainText('Б — безкозирка');
+  // R-3.1: легенда пояснює козир після літери мізеру й відіграшу й не виходить за екран.
+  const legend = dialog.getByRole('note');
+  await expect(legend).toContainText('М — мізер · В — відіграш (після літери — козир)');
+  const legendBox = await legend.boundingBox();
+  const viewport = page.viewportSize();
+  expect((legendBox?.x ?? -1) >= 0).toBe(true);
+  expect((legendBox?.x ?? 0) + (legendBox?.width ?? 0)).toBeLessThanOrEqual(viewport?.width ?? 0);
+  expect(await legend.evaluate((el) => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(0);
 
   const scroll = dialog.locator('.sheet__scroll');
   const overflow = await scroll.evaluate((el) => el.scrollWidth - el.clientWidth);

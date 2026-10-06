@@ -87,5 +87,9 @@ describe('опції кімнати на ігровому столі (§10)', ()
     expect(row.closest('tr')).toHaveAttribute('data-phase', 'dark');
     expect(row).toHaveTextContent(/^Тем/);
     expect(screen.getByRole('note')).toHaveTextContent('Тем — темна (бали ×2)');
+    // R-10.2: козир «Темної» видно до замовлень — у таблиці він після літери, як «Тем♥».
+    expect(screen.getByRole('note')).toHaveTextContent(
+      'Тем — темна (бали ×2), після літери — козир',
+    );
   });
 });

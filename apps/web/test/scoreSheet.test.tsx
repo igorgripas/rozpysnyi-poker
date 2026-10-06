@@ -127,6 +127,8 @@ describe('таблиця гри (розписка)', () => {
     expect(legend).toHaveTextContent('Б — безкозирка');
     expect(legend).toHaveTextContent('М — мізер');
     expect(legend).toHaveTextContent('В — відіграш');
+    // R-3.1: у мізері й відіграші козир — відкрита карта, у таблиці він стоїть після літери.
+    expect(legend).toHaveTextContent('М — мізер · В — відіграш (після літери — козир)');
     expect(legend.querySelector('.suit-mark[data-suit="hearts"]')).toHaveAttribute(
       'data-color',
       'red',
