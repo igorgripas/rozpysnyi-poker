@@ -51,12 +51,30 @@ export interface PokerServerOptions {
    * який дописав сам проксі (попередні клієнт може підробити).
    */
   trustProxy?: boolean;
-  /** Годинник для лімітів звітів (у тестах — керований). */
+  /** Годинник для лімітів і TTL кімнат (у тестах — керований). */
   now?: () => number;
+  /**
+   * Ліміти одного зʼєднання: не більше `requests` запитів за `windowMs` мс
+   * і не більше `rooms` створених кімнат.
+   */
+  connectionLimits?: { requests?: number; windowMs?: number; rooms?: number };
+  /** Скільки кімнат може бути в памʼяті сервера. */
+  maxRooms?: number;
+  /** Через скільки мс без підключених людей кімната прибирається з памʼяті. */
+  idleTtlMs?: number;
+  /** Як часто шукати покинуті кімнати, мс. */
+  sweepIntervalMs?: number;
 }
 
 /** Очищення сховища за замовчуванням — раз на 6 годин. */
 const CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
+/** Покинуті кімнати шукаються щохвилини. */
+const SWEEP_INTERVAL_MS = 60 * 1000;
+/** Запитів з одного зʼєднання за вікно: із запасом для гри, але не для флуду. */
+export const REQUESTS_PER_WINDOW = 100;
+export const REQUEST_WINDOW_MS = 10 * 1000;
+/** Скільки кімнат може створити одне зʼєднання. */
+export const ROOMS_PER_CONNECTION = 10;
 
 /** Сесія, привʼязана до зʼєднання після create/join/resume. */
 interface SocketData {
@@ -87,7 +105,11 @@ export interface PokerServer {
 /** Авторитетний сервер: Fastify (HTTP) + Socket.IO (кімнати й гра). */
 export function createPokerServer(options: PokerServerOptions = {}): PokerServer {
   const app = Fastify({ logger: options.logger ?? false });
+  const now = options.now ?? (() => Date.now());
   const rooms = new RoomManager({
+    now,
+    ...(options.maxRooms !== undefined && { maxRooms: options.maxRooms }),
+    ...(options.idleTtlMs !== undefined && { idleTtlMs: options.idleTtlMs }),
     ...(options.random && { random: options.random }),
     ...(options.publicUrl !== undefined && { publicUrl: options.publicUrl }),
     ...(options.botDelayMs !== undefined && { botDelayMs: options.botDelayMs }),
@@ -251,7 +273,6 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
     for (const queued of rooms.finishedBugReports(code)) void publish(queued);
   });
 
-  const now = options.now ?? (() => Date.now());
   const perHour = options.bugReportLimits?.perHour ?? BUG_REPORTS_PER_HOUR;
   const perIpPerHour = options.bugReportLimits?.perIpPerHour ?? BUG_REPORTS_PER_IP_PER_HOUR;
   /** Час прийнятих звітів за останню годину: усіх і за IP-адресою. */
@@ -386,6 +407,29 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
     next(error);
   });
 
+  const requestLimit = options.connectionLimits?.requests ?? REQUESTS_PER_WINDOW;
+  const requestWindowMs = options.connectionLimits?.windowMs ?? REQUEST_WINDOW_MS;
+  const roomLimit = options.connectionLimits?.rooms ?? ROOMS_PER_CONNECTION;
+  /** Лічильники кожного зʼєднання: час останніх запитів і скільки кімнат воно створило. */
+  const usage = new WeakMap<PokerSocket, { requests: number[]; rooms: number }>();
+
+  /** Причина відмови, якщо зʼєднання перевищило ліміт, або `null`. */
+  function overLimit(socket: PokerSocket, event: ClientEvent): Result<never> | null {
+    let used = usage.get(socket);
+    if (used === undefined) usage.set(socket, (used = { requests: [], rooms: 0 }));
+    const since = now() - requestWindowMs;
+    while (used.requests.length > 0 && (used.requests[0] as number) <= since) used.requests.shift();
+    if (used.requests.length >= requestLimit) {
+      return fail('rateLimited', 'Забагато запитів, зачекайте кілька секунд');
+    }
+    used.requests.push(now());
+    if (event === 'room:create') {
+      if (used.rooms >= roomLimit) return fail('rateLimited', 'Ви створили забагато кімнат');
+      used.rooms++;
+    }
+    return null;
+  }
+
   /**
    * Виконує подію й відповідає лише після запису змін у базу: підтверджена дія
    * переживе рестарт. Збій бази — помилка `unavailable`, клієнт може повторити.
@@ -394,6 +438,8 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
     if (closing !== null) {
       return fail('unavailable', 'Сервер перезапускається, зачекайте хвилину');
     }
+    const limited = overLimit(socket, event);
+    if (limited !== null) return limited;
     const parsed = parseClientMessage(event, payload);
     if (!parsed.ok) return parsed;
     const handler = handlers[event] as Handler<ClientEvent>;
@@ -411,9 +457,16 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
   }
 
   let cleanupTimer: ReturnType<typeof setInterval> | null = null;
+  // Покинуті кімнати прибираються з памʼяті, щоб вона не росла.
+  const sweepTimer = setInterval(() => {
+    const removed = rooms.sweep();
+    if (removed > 0) app.log.info(`Прибрано покинутих кімнат: ${removed}`);
+  }, options.sweepIntervalMs ?? SWEEP_INTERVAL_MS);
+  sweepTimer.unref();
 
   async function shutdown(): Promise<void> {
     if (cleanupTimer !== null) clearInterval(cleanupTimer);
+    clearInterval(sweepTimer);
     rooms.close();
     // Прийняті дії записуються й підтверджуються до того, як закриються зʼєднання.
     while (inflight.size > 0) await Promise.all(inflight);

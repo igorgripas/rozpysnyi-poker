@@ -5,7 +5,7 @@ import { BUG_REPORTS_PER_PLAYER, type BugReport } from '../src/bugReport.js';
 import { type PokerServer, type PokerServerOptions, createPokerServer } from '../src/server.js';
 import { ABANDONED_TTL_MS, MemoryRoomStore } from '../src/store.js';
 import { TestClient } from './client.js';
-import { GatedStore, errorCode, testRandom, unwrap } from './support.js';
+import { FAST_PLAY, GatedStore, errorCode, testRandom, unwrap } from './support.js';
 
 let server: PokerServer;
 let url: string;
@@ -120,10 +120,61 @@ describe('кімната через сокети', () => {
   });
 });
 
+describe('ліміти зʼєднання', () => {
+  async function restart(options: PokerServerOptions) {
+    for (const c of clients.splice(0)) c.close();
+    await server.close();
+    server = createPokerServer({ random: testRandom(), ...options });
+    url = await server.listen({ port: 0, host: '127.0.0.1' });
+  }
+
+  it('запитів з одного зʼєднання не більше ліміту за вікно — далі rateLimited', async () => {
+    let time = 0;
+    await restart({ connectionLimits: { requests: 3, windowMs: 1000 }, now: () => time });
+    const c = client();
+    unwrap(await c.request('room:create', { name: 'Оля' }));
+    unwrap(await c.request('room:addBot', {}));
+    unwrap(await c.request('room:addBot', {}));
+    expect(errorCode(await c.request('room:shuffle', {}))).toBe('rateLimited');
+    // Інше зʼєднання має власний ліміт.
+    expect(errorCode(await client().request('room:addBot', {}))).toBe('notInRoom');
+    time += 1000;
+    unwrap(await c.request('room:shuffle', {}));
+  });
+
+  it('кімнат з одного зʼєднання не більше ліміту — далі rateLimited', async () => {
+    await restart({ connectionLimits: { rooms: 2 } });
+    const c = client();
+    unwrap(await c.request('room:create', { name: 'Оля' }));
+    unwrap(await c.request('room:create', { name: 'Оля' }));
+    expect(errorCode(await c.request('room:create', { name: 'Оля' }))).toBe('rateLimited');
+    unwrap(await client().request('room:create', { name: 'Петро' }));
+  });
+
+  it('покинута кімната прибирається з памʼяті сервера', async () => {
+    let time = 0;
+    await restart({ idleTtlMs: 1000, sweepIntervalMs: 10, now: () => time });
+    const c = client();
+    const session = unwrap(await c.request('room:create', { name: 'Оля' }));
+    time = 5000;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(server.rooms.get(session.code)).toBeDefined();
+    c.close();
+    await waitFor(() => server.rooms.get(session.code)?.seats[0]?.connected === false);
+    time = 6000;
+    await waitFor(() => server.rooms.get(session.code) === undefined);
+  });
+});
+
 describe('гра через сокети', () => {
   it('сервер розсилає viewFor після кожної дії; людина з ботами дограває гру до кінця', async () => {
     await server.close();
-    server = createPokerServer({ random: testRandom(4), botDelayMs: 0, trickPauseMs: 0 });
+    server = createPokerServer({
+      random: testRandom(4),
+      botDelayMs: 0,
+      trickPauseMs: 0,
+      ...FAST_PLAY,
+    });
     url = await server.listen({ port: 0, host: '127.0.0.1' });
 
     const host = client();
@@ -167,7 +218,13 @@ describe('перепідключення й рестарт (R-9.3)', () => {
   it('R-9.3: сервер переживає рестарт посеред гри; гравець повертається за токеном і бачить свою руку', async () => {
     const store = new MemoryRoomStore();
     await server.close();
-    server = createPokerServer({ random: testRandom(4), store, botDelayMs: 0, trickPauseMs: 0 });
+    server = createPokerServer({
+      random: testRandom(4),
+      store,
+      botDelayMs: 0,
+      trickPauseMs: 0,
+      ...FAST_PLAY,
+    });
     url = await server.listen({ port: 0, host: '127.0.0.1' });
 
     const host = client();
@@ -180,7 +237,13 @@ describe('перепідключення й рестарт (R-9.3)', () => {
     host.close();
 
     await server.close();
-    server = createPokerServer({ random: testRandom(5), store, botDelayMs: 0, trickPauseMs: 0 });
+    server = createPokerServer({
+      random: testRandom(5),
+      store,
+      botDelayMs: 0,
+      trickPauseMs: 0,
+      ...FAST_PLAY,
+    });
     url = await server.listen({ port: 0, host: '127.0.0.1' });
 
     const again = client();
@@ -244,7 +307,13 @@ describe('сховище кімнат (T54)', () => {
   async function restartWith(store: GatedStore): Promise<void> {
     if (!stores.includes(store)) stores.push(store);
     await server.close();
-    server = createPokerServer({ random: testRandom(6), store, botDelayMs: 0, trickPauseMs: 0 });
+    server = createPokerServer({
+      random: testRandom(6),
+      store,
+      botDelayMs: 0,
+      trickPauseMs: 0,
+      ...FAST_PLAY,
+    });
     url = await server.listen({ port: 0, host: '127.0.0.1' });
   }
 
@@ -327,7 +396,13 @@ describe('зупинка сервера (T55)', () => {
     const store = new GatedStore();
     store.gated = false;
     await server.close();
-    server = createPokerServer({ random: testRandom(7), store, botDelayMs: 0, trickPauseMs: 0 });
+    server = createPokerServer({
+      random: testRandom(7),
+      store,
+      botDelayMs: 0,
+      trickPauseMs: 0,
+      ...FAST_PLAY,
+    });
     url = await server.listen({ port: 0, host: '127.0.0.1' });
     const host = client();
     const session = unwrap(await host.request('room:create', { name: 'Оля' }));
@@ -371,6 +446,7 @@ describe('звіт про баг (T52)', () => {
       botDelayMs: 0,
       trickPauseMs: 0,
       bugReportLimits: { perHour: 100, perIpPerHour: 100 },
+      ...FAST_PLAY,
       ...options,
       bugReporter: {
         async report(report) {

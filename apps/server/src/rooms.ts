@@ -97,6 +97,12 @@ export interface RoomManagerOptions {
    * У контексті — seed і лог гри до цього ходу, щоб відтворити баг.
    */
   onBotError?: (error: unknown, context: BotErrorContext) => void;
+  /** Скільки кімнат може бути в памʼяті одночасно. */
+  maxRooms?: number;
+  /** Через скільки мс без підключених людей і без змін кімната вважається покинутою. */
+  idleTtlMs?: number;
+  /** Годинник для TTL кімнат (у тестах — керований). */
+  now?: () => number;
 }
 
 /** Що потрібно, щоб відтворити помилку бота: кімната, seed і лог гри до його ходу. */
@@ -112,6 +118,12 @@ export const DEFAULT_BOT_DELAY_MS = 700;
 
 /** Пауза після взятки за замовчуванням: клієнт стільки ж показує, хто її бере. */
 export const TRICK_PAUSE_MS = 2000;
+
+/** Ліміт кімнат у памʼяті за замовчуванням. */
+export const MAX_ROOMS = 1000;
+
+/** Покинута кімната (без підключених людей і змін) прибирається з памʼяті через 30 хв. */
+export const IDLE_ROOM_TTL_MS = 30 * 60 * 1000;
 
 /** Сповіщення про зміну кімнати з кодом `code`. */
 export type RoomListener = (code: string) => void;
@@ -179,6 +191,11 @@ export class RoomManager {
   private closed = false;
   /** Коди, зайняті кімнатами, які ще створюються. */
   private readonly reserved = new Set<string>();
+  private readonly maxRooms: number;
+  private readonly idleTtlMs: number;
+  private readonly now: () => number;
+  /** Час останньої зміни чи відключення в кожній кімнаті: від нього рахується TTL. */
+  private readonly lastActive = new Map<string, number>();
 
   constructor(options: RoomManagerOptions = {}) {
     this.random = options.random ?? cryptoRandom;
@@ -189,6 +206,9 @@ export class RoomManager {
     this.onStoreError = options.onStoreError ?? (() => undefined);
     this.createBot = options.createBot ?? createHeuristicBot;
     this.onBotError = options.onBotError ?? (() => undefined);
+    this.maxRooms = options.maxRooms ?? MAX_ROOMS;
+    this.idleTtlMs = options.idleTtlMs ?? IDLE_ROOM_TTL_MS;
+    this.now = options.now ?? (() => Date.now());
   }
 
   /** Готує сховище під час старту сервера (схема бази). */
@@ -262,6 +282,7 @@ export class RoomManager {
       if (member.kind === 'bot') this.bots.set(member.id, this.createBot());
     }
     this.rooms.set(room.code, room);
+    this.lastActive.set(room.code, this.now());
     if (room.status === 'playing' && game !== null) {
       // Рестарт міг статися одразу після взятки: пауза взятки починається заново.
       this.scheduleTurn(room, afterTrick(game));
@@ -291,7 +312,10 @@ export class RoomManager {
 
   protected changed(code: string): void {
     const room = this.rooms.get(code);
-    if (room !== undefined) this.persist(room);
+    if (room !== undefined) {
+      this.lastActive.set(code, this.now());
+      this.persist(room);
+    }
     for (const listener of this.listeners) listener(code);
   }
 
@@ -323,11 +347,37 @@ export class RoomManager {
 
   /** Закриває кімнату: прибирає її з памʼяті й зі сховища. */
   private remove(room: Room): void {
-    this.rooms.delete(room.code);
-    for (const member of room.seats) this.bots.delete(member.id);
+    this.forget(room);
     const store = this.store;
     if (store !== null) this.enqueue(room.code, () => store.delete(room.code));
     for (const listener of this.listeners) listener(room.code);
+  }
+
+  /** Прибирає кімнату з памʼяті: її боти й заплановані ходи скасовуються. */
+  private forget(room: Room): void {
+    this.rooms.delete(room.code);
+    this.lastActive.delete(room.code);
+    for (const member of room.seats) this.bots.delete(member.id);
+    const timer = this.turnTimers.get(room.code);
+    if (timer !== undefined) clearTimeout(timer);
+    this.turnTimers.delete(room.code);
+  }
+
+  /**
+   * Прибирає з памʼяті покинуті кімнати: без підключених людей і без змін довше `idleTtlMs`.
+   * Без сховища кімната зникає назавжди. Повертає кількість прибраних кімнат.
+   */
+  sweep(): number {
+    if (this.store !== null) return 0;
+    const since = this.now() - this.idleTtlMs;
+    let removed = 0;
+    for (const room of [...this.rooms.values()]) {
+      if (room.seats.some((m) => m.kind === 'human' && m.connected)) continue;
+      if ((this.lastActive.get(room.code) ?? 0) > since) continue;
+      this.forget(room);
+      removed++;
+    }
+    return removed;
   }
 
   /**
@@ -438,6 +488,10 @@ export class RoomManager {
   }
 
   async create(name: string): Promise<Result<Session>> {
+    if (this.rooms.size + this.reserved.size >= this.maxRooms) this.sweep();
+    if (this.rooms.size + this.reserved.size >= this.maxRooms) {
+      return fail('unavailable', 'На сервері забагато кімнат, спробуйте пізніше');
+    }
     const code = await this.newCode();
     const host = this.newHuman(name);
     const room: Room = {

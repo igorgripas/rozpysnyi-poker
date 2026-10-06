@@ -61,3 +61,9 @@ export class GatedStore extends MemoryRoomStore {
 
 /** Дає відпрацювати всім готовим промісам і колбекам вводу-виводу. */
 export const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+/**
+ * Без ліміту запитів зʼєднання: тести дограють гру з ботами без затримок,
+ * швидше, ніж це може зробити людина.
+ */
+export const FAST_PLAY = { connectionLimits: { requests: Number.POSITIVE_INFINITY } } as const;
