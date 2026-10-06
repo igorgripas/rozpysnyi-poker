@@ -1,2 +1,2 @@
 /** Версія протоколу клієнт ↔ сервер; збільшується при несумісних змінах повідомлень. */
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;

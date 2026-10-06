@@ -3,11 +3,13 @@ import {
   type Card,
   DECK_SIZE,
   type JokerCall,
+  type PlayedCard,
   type PlayerView,
   RANKS,
   SUITS,
   type StandardCard,
   type Suit,
+  type TrickCard,
   cardId,
   isJoker,
   scoreHand,
@@ -42,31 +44,69 @@ const SHORT_SUIT = 2;
 /** Що бот знає про роздачу з погляду гравця. */
 interface Knowledge {
   readonly view: PlayerView;
-  /** Карти, про які відомо, що їх немає в суперників: власні, відкрита, зіграні на очах. */
+  /** Карти, про які відомо, що їх немає в суперників: власні, відкрита, зіграні в роздачі. */
   readonly known: ReadonlySet<string>;
   /** Невідомі карти: у руках суперників або в решті колоди. */
   readonly unknown: number;
   readonly opponents: number;
   /** Скільки карт у середньому в руці суперника. */
   readonly opponentHand: number;
+  /** Масті, яких, судячи з ходів, уже немає в руці гравця (за місцями). */
+  readonly voids: readonly ReadonlySet<Suit>[];
+}
+
+/** Масть, яку треба класти у відповідь на першу карту взятки (R-5.2, R-6.1–R-6.3). */
+function ledSuit(first: TrickCard, trump: Suit | null): Suit | null {
+  if (first.kind === 'standard') return first.suit;
+  if (first.call.type === 'highTrump') return trump;
+  if (first.call.type === 'high' || first.call.type === 'low') return first.call.suit;
+  return null;
+}
+
+/**
+ * Масті, яких немає в гравців: хто не поклав масть заходу, її не має; хто при цьому
+ * не поклав і козиря — не має й козирів (R-5.2, R-6.1, R-6.2). Джокер нічого не видає (R-5.3).
+ */
+function inferVoids(view: PlayerView): Set<Suit>[] {
+  const voids = Array.from({ length: view.playerCount }, () => new Set<Suit>());
+  const { played, trump, playerCount } = view;
+  for (let start = 0; start < played.length; start += playerCount) {
+    const trick = played.slice(start, start + playerCount);
+    const lead = ledSuit((trick[0] as PlayedCard).card, trump);
+    if (lead === null) continue;
+    for (const { seat, card } of trick.slice(1)) {
+      if (card.kind !== 'standard' || card.suit === lead) continue;
+      const seatVoids = voids[seat] as Set<Suit>;
+      seatVoids.add(lead);
+      if (trump !== null && card.suit !== trump) seatVoids.add(trump);
+    }
+  }
+  return voids;
 }
 
 function knowledge(view: PlayerView): Knowledge {
-  const seen: Card[] = [...view.hand, ...view.trick];
+  const seen: Card[] = [...view.hand, ...view.played.map((p) => p.card)];
   if (view.revealed !== null) seen.push(view.revealed);
-  if (view.lastTrick !== null) seen.push(...view.lastTrick.cards);
   const known = new Set(seen.map(cardId));
-  const tricksPlayed = view.spec.cards - (view.handSizes[view.seat] as number);
-  const played = tricksPlayed * view.playerCount + view.trick.length;
   const opponents = view.playerCount - 1;
   const opponentCards = view.handSizes.reduce((sum, size) => sum + size, 0) - view.hand.length;
   return {
     view,
     known,
-    unknown: Math.max(1, DECK_SIZE - view.hand.length - played),
+    unknown: Math.max(1, DECK_SIZE - view.hand.length - view.played.length),
     opponents,
     opponentHand: opponentCards / opponents,
+    voids: inferVoids(view),
   };
+}
+
+/** Суперники, у яких ще може бути масть `suit`. */
+function holders(k: Knowledge, suit: Suit, seats = opponentSeats(k.view)): number[] {
+  return seats.filter((seat) => !(k.voids[seat] as ReadonlySet<Suit>).has(suit));
+}
+
+function opponentSeats(view: PlayerView): number[] {
+  return Array.from({ length: view.playerCount }, (_, seat) => seat).filter((s) => s !== view.seat);
 }
 
 const standardOf = (cards: readonly Card[]): StandardCard[] =>
@@ -89,16 +129,21 @@ function unknownJokers(k: Knowledge): number {
 function leadChance(k: Knowledge, card: StandardCard): number {
   const trump = k.view.trump;
   const share = Math.min(1, (k.opponents * k.opponentHand) / k.unknown);
+  const suitShare = Math.min(1, (holders(k, card.suit).length * k.opponentHand) / k.unknown);
   // Чужий джокер забирає лише одну взятку — розподіляємо цей ризик на всі карти руки.
   const jokerRisk = (1 - share / k.view.hand.length) ** unknownJokers(k);
-  let chance = (1 - share) ** countUnknown(k, card.suit, card.rank) * jokerRisk;
+  let chance = (1 - suitShare) ** countUnknown(k, card.suit, card.rank) * jokerRisk;
   if (trump !== null && card.suit !== trump) {
     // Суперник переб'є козирем, якщо в нього немає масті заходу, але є козир (R-5.2).
     const suitLeft = countUnknown(k, card.suit) / k.unknown;
     const trumpsLeft = countUnknown(k, trump) / k.unknown;
-    const voidInSuit = Math.max(0, 1 - suitLeft) ** k.opponentHand;
-    const hasTrump = 1 - Math.max(0, 1 - trumpsLeft) ** k.opponentHand;
-    chance *= (1 - voidInSuit * hasTrump) ** k.opponents;
+    for (const seat of opponentSeats(k.view)) {
+      const voids = k.voids[seat] as ReadonlySet<Suit>;
+      if (voids.has(trump)) continue;
+      const voidInSuit = voids.has(card.suit) ? 1 : Math.max(0, 1 - suitLeft) ** k.opponentHand;
+      const hasTrump = 1 - Math.max(0, 1 - trumpsLeft) ** k.opponentHand;
+      chance *= 1 - voidInSuit * hasTrump;
+    }
   }
   return chance;
 }
@@ -270,10 +315,15 @@ function follow(k: Knowledge, goal: Goal): PlayAction {
 /** Імовірність, що карта, яка зараз бере, втримає взятку до кінця кола. */
 function holdChance(k: Knowledge, card: StandardCard): number {
   const { view } = k;
-  const later = view.playerCount - 1 - view.trick.length;
-  const share = Math.min(1, (later * k.opponentHand) / k.unknown);
-  const higher = countUnknown(k, card.suit, card.rank) + unknownJokers(k);
-  return (1 - share) ** higher;
+  const later = Array.from(
+    { length: view.playerCount - 1 - view.trick.length },
+    (_, i) => (view.seat + 1 + i) % view.playerCount,
+  );
+  const share = Math.min(1, (holders(k, card.suit, later).length * k.opponentHand) / k.unknown);
+  const jokerShare = Math.min(1, (later.length * k.opponentHand) / k.unknown);
+  return (
+    (1 - share) ** countUnknown(k, card.suit, card.rank) * (1 - jokerShare) ** unknownJokers(k)
+  );
 }
 
 /**
@@ -282,7 +332,8 @@ function holdChance(k: Knowledge, card: StandardCard): number {
  * скидає, у відіграші завжди бере. З козирем (у мізері й відіграші теж, R-3.1) у мізері
  * кладе найстаршого козиря, що не бере, а коли взятку однаково брати — позбувається
  * найстаршого; у відіграші перебиває найменшим козирем і заходить джокером «старший козир».
- * Джокера береже для взяток, які інакше не взяти.
+ * Джокера береже для взяток, які інакше не взяти. Памʼятає зіграні в роздачі карти
+ * (`played`) і з ходів суперників виводить, яких мастей і козирів у них уже немає (R-5.2).
  */
 export function createHeuristicBot(): Bot {
   return {

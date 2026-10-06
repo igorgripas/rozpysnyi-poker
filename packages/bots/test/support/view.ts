@@ -46,6 +46,8 @@ export interface Scenario {
   /** Замовлення за місцями; `null` — ще не замовив. */
   readonly bids?: readonly (number | null)[];
   readonly taken?: readonly number[];
+  /** Попередні взятки роздачі: хто заходив і карти в порядку ходу (публічні, `played`). */
+  readonly earlier?: readonly { readonly leader: number; readonly cards: string }[];
 }
 
 /** Будує погляд гравця на черзі в сценарії з легальними діями за правилами рушія. */
@@ -55,7 +57,8 @@ export function scenario(s: Scenario): PlayerView {
   const dealer = s.dealer ?? (seat + playerCount - 1) % playerCount;
   const phase = s.phase ?? 'maximum';
   const hand = cards(s.hand);
-  const dealt = s.dealt ?? hand.length;
+  const earlier = s.earlier ?? [];
+  const dealt = s.dealt ?? hand.length + earlier.length;
   const trump = s.trump === undefined ? 'spades' : s.trump;
   const trick = s.trick ?? [];
   const bids = s.bids ?? Array.from({ length: playerCount }, () => null);
@@ -112,8 +115,23 @@ export function scenario(s: Scenario): PlayerView {
     leader,
     trick,
     lastTrick: null,
+    played: [
+      ...earlier.flatMap((t) =>
+        t.cards.split(' ').map((code, i) => ({
+          seat: (t.leader + i) % playerCount,
+          card: earlierCard(code),
+        })),
+      ),
+      ...trick.map((c, i) => ({ seat: (leader + i) % playerCount, card: c })),
+    ],
     legalActions,
   };
+}
+
+/** Карта попередньої взятки; джокер у ній — «беру» (R-6.4). */
+function earlierCard(code: string): TrickCard {
+  const c = card(code);
+  return isJoker(c) ? { ...c, call: { type: 'take' } } : c;
 }
 
 /** Звичайна карта для взятки. */

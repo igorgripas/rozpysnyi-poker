@@ -117,6 +117,50 @@ describe('евристичний бот: розіграш на замовлен�
   });
 });
 
+describe('евристичний бот: памʼять зіграних карт', () => {
+  it('R-5.4: коли старші карти масті вже зіграно, заходить на взяття дамою, а не джокером', () => {
+    const view = scenario({
+      trump: null,
+      hand: 'H12 J0 D7',
+      bids: [1, 0, 0, 0],
+      earlier: [
+        { leader: 1, cards: 'H14 H13 C6 C7' },
+        { leader: 1, cards: 'D14 D6 D8 J1' },
+      ],
+    });
+    expect(playOf(bot.act(view)).card).toEqual(card('H12'));
+  });
+
+  it('R-5.2: хто не поклав масть заходу, її не має — дама бере, хоч старші карти невідомі', () => {
+    const view = scenario({
+      trump: null,
+      hand: 'H12 J0 D7',
+      bids: [1, 0, 0, 0],
+      earlier: [
+        { leader: 0, cards: 'H6 C6 D6 S6' },
+        { leader: 0, cards: 'H7 C7 D8 S7' },
+      ],
+    });
+    expect(playOf(bot.act(view)).card).toEqual(card('H12'));
+  });
+
+  it('R-5.2: знає, що суперник без масті заходу має козир, і не заходить тузом під ріжу', () => {
+    const view = scenario({
+      trump: 'spades',
+      hand: 'H14 C14 D7',
+      bids: [0, 0, 1, 0],
+      seat: 2,
+      dealt: 5,
+      earlier: [
+        { leader: 2, cards: 'H6 S7 H8 H9' },
+        { leader: 3, cards: 'D6 C9 S8 D8' },
+      ],
+    });
+    // Сусід ліворуч (місце 3) без чирви й із козирем: чирвового туза він переб'є.
+    expect(playOf(bot.act(view)).card).toEqual(card('C14'));
+  });
+});
+
 describe('евристичний бот: джокер', () => {
   it('R-6.1: заходить джокером «старший козир», коли треба взяти, а сильних карт немає', () => {
     const view = scenario({ trump: 'spades', hand: 'J0 H7 D8', bids: [1, 0, 0, 0] });

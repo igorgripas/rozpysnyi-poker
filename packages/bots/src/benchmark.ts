@@ -1,4 +1,4 @@
-import { MAX_PLAYERS, MIN_PLAYERS, scoreTable } from '@poker/engine';
+import { MAX_PLAYERS, MIN_PLAYERS, scoreHand, scoreTable } from '@poker/engine';
 import type { Bot } from './bot.js';
 import { createHeuristicBot } from './heuristic.js';
 import { playGame } from './play.js';
@@ -116,6 +116,76 @@ export function runBenchmark({ games, from }: BenchmarkOptions): BenchmarkResult
   };
 }
 
+/** Самогра: усі місця — евристичні боти; міряє точність замовлень (калібрування оцінки руки). */
+export interface SelfPlayResult {
+  readonly games: number;
+  readonly from: number;
+  /** Скільки замовлень зіграно (гравець × роздача із замовленням). */
+  readonly bids: number;
+  /** Частка замовлень, виконаних точно (`v = z`, R-7.1, R-7.2). */
+  readonly exactRate: number;
+  /** Частка переборів (`v > z`, R-7.3). */
+  readonly overRate: number;
+  /** Частка недоборів (`v < z`, R-7.4). */
+  readonly underRate: number;
+  /** Середні бали гравця за роздачу із замовленням. */
+  readonly bidPoints: number;
+  /** Мізери (гравець × роздача мізеру). */
+  readonly miseres: number;
+  /** Частка мізерів без жодної взятки (R-7.5). */
+  readonly misereCleanRate: number;
+  /** Середні бали гравця за мізер (R-7.5). */
+  readonly miserePoints: number;
+}
+
+/** Грає `games` ігор лише евристичними ботами (N чергується 3…6) і рахує точність замовлень. */
+export function runSelfPlay({ games, from }: BenchmarkOptions): SelfPlayResult {
+  if (!Number.isInteger(games) || games < 1 || !Number.isInteger(from) || from < 0) {
+    throw new RangeError('Кількість ігор має бути цілим ≥ 1, перший seed — невідʼємним цілим');
+  }
+  let bids = 0;
+  let exact = 0;
+  let over = 0;
+  let bidPoints = 0;
+  let miseres = 0;
+  let clean = 0;
+  let miserePoints = 0;
+  for (let i = 0; i < games; i++) {
+    const players = MIN_PLAYERS + (i % (MAX_PLAYERS - MIN_PLAYERS + 1));
+    const bots = Array.from({ length: players }, () => createHeuristicBot());
+    const state = playGame((from + i) % 2 ** 32, bots);
+    for (const record of state.history) {
+      record.taken.forEach((taken, seat) => {
+        const bid = record.bids[seat] ?? null;
+        const points = scoreHand(record.spec, bid, taken);
+        if (bid !== null) {
+          bids++;
+          bidPoints += points;
+          if (taken === bid) exact++;
+          else if (taken > bid) over++;
+        } else if (record.spec.phase === 'misere') {
+          miseres++;
+          miserePoints += points;
+          if (taken === 0) clean++;
+        }
+      });
+    }
+  }
+  const rate = (count: number, total: number): number => (total === 0 ? 0 : count / total);
+  return {
+    games,
+    from,
+    bids,
+    exactRate: rate(exact, bids),
+    overRate: rate(over, bids),
+    underRate: rate(bids - exact - over, bids),
+    bidPoints: rate(bidPoints, bids),
+    miseres,
+    misereCleanRate: rate(clean, miseres),
+    miserePoints: rate(miserePoints, miseres),
+  };
+}
+
 const num = (value: number): string => value.toFixed(1);
 const pct = (value: number): string => `${(value * 100).toFixed(1)}%`;
 
@@ -141,6 +211,21 @@ export function formatBenchmark(result: BenchmarkResult): string {
       (row) =>
         `| ${row.players} | ${row.games} | ${num(row.heuristicMean)} | ${num(row.randomMean)} | ${pct(row.winRate)} |`,
     ),
+    '',
+  ].join('\n');
+}
+
+/** Звіт самогри в markdown. */
+export function formatSelfPlay(result: SelfPlayResult): string {
+  const last = result.from + result.games - 1;
+  return [
+    '## Самогра: лише евристичні боти',
+    '',
+    `Ігор: ${result.games} (seed ${result.from}…${last}), замовлень: ${result.bids}, мізерів: ${result.miseres}.`,
+    '',
+    `- Замовлення виконано точно: **${pct(result.exactRate)}**, перебір ${pct(result.overRate)}, недобір ${pct(result.underRate)}.`,
+    `- Середні бали за роздачу із замовленням: **${num(result.bidPoints)}**.`,
+    `- Мізер без взяток: **${pct(result.misereCleanRate)}**, середні бали за мізер ${num(result.miserePoints)}.`,
     '',
   ].join('\n');
 }
