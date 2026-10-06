@@ -59,6 +59,13 @@ export function assertPlayerCount(playerCount: number): void {
   }
 }
 
+/** Перевіряє номер місця за столом з `playerCount` гравців: ціле від 0 до N−1. */
+export function assertSeat(seat: number, playerCount: number, label = 'Місце'): void {
+  if (!Number.isInteger(seat) || seat < 0 || seat >= playerCount) {
+    throw new RangeError(`${label} має бути від 0 до ${playerCount - 1}, отримано ${seat}`);
+  }
+}
+
 /** Максимальна кількість карт на руку (R-1.3): `floor(38 / N)`. */
 export function maxCardsPerHand(playerCount: number): number {
   assertPlayerCount(playerCount);

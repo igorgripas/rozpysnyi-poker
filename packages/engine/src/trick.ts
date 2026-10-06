@@ -5,6 +5,7 @@ import {
   type Suit,
   SUITS,
   assertPlayerCount,
+  assertSeat,
   cardId,
   isJoker,
 } from './cards.js';
@@ -28,12 +29,6 @@ export interface PlayedJoker extends JokerCard {
 
 /** Карта у взятці: звичайна або джокер з оголошенням. */
 export type TrickCard = StandardCard | PlayedJoker;
-
-function assertSeat(seat: number, playerCount: number, label: string): void {
-  if (!Number.isInteger(seat) || seat < 0 || seat >= playerCount) {
-    throw new RangeError(`${label} має бути від 0 до ${playerCount - 1}, отримано ${seat}`);
-  }
-}
 
 /** Легальні оголошення джокера для ходу на позиції `position` у взятці (R-6.1–R-6.6). */
 function callsFor(position: number, trump: Suit | null): JokerCall[] {

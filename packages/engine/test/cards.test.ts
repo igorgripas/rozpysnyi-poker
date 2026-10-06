@@ -9,6 +9,7 @@ import {
   maxCardsPerHand,
   assertPlayerCount,
 } from '../src/index.js';
+import { assertSeat } from '../src/cards.js';
 
 describe('колода', () => {
   it('R-1.1: deck has 36 standard cards and 2 jokers, 38 total', () => {
@@ -72,5 +73,23 @@ describe('гравці', () => {
 
   it('R-1.3: max cards per hand rejects invalid player count', () => {
     expect(() => maxCardsPerHand(2)).toThrow(RangeError);
+  });
+});
+
+describe('місця', () => {
+  it('R-1.2: seat from 0 to N-1 is accepted', () => {
+    for (const n of [3, 4, 5, 6]) {
+      for (let seat = 0; seat < n; seat++) expect(() => assertSeat(seat, n)).not.toThrow();
+    }
+  });
+
+  it('R-1.2: seat outside 0..N-1 is rejected with the given label', () => {
+    for (const seat of [-1, 4, 1.5, Number.NaN]) {
+      expect(() => assertSeat(seat, 4, 'Місце роздаючого')).toThrow(RangeError);
+    }
+    expect(() => assertSeat(4, 4, 'Місце роздаючого')).toThrow(
+      'Місце роздаючого має бути від 0 до 3, отримано 4',
+    );
+    expect(() => assertSeat(-1, 3)).toThrow('Місце має бути від 0 до 2, отримано -1');
   });
 });
