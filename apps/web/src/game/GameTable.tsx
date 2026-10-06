@@ -97,9 +97,12 @@ export function GameTable({ room, view: latest }: GameTableProps) {
   useTurnVibration(yourTurn);
   useGameSounds(latest, yourTurn);
 
+  // Стан, з якого надіслано хід: до нового стану від сервера рука вимкнена,
+  // щоб показане не розходилося з уже надісланим.
+  const [playedFrom, setPlayedFrom] = useState<WirePlayerView | null>(null);
   const plays = view.legalActions.filter((action): action is PlayAction => action.type === 'play');
   const legal =
-    view.status === 'playing' && view.turn === view.seat && !stale
+    view.status === 'playing' && view.turn === view.seat && !stale && playedFrom !== latest
       ? new Set(plays.map((action) => cardId(action.card)))
       : null;
 
@@ -115,7 +118,13 @@ export function GameTable({ room, view: latest }: GameTableProps) {
 
   function play(card: Card, call?: JokerCall) {
     setJoker(null);
-    void send(() => client.send('game:play', { card, ...(call !== undefined && { call }) }));
+    setPlayedFrom(latest);
+    void send(async () => {
+      const failure = await client.send('game:play', { card, ...(call !== undefined && { call }) });
+      // Хід не прийнято — рука знову активна.
+      if (failure !== null) setPlayedFrom(null);
+      return failure;
+    });
   }
 
   // Джокер спершу відкриває діалог оголошення (§6).
