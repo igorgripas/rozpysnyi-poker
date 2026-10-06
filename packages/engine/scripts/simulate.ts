@@ -1,18 +1,20 @@
 /**
  * Симулятор (AUTOPILOT §5 п.4): грає повні ігри N = 3…6 випадковими легальними ходами,
  * евристичними ботами й мішаним столом (`packages/bots`) і перевіряє інваріанти.
- * Seed, що впав, дописується в `test/regressions.json`.
+ * Ігри чергують опції кімнати: без опцій, «Темна» (R-10.2), обмеження нулів (R-10.3) і обидві.
+ * Seed, що впав, разом з політикою й опціями дописується в `test/regressions.json`.
  *
  * Запуск: `pnpm simulate [--games 10000] [--from 1]`.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
-import { MAX_PLAYERS, MIN_PLAYERS } from '../src/index.js';
+import { type GameOptions, MAX_PLAYERS, MIN_PLAYERS } from '../src/index.js';
 import { checkGame } from '../test/support/invariants.js';
 import {
   type RegressionSeed,
   type SimulationPolicy,
   addRegressions,
+  optionsLabel,
   parseRegressions,
 } from '../test/support/regressions.js';
 // Рушій не залежить від ботів; симулятор — інструмент розробки, тож підключає їх напряму.
@@ -34,6 +36,12 @@ const variants = MAX_PLAYERS - MIN_PLAYERS + 1;
 // Ігри ботів у кілька разів повільніші (`viewFor` на кожен хід), тож половина ігор —
 // випадкові легальні дії, решта — евристичні боти й мішаний стіл.
 const POLICY_CYCLE: readonly SimulationPolicy[] = ['random', 'heuristic', 'random', 'mixed'];
+const OPTIONS_CYCLE: readonly GameOptions[] = [
+  { dark: false, zeroLimit: false },
+  { dark: true, zeroLimit: false },
+  { dark: false, zeroLimit: true },
+  { dark: true, zeroLimit: true },
+];
 const failures: RegressionSeed[] = [];
 const started = performance.now();
 
@@ -44,18 +52,22 @@ for (let game = 0; game < games; game++) {
   const policy = POLICY_CYCLE[
     Math.floor(game / variants) % POLICY_CYCLE.length
   ] as SimulationPolicy;
+  // Опції змінюються після кожного циклу політик: кожна пара N × політика грає з кожними.
+  const round = Math.floor(game / (variants * POLICY_CYCLE.length));
+  const options = OPTIONS_CYCLE[round % OPTIONS_CYCLE.length] as GameOptions;
   let errors: string[];
   try {
-    errors = checkGame(playSimulatedGame(seed, players, policy));
+    errors = checkGame(playSimulatedGame(seed, players, policy, options));
   } catch (error) {
     errors = [`виняток: ${(error as Error).message}`];
   }
   if (errors.length > 0) {
     const reason = errors[0] as string;
-    failures.push(
-      policy === 'random' ? { seed, players, reason } : { seed, players, policy, reason },
+    const entry = { seed, players, ...(policy === 'random' ? {} : { policy }), options, reason };
+    failures.push(entry);
+    console.error(
+      `✗ seed ${seed}, N=${players}, ${policy}${optionsLabel(entry)}:\n  ${errors.slice(0, 5).join('\n  ')}`,
     );
-    console.error(`✗ seed ${seed}, N=${players}, ${policy}:\n  ${errors.slice(0, 5).join('\n  ')}`);
   }
 }
 

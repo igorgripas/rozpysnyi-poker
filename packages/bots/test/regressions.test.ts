@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { checkGame } from '../../engine/test/support/invariants.js';
-import { parseRegressions } from '../../engine/test/support/regressions.js';
+import { optionsLabel, parseRegressions } from '../../engine/test/support/regressions.js';
 import { playSimulatedGame } from './support/simulation.js';
 
 const regressions = parseRegressions(
@@ -17,9 +17,10 @@ describe('регресійні seed симулятора: боти', () => {
     expect(Array.isArray(regressions)).toBe(true);
   });
 
-  for (const { seed, players, policy, reason } of regressions) {
-    it(`seed ${seed}, N=${players}, ${policy}: ${reason}`, () => {
-      expect(checkGame(playSimulatedGame(seed, players, policy))).toEqual([]);
+  for (const entry of regressions) {
+    const { seed, players, policy, options, reason } = entry;
+    it(`seed ${seed}, N=${players}, ${policy}${optionsLabel(entry)}: ${reason}`, () => {
+      expect(checkGame(playSimulatedGame(seed, players, policy, options))).toEqual([]);
     });
   }
 });

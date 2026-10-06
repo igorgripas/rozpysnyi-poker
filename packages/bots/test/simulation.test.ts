@@ -15,6 +15,18 @@ describe('симулятор: ігри ботів', () => {
     });
   }
 
+  it('R-10.2, R-10.3: боти грають з «Темною» й обмеженням нулів без порушень', () => {
+    const options = { dark: true, zeroLimit: true };
+    for (const policy of ['heuristic', 'mixed'] as const) {
+      for (let players = MIN_PLAYERS; players <= MAX_PLAYERS; players++) {
+        const state = playSimulatedGame(players * 13, players, policy, options);
+        expect(state.options).toEqual(options);
+        expect(state.status).toBe('finished');
+        expect(checkGame(state)).toEqual([]);
+      }
+    }
+  });
+
   it('політики дають різні ігри на тому самому seed', () => {
     const logs = (['random', 'heuristic', 'mixed'] as const).map((policy) =>
       JSON.stringify(gameLog(playSimulatedGame(5, 4, policy)).actions),
