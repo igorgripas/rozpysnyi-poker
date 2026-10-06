@@ -51,3 +51,38 @@ for (const players of [4, 6]) {
     expect(overflow).toBeLessThanOrEqual(0);
   });
 }
+
+test('факти роздачі на телефоні не розриваються посеред рядка («Замовлено: X з K»)', async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile-360', 'перевірка вузького екрана');
+  await startGame(page, 5);
+  await expect(page.locator('.game__turn')).toHaveText(/./, { timeout: 15_000 });
+  const facts = page.locator('.game__facts > *');
+  await expect(facts.filter({ hasText: 'Замовлено:' })).toHaveCount(1);
+  // Текст кожного факту лежить в одному рядку (значок козиря має інший шрифт — його не рахуємо).
+  const lines = await facts.evaluateAll((items) =>
+    items.map((item) => {
+      const tops = new Set<number>();
+      const walker = document.createTreeWalker(item, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+        if (node.parentElement?.closest('.game__trump-mark') || !node.textContent?.trim()) continue;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        for (const rect of range.getClientRects()) tops.add(Math.round(rect.top));
+      }
+      return { text: item.textContent, lines: tops.size };
+    }),
+  );
+  for (const fact of lines) expect(fact, fact.text ?? '').toMatchObject({ lines: 1 });
+  // Ширина залежить від шрифту телефона й козиря, тож перенос усередині факту заборонено явно:
+  // якщо місця бракує, факт переходить на новий рядок цілим.
+  const wrapping = await facts.evaluateAll((items) =>
+    items.map((item) => `${item.textContent}: ${getComputedStyle(item).whiteSpace}`),
+  );
+  for (const fact of wrapping) expect(fact).toMatch(/: nowrap$/);
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(0);
+});

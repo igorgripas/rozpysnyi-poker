@@ -589,6 +589,11 @@ textarea {
   font-size: 0.9375rem;
 }
 
+/* Факт переходить на новий рядок цілим, а не рветься посередині («Замовлено: 1 з↵1»). */
+.game__facts > * {
+  white-space: nowrap;
+}
+
 /*
  * Місце відкритої карти в кутку столу: розміром як карта в руці; без карти — великий значок
  * козиря чи «Без козиря».
@@ -1362,6 +1367,27 @@ tfoot .sheet__cell {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
+}
+
+/* Опції гри (R-10.1): один компактний рядок над таблицею, назви через «·». */
+.sheet-dialog__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.sheet-dialog__options ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sheet-dialog__options li + li::before {
+  content: '· ';
 }
 
 .sheet-dialog__title {

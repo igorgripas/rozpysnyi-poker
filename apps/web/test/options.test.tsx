@@ -15,6 +15,30 @@ function handList() {
 }
 
 describe('опції кімнати на ігровому столі (§10)', () => {
+  it('R-10.1: ввімкнені опції видно в таблиці гри, а не на самому столі', async () => {
+    const state = createGame(4, 3, { dark: true, zeroLimit: true });
+    const { user } = renderAt(state, 0);
+    // На телефоні стіл без зайвого: опції — за перемикачем «Таблиця».
+    expect(screen.queryByText(/Опції гри/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Таблиця' }));
+    const options = within(screen.getByRole('dialog', { name: 'Таблиця гри' })).getByRole('list', {
+      name: 'Опції гри',
+    });
+    expect(
+      within(options)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual(['Темна', 'Не більше трьох нулів поспіль']);
+  });
+
+  it('R-10.1: без опцій таблиця каже, що гра за основними правилами', async () => {
+    const { user } = renderAt(createGame(4, 3), 0);
+    await user.click(screen.getByRole('button', { name: 'Таблиця' }));
+    const dialog = screen.getByRole('dialog', { name: 'Таблиця гри' });
+    expect(within(dialog).queryByRole('list', { name: 'Опції гри' })).not.toBeInTheDocument();
+    expect(dialog).toHaveTextContent('Опції гри: немає');
+  });
+
   it('R-10.2: під час темних замовлень рука показана сорочками, карт не видно', () => {
     const state = darkHand();
     const seat = state.turn as number;

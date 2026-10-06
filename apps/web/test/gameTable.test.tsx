@@ -114,6 +114,45 @@ describe('ігровий стіл', () => {
     expect(connection.requests).toHaveLength(1);
   });
 
+  it('після ходу рука вимкнена, доки сервер не надіслав новий стан', async () => {
+    const state = findState(3, mustFollow);
+    const seat = state.turn as number;
+    const { connection, user } = renderAt(state, seat);
+    let answer: (result: { ok: true; data: null }) => void = () => {};
+    connection.request = (event, payload) => {
+      connection.requests.push({ event, payload });
+      return new Promise((resolve) => (answer = resolve as typeof answer));
+    };
+    const [first] = legalActions(state).filter((a) => a.type === 'play');
+    const button = screen.getByRole('button', { name: cardName(defined(first).card) });
+    await user.click(button);
+    await user.click(button);
+    // Хід надіслано: рука одразу неактивна, вибір знято — як після чужого ходу.
+    for (const card of handButtons()) {
+      expect(card).toBeDisabled();
+      expect(card).toHaveAttribute('aria-pressed', 'false');
+    }
+    // Сервер підтвердив, але новий стан ще не прийшов — рука лишається вимкненою.
+    await act(async () => answer({ ok: true, data: null }));
+    for (const card of handButtons()) expect(card).toBeDisabled();
+  });
+
+  it('відмова сервера знову вмикає руку', async () => {
+    const state = findState(3, mustFollow);
+    const seat = state.turn as number;
+    const { connection, user } = renderAt(state, seat);
+    connection.on('game:play', () => ({
+      ok: false,
+      error: { code: 'illegalAction', message: 'Цією картою ходити не можна' },
+    }));
+    const [first] = legalActions(state).filter((a) => a.type === 'play');
+    const button = screen.getByRole('button', { name: cardName(defined(first).card) });
+    await user.click(button);
+    await user.click(button);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Цією картою ходити не можна');
+    expect(button).toBeEnabled();
+  });
+
   it('не на своєму ході карти не грають', async () => {
     const state = findState(3, (s) => s.status === 'playing' && s.hand.spec.cards >= 2);
     const seat = ((state.turn as number) + 1) % 3;
