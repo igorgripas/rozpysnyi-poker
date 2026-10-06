@@ -382,7 +382,7 @@ describe('відключений гравець (R-9.3)', () => {
     expect(rooms.roomState(code, rooms.get(code)?.hostId as string).turnDeadline).toBeNull();
   });
 
-  it('R-9.3: хост віддає місце відключеного гравця боту; бот доходить його хід', async () => {
+  it('R-9.3: хост віддає місце відключеного гравця боту; бот ходить за нього, гравець лишається на місці', async () => {
     const store = new MemoryRoomStore();
     const rooms = manager(store);
     const { code, players } = await startedRoom(rooms, 3, 0);
@@ -394,12 +394,13 @@ describe('відключений гравець (R-9.3)', () => {
 
     unwrap(rooms.replaceWithBot(code, host, seat));
     const member = rooms.get(code)?.seats[seat];
-    expect(member).toMatchObject({ kind: 'bot', token: null, connected: true });
-    expect(member?.id).not.toBe(leaving?.playerId);
-    expect(rooms.roomState(code, host).seats[seat]?.kind).toBe('bot');
-    // Старий токен більше не дає доступу до місця.
-    expect(errorCode(rooms.resume(code, leaving?.token as string))).toBe('badToken');
-    expect(errorCode(rooms.bid(code, leaving?.playerId as string, 0))).toBe('notInRoom');
+    expect(member).toMatchObject({
+      id: leaving?.playerId,
+      kind: 'human',
+      token: leaving?.token,
+      away: true,
+    });
+    expect(rooms.roomState(code, host).seats[seat]).toMatchObject({ kind: 'human', away: true });
 
     while (rooms.get(code)?.game?.turn !== seat) playHumans(rooms, code, 1);
     const count = actions(rooms, code);
@@ -407,10 +408,40 @@ describe('відключений гравець (R-9.3)', () => {
     expect(actions(rooms, code)).toBe(count + 1);
     await shutdown(rooms);
 
-    // Заміна переживає рестарт.
+    // Позначка переживає рестарт: бот і далі ходить за гравця.
     const after = manager(store, 2);
-    expect((await after.load(code))?.seats[seat]?.kind).toBe('bot');
+    expect((await after.load(code))?.seats[seat]).toMatchObject({ kind: 'human', away: true });
     after.close();
+  });
+
+  it('R-9.3: гравець, чиє місце віддали боту, повертається за токеном з тими самими картами й балами', async () => {
+    const rooms = manager(new MemoryRoomStore());
+    const { code, players } = await startedRoom(rooms, 3, 0);
+    const host = players[0]?.playerId as string;
+    rooms.setConnected(code, host, true);
+    const seat = 1;
+    const leaving = players[seat];
+    unwrap(rooms.replaceWithBot(code, host, seat));
+    // Бот дограє за гравця кілька ходів.
+    for (let i = 0; i < 6; i++) {
+      if (rooms.get(code)?.game?.turn === seat) vi.advanceTimersByTime(PAUSE);
+      else playHumans(rooms, code, 1);
+    }
+    const hand = rooms.view(code, leaving?.playerId as string)?.hand;
+    const table = rooms.view(code, leaving?.playerId as string)?.table;
+
+    const session = unwrap(rooms.resume(code, leaving?.token as string));
+    expect(session.playerId).toBe(leaving?.playerId);
+    expect(rooms.get(code)?.seats[seat]).toMatchObject({ kind: 'human', away: false });
+    expect(rooms.view(code, session.playerId)?.hand).toEqual(hand);
+    expect(rooms.view(code, session.playerId)?.table).toEqual(table);
+
+    // Бот більше не ходить: без таймера хід гравця чекає на нього.
+    while (rooms.get(code)?.game?.turn !== seat) playHumans(rooms, code, 1);
+    const count = actions(rooms, code);
+    vi.advanceTimersByTime(60 * 60 * 1000);
+    expect(actions(rooms, code)).toBe(count);
+    rooms.close();
   });
 
   it('R-9.3: віддати місце боту може лише хост, лише під час гри і лише за відключеного гравця', async () => {

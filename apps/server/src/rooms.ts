@@ -653,7 +653,10 @@ export class RoomManager {
     return ok(null);
   }
 
-  /** Хост віддає боту місце відключеного гравця (R-9.3); токен гравця більше не діє. */
+  /**
+   * Хост віддає боту місце відключеного гравця (R-9.3): місце позначається `away`, за гравця
+   * ходить бот, а повернувшись за токеном, гравець знову займає місце з тими самими картами й балами.
+   */
   replaceWithBot(code: string, playerId: string, seat: number): Result<null> {
     const access = this.access(code, playerId, 'host');
     if (!access.ok) return access;
@@ -669,8 +672,10 @@ export class RoomManager {
         `${member.name} у грі: віддати боту можна лише місце відключеного`,
       );
     }
-    room.seats[seat] = this.newBot(room);
-    if (room.game?.turn === seat) this.scheduleTurn(room);
+    if (member.away) return ok(null);
+    member.away = true;
+    const game = room.game as GameState;
+    if (game.turn === seat) this.scheduleTurn(room, afterTrick(game));
     this.changed(code);
     return ok(null);
   }

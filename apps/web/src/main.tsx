@@ -7,6 +7,7 @@ import { createSocketConnection } from './net/connection';
 import { reloadForNewVersion, wakeServer } from './net/restart';
 import { serverUrl } from './net/serverUrl';
 import { registerServiceWorker } from './pwa';
+import { AppUpdates } from './update';
 import './styles.css';
 
 const url = serverUrl(window.location.search, {
@@ -15,20 +16,22 @@ const url = serverUrl(window.location.search, {
 });
 void wakeServer(url);
 const client = new PokerClient(createSocketConnection(url));
-// Сервер оновився до нової версії протоколу: беремо новий клієнт, токен зберігається.
+const updates = new AppUpdates();
+// Сервер оновився до нової версії протоколу: беремо новий клієнт (і новий service worker,
+// якщо він уже встановився), токен зберігається.
 client.subscribe(() => {
   if (client.getState().connection === 'outdated') {
-    reloadForNewVersion(sessionStorage, () => window.location.reload());
+    reloadForNewVersion(sessionStorage, () => updates.apply());
   }
 });
 const trickPauseMs = trickPauseFromSearch(window.location.search, import.meta.env.DEV);
 
-registerServiceWorker();
+registerServiceWorker(import.meta.env.PROD, navigator.serviceWorker, updates);
 
 const root = document.getElementById('root');
 if (root === null) throw new Error('Немає елемента #root');
 createRoot(root).render(
   <StrictMode>
-    <App client={client} trickPauseMs={trickPauseMs} />
+    <App client={client} trickPauseMs={trickPauseMs} updates={updates} />
   </StrictMode>,
 );

@@ -11,6 +11,7 @@ import { CardFace } from './ui/Card';
 import { ConnectionBanner, ConnectionIndicator } from './ui/ConnectionStatus';
 import { SoundToggle } from './ui/sound';
 import { ThemeProvider, ThemeToggle } from './ui/theme';
+import { AppUpdates } from './update';
 import { VibrationToggle } from './ui/vibration';
 import { VoiceChat, browserVoiceEnv } from './voice/VoiceChat';
 import { VoiceProvider } from './voice/VoiceControls';
@@ -19,11 +20,16 @@ import { VoiceProvider } from './voice/VoiceControls';
 export function App({
   client,
   trickPauseMs = TRICK_PAUSE_MS,
+  updates: givenUpdates,
 }: {
   client: PokerClient;
   /** Скільки завершена взятка лежить на столі, мс. */
   trickPauseMs?: number;
+  /** Оновлення застосунку (service worker); без нього «Оновити» просто перезавантажує сторінку. */
+  updates?: AppUpdates;
 }) {
+  const [fallbackUpdates] = useState(() => new AppUpdates());
+  const updates = givenUpdates ?? fallbackUpdates;
   // Голосовий чат кімнати (T63) — лише в браузерах із WebRTC.
   const [voice] = useState(() =>
     typeof globalThis.RTCPeerConnection === 'function'
@@ -50,7 +56,7 @@ export function App({
                   <ThemeToggle />
                 </div>
               </header>
-              <ConnectionBanner />
+              <ConnectionBanner updates={updates} />
               <main className="app__main">
                 <Screen client={client} />
               </main>
