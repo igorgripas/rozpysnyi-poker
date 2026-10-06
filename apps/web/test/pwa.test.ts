@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { registerServiceWorker } from '../src/pwa';
+import { AppUpdates } from '../src/update';
 
 const root = join(import.meta.dirname, '..');
 const read = (path: string) => readFileSync(`${root}/${path}`, 'utf8');
@@ -69,5 +70,15 @@ describe('PWA: service worker', () => {
     registerServiceWorker(true, undefined);
     window.dispatchEvent(new Event('load'));
     expect(sw.register).not.toHaveBeenCalled();
+  });
+
+  it('після реєстрації стежить за новими версіями застосунку', async () => {
+    const registration = {};
+    const sw = { register: vi.fn(() => Promise.resolve(registration)) };
+    const updates = new AppUpdates(vi.fn());
+    const watch = vi.spyOn(updates, 'watch').mockImplementation(() => undefined);
+    registerServiceWorker(true, sw as unknown as ServiceWorkerContainer, updates);
+    window.dispatchEvent(new Event('load'));
+    await vi.waitFor(() => expect(watch).toHaveBeenCalledWith(registration, sw));
   });
 });

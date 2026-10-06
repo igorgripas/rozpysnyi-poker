@@ -169,6 +169,12 @@ textarea {
   text-align: center;
 }
 
+/* Нова версія застосунку — не помилка: спокійніший колір. */
+.net-banner--update {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
 /* ── Елементи керування ─────────────────────────────────────────────────── */
 
 .icon-button {

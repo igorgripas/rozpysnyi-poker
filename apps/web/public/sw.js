@@ -1,6 +1,8 @@
 // Service worker розписного покера: застосунок відкривається навіть без мережі
 // (грати можна лише онлайн, але екран і повідомлення про звʼязок доступні).
-const CACHE = 'poker-shell-v1';
+// Версію підставляє збірка (vite.config.ts): нова версія — новий sw.js і новий кеш.
+const VERSION = 'dev';
+const CACHE = `poker-shell-${VERSION}`;
 const SHELL = ['/', '/manifest.webmanifest', '/icons/icon.svg'];
 
 self.addEventListener('install', (event) => {
@@ -8,8 +10,13 @@ self.addEventListener('install', (event) => {
     caches
       .open(CACHE)
       .then((cache) => cache.addAll(SHELL))
-      .then(() => self.skipWaiting()),
+      // Перша версія активується одразу; нова чекає, поки гравець натисне «Оновити».
+      .then(() => (self.registration.active ? undefined : self.skipWaiting())),
   );
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'skipWaiting') void self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {

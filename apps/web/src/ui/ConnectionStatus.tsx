@@ -1,5 +1,6 @@
 import { uk } from '../i18n';
 import { useClientState } from '../net/react';
+import { type AppUpdates, useAppUpdate } from '../update';
 
 /** Індикатор звʼязку в шапці: кольорова крапка з назвою стану. */
 export function ConnectionIndicator() {
@@ -16,9 +17,13 @@ export function ConnectionIndicator() {
   );
 }
 
-/** Повідомлення про обрив звʼязку, перезапуск сервера або застарілу версію клієнта. */
-export function ConnectionBanner() {
+/**
+ * Повідомлення про обрив звʼязку, перезапуск сервера, застарілу версію клієнта
+ * або нову версію застосунку. Обидва «Оновити» беруть нову версію через service worker.
+ */
+export function ConnectionBanner({ updates }: { updates: AppUpdates }) {
   const { connection } = useClientState();
+  const { available } = useAppUpdate(updates);
   if (connection === 'offline') {
     return (
       <p role="alert" className="net-banner">
@@ -37,7 +42,17 @@ export function ConnectionBanner() {
     return (
       <div role="alert" className="net-banner">
         <span>{uk.connection.outdated}</span>
-        <button type="button" className="button" onClick={() => window.location.reload()}>
+        <button type="button" className="button" onClick={() => updates.apply()}>
+          {uk.connection.reload}
+        </button>
+      </div>
+    );
+  }
+  if (available) {
+    return (
+      <div role="status" className="net-banner net-banner--update">
+        <span>{uk.connection.updateAvailable}</span>
+        <button type="button" className="button" onClick={() => updates.apply()}>
           {uk.connection.reload}
         </button>
       </div>

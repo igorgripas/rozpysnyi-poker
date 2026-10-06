@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it, vi } from 'vitest';
+import { stampServiceWorker } from '../src/swVersion';
 
 const ORIGIN = 'https://poker.example';
 const source = readFileSync(join(import.meta.dirname, '../public/sw.js'), 'utf8');
@@ -9,7 +10,10 @@ const source = readFileSync(join(import.meta.dirname, '../public/sw.js'), 'utf8'
 type Listener = (event: unknown) => void;
 
 /** Запускає sw.js у пісочниці з підмінами кешу й мережі. */
-function loadWorker(network: (url: string) => Response | Promise<Response>) {
+function loadWorker(
+  network: (url: string) => Response | Promise<Response>,
+  { active = false }: { active?: boolean } = {},
+) {
   const listeners = new Map<string, Listener>();
   const stores = new Map<string, Map<string, Response>>();
   const key = (request: Request | string) =>
@@ -37,7 +41,9 @@ function loadWorker(network: (url: string) => Response | Promise<Response>) {
   const self = {
     location: new URL(`${ORIGIN}/sw.js`),
     addEventListener: (type: string, listener: Listener) => listeners.set(type, listener),
-    skipWaiting: () => Promise.resolve(),
+    skipWaiting: vi.fn(() => Promise.resolve()),
+    // Попередня версія вже керує сторінками — нова чекає на згоду гравця.
+    registration: { active: active ? {} : null },
     clients: { claim: () => Promise.resolve() },
   };
   runInNewContext(source, { self, caches, fetch, URL, Response, Request, Promise, console });
@@ -63,7 +69,12 @@ function loadWorker(network: (url: string) => Response | Promise<Response>) {
     return response;
   }
 
-  return { lifecycle, request, fetch, stores };
+  /** Повідомлення від сторінки. */
+  function message(data: unknown) {
+    listeners.get('message')?.({ data });
+  }
+
+  return { lifecycle, request, message, fetch, stores, skipWaiting: self.skipWaiting };
 }
 
 const page = (body: string) => new Response(body, { status: 200 });
@@ -120,5 +131,29 @@ describe('service worker', () => {
     await worker.lifecycle('activate');
     expect([...worker.stores.keys()]).toHaveLength(1);
     expect(worker.stores.has('poker-old')).toBe(false);
+  });
+
+  it('перша версія активується одразу', async () => {
+    const worker = loadWorker((url) => page(url));
+    await worker.lifecycle('install');
+    expect(worker.skipWaiting).toHaveBeenCalled();
+  });
+
+  it('нова версія чекає, доки гравець не натисне «Оновити»', async () => {
+    const worker = loadWorker((url) => page(url), { active: true });
+    await worker.lifecycle('install');
+    expect(worker.skipWaiting).not.toHaveBeenCalled();
+    worker.message({ type: 'other' });
+    expect(worker.skipWaiting).not.toHaveBeenCalled();
+    worker.message({ type: 'skipWaiting' });
+    expect(worker.skipWaiting).toHaveBeenCalledOnce();
+  });
+
+  it('назва кешу залежить від збірки: нова версія не бере старі файли', () => {
+    expect(source).toContain("const VERSION = 'dev';");
+    const stamped = stampServiceWorker(source, 'abc123');
+    expect(stamped).toContain("const VERSION = 'abc123';");
+    expect(stamped).not.toContain("const VERSION = 'dev';");
+    expect(() => stampServiceWorker('const CACHE = 1;', 'abc123')).toThrow();
   });
 });
