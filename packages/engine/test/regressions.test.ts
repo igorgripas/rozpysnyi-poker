@@ -23,7 +23,19 @@ describe('регресійні seed симулятора', () => {
     expect(addRegressions([a], [a, b, b])).toEqual([a, b]);
   });
 
-  for (const { seed, players, reason } of regressions) {
+  it('політика ботів зберігається й розрізняє записи', () => {
+    const random = { seed: 1, players: 3, reason: 'a' };
+    const heuristic = { ...random, policy: 'heuristic' as const };
+    expect(addRegressions([random], [heuristic, heuristic])).toEqual([random, heuristic]);
+    expect(parseRegressions(JSON.stringify([heuristic]))).toEqual([heuristic]);
+    expect(parseRegressions(JSON.stringify([random]))).toEqual([random]);
+    expect(() =>
+      parseRegressions('[{"seed": 1, "players": 3, "reason": "", "policy": "x"}]'),
+    ).toThrow();
+  });
+
+  // Ігри ботів (`policy` ≠ `random`) перевіряє `packages/bots/test/regressions.test.ts`.
+  for (const { seed, players, reason } of regressions.filter((r) => r.policy === undefined)) {
     it(`seed ${seed}, N=${players}: ${reason}`, () => {
       expect(checkGame(playRandomGame(seed, players))).toEqual([]);
     });
