@@ -58,6 +58,8 @@ export interface PokerServerOptions {
    * і не більше `rooms` створених кімнат.
    */
   connectionLimits?: { requests?: number; windowMs?: number; rooms?: number };
+  /** Ліміт сигналів голосового чату одного зʼєднання: не більше `signals` за `windowMs` мс. */
+  voiceSignalLimits?: { signals?: number; windowMs?: number };
   /** Скільки кімнат може бути в памʼяті сервера. */
   maxRooms?: number;
   /** Через скільки мс без підключених людей кімната прибирається з памʼяті. */
@@ -75,6 +77,12 @@ export const REQUESTS_PER_WINDOW = 100;
 export const REQUEST_WINDOW_MS = 10 * 1000;
 /** Скільки кімнат може створити одне зʼєднання. */
 export const ROOMS_PER_CONNECTION = 10;
+/**
+ * Сигналів голосу з одного зʼєднання за вікно: вистачає на з'єднання з п'ятьма
+ * співрозмовниками (offer/answer і десяток ICE-кандидатів на кожного), але не на флуд.
+ */
+export const VOICE_SIGNALS_PER_WINDOW = 60;
+export const VOICE_SIGNAL_WINDOW_MS = 5 * 1000;
 
 /** Сесія, привʼязана до зʼєднання після create/join/resume. */
 interface SocketData {
@@ -410,19 +418,33 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
   const requestLimit = options.connectionLimits?.requests ?? REQUESTS_PER_WINDOW;
   const requestWindowMs = options.connectionLimits?.windowMs ?? REQUEST_WINDOW_MS;
   const roomLimit = options.connectionLimits?.rooms ?? ROOMS_PER_CONNECTION;
-  /** Лічильники кожного зʼєднання: час останніх запитів і скільки кімнат воно створило. */
-  const usage = new WeakMap<PokerSocket, { requests: number[]; rooms: number }>();
+  const signalLimit = options.voiceSignalLimits?.signals ?? VOICE_SIGNALS_PER_WINDOW;
+  const signalWindowMs = options.voiceSignalLimits?.windowMs ?? VOICE_SIGNAL_WINDOW_MS;
+  /** Лічильники кожного зʼєднання: час останніх запитів і сигналів, скільки кімнат створено. */
+  const usage = new WeakMap<
+    PokerSocket,
+    { requests: number[]; signals: number[]; rooms: number }
+  >();
+
+  /** Ковзне вікно: `true` і запис часу, якщо в `times` за `windowMs` менше `limit` подій. */
+  function withinWindow(times: number[], limit: number, windowMs: number): boolean {
+    const since = now() - windowMs;
+    while (times.length > 0 && (times[0] as number) <= since) times.shift();
+    if (times.length >= limit) return false;
+    times.push(now());
+    return true;
+  }
 
   /** Причина відмови, якщо зʼєднання перевищило ліміт, або `null`. */
   function overLimit(socket: PokerSocket, event: ClientEvent): Result<never> | null {
     let used = usage.get(socket);
-    if (used === undefined) usage.set(socket, (used = { requests: [], rooms: 0 }));
-    const since = now() - requestWindowMs;
-    while (used.requests.length > 0 && (used.requests[0] as number) <= since) used.requests.shift();
-    if (used.requests.length >= requestLimit) {
+    if (used === undefined) usage.set(socket, (used = { requests: [], signals: [], rooms: 0 }));
+    if (!withinWindow(used.requests, requestLimit, requestWindowMs)) {
       return fail('rateLimited', 'Забагато запитів, зачекайте кілька секунд');
     }
-    used.requests.push(now());
+    if (event === 'voice:signal' && !withinWindow(used.signals, signalLimit, signalWindowMs)) {
+      return fail('rateLimited', 'Забагато сигналів голосового чату, зачекайте кілька секунд');
+    }
     if (event === 'room:create') {
       if (used.rooms >= roomLimit) return fail('rateLimited', 'Ви створили забагато кімнат');
       used.rooms++;

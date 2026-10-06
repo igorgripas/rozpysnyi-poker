@@ -107,6 +107,37 @@ describe('голосовий чат: сигналінг', () => {
     );
   });
 
+  it('сигналів з одного зʼєднання не більше ліміту за вікно — далі rateLimited', async () => {
+    let time = 0;
+    for (const c of clients.splice(0)) c.close();
+    await server.close();
+    server = createPokerServer({
+      random: testRandom(),
+      voiceSignalLimits: { signals: 2, windowMs: 1000 },
+      now: () => time,
+    });
+    url = await server.listen({ port: 0, host: '127.0.0.1' });
+    const {
+      players: [a, b],
+    } = await room(['Оля', 'Петро']);
+    if (!a || !b) throw new Error('немає гравців');
+    for (const p of [a, b]) unwrap(await p.client.request('voice:join', {}));
+    unwrap(await a.client.request('voice:signal', { to: b.id, signal: OFFER }));
+    unwrap(await a.client.request('voice:signal', { to: b.id, signal: OFFER }));
+    expect(errorCode(await a.client.request('voice:signal', { to: b.id, signal: OFFER }))).toBe(
+      'rateLimited',
+    );
+    // Інші запити ліміт сигналів не зачіпає, а інше зʼєднання має власний ліміт.
+    unwrap(await a.client.request('voice:join', {}));
+    unwrap(await b.client.request('voice:signal', { to: a.id, signal: OFFER }));
+    // Після вікна сигнали знову проходять; адресат отримав лише пропущені.
+    time += 1000;
+    unwrap(await a.client.request('voice:signal', { to: b.id, signal: OFFER }));
+    await b.client.until((x) => x.voice.filter((e) => e.type === 'signal').length === 3);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(b.client.voice.filter((e) => e.type === 'signal')).toHaveLength(3);
+  });
+
   it('вихід із голосу й відключення повідомляють інших (voice:left)', async () => {
     const {
       players: [a, b, c],
