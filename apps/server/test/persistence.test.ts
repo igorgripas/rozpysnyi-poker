@@ -604,3 +604,71 @@ describe('опції кімнати (§10)', () => {
     rooms.close();
   });
 });
+
+describe('вивантаження неактивних кімнат', () => {
+  function timed(store: RoomStore) {
+    const clock = { now: 0 };
+    const rooms = new RoomManager({
+      random: testRandom(1),
+      botDelayMs: DELAY,
+      trickPauseMs: PAUSE,
+      store,
+      idleTtlMs: 1000,
+      now: () => clock.now,
+    });
+    return { rooms, clock };
+  }
+
+  it('R-9.3: гра без підключених людей вивантажується з памʼяті; ходи скасовано, за кодом вона повертається й триває', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const store = new MemoryRoomStore();
+    const { rooms, clock } = timed(store);
+    const host = unwrap(await rooms.create('Оля'));
+    unwrap(rooms.addBot(host.code, host.playerId));
+    unwrap(rooms.addBot(host.code, host.playerId));
+    unwrap(rooms.settings(host.code, host.playerId, 60));
+    unwrap(rooms.start(host.code, host.playerId));
+    const game = rooms.get(host.code)?.game as GameState;
+    clock.now = 1000;
+    expect(rooms.sweep()).toBe(1);
+    expect(rooms.get(host.code)).toBeUndefined();
+    expect(vi.getTimerCount()).toBe(0);
+    await rooms.flush();
+    expect(await store.has(host.code)).toBe(true);
+
+    const room = await rooms.load(host.code);
+    expect(room?.game).toEqual(game);
+    unwrap(rooms.resume(host.code, host.token));
+    // Гра продовжується: хід (бота чи таймер людини) знову запланований.
+    expect(vi.getTimerCount()).toBe(1);
+    vi.advanceTimersByTime(60_000);
+    expect(actions(rooms, host.code)).toBeGreaterThan(game.actions.length);
+    rooms.close();
+  });
+
+  it('кімнату з підключеною людиною не вивантажують', async () => {
+    const { rooms, clock } = timed(new MemoryRoomStore());
+    const host = unwrap(await rooms.create('Оля'));
+    rooms.setConnected(host.code, host.playerId, true);
+    clock.now = 10_000;
+    expect(rooms.sweep()).toBe(0);
+    expect(rooms.get(host.code)).toBeDefined();
+  });
+
+  it('вивантажена кімната підвантажується лише після запису її останніх змін', async () => {
+    const store = new GatedStore();
+    const { rooms, clock } = timed(store);
+    const created = rooms.create('Оля');
+    await settle();
+    store.release();
+    const host = unwrap(await created);
+    unwrap(rooms.addBot(host.code, host.playerId));
+    clock.now = 1000;
+    expect(rooms.sweep()).toBe(1);
+    const loading = rooms.load(host.code);
+    await settle();
+    store.open();
+    const room = await loading;
+    expect(room?.seats.map((m) => m.kind)).toEqual(['human', 'bot']);
+  });
+});

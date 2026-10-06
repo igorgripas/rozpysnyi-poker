@@ -7,7 +7,7 @@ import { type PokerServer, type PokerServerOptions, createPokerServer } from '..
 import { PostgresRoomStore } from '../src/postgres.js';
 import { TestClient } from './client.js';
 import { freshDatabase } from './db.js';
-import { testRandom, unwrap } from './support.js';
+import { FAST_PLAY, testRandom, unwrap } from './support.js';
 
 const TIMEOUT = 60_000;
 
@@ -20,6 +20,7 @@ async function start(options: PokerServerOptions = {}): Promise<void> {
     random: testRandom(11),
     botDelayMs: 0,
     trickPauseMs: 0,
+    ...FAST_PLAY,
     ...options,
   });
   url = await server.listen({ port: 0, host: '127.0.0.1' });

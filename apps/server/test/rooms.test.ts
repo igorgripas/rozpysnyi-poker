@@ -1,5 +1,5 @@
 import { ROOM_CODE_LENGTH, roomCodeSchema, roomStateSchema, sessionSchema } from '@poker/protocol';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { RoomManager } from '../src/rooms.js';
 import { errorCode, testRandom, unwrap } from './support.js';
 
@@ -170,5 +170,66 @@ describe('сповіщення про зміни', () => {
     unsubscribe();
     unwrap(rooms.shuffle(host.code, host.playerId));
     expect(changes).toHaveLength(4);
+  });
+});
+
+describe('прибирання кімнат і ліміти', () => {
+  function timed(options: { maxRooms?: number; idleTtlMs?: number } = {}) {
+    const clock = { now: 0 };
+    const rooms = new RoomManager({ random: testRandom(1), now: () => clock.now, ...options });
+    return { rooms, clock };
+  }
+
+  it('кімната без підключених людей прибирається після TTL', async () => {
+    const { rooms, clock } = timed({ idleTtlMs: 1000 });
+    const host = unwrap(await rooms.create('Оля'));
+    clock.now = 999;
+    expect(rooms.sweep()).toBe(0);
+    expect(rooms.get(host.code)).toBeDefined();
+    clock.now = 1000;
+    expect(rooms.sweep()).toBe(1);
+    expect(rooms.get(host.code)).toBeUndefined();
+    expect(errorCode(rooms.resume(host.code, host.token))).toBe('roomNotFound');
+  });
+
+  it('кімнату з підключеною людиною не прибирають; TTL рахується від останнього відключення', async () => {
+    const { rooms, clock } = timed({ idleTtlMs: 1000 });
+    const host = unwrap(await rooms.create('Оля'));
+    rooms.setConnected(host.code, host.playerId, true);
+    clock.now = 5000;
+    expect(rooms.sweep()).toBe(0);
+    rooms.setConnected(host.code, host.playerId, false);
+    clock.now = 5999;
+    expect(rooms.sweep()).toBe(0);
+    clock.now = 6000;
+    expect(rooms.sweep()).toBe(1);
+  });
+
+  it('прибрана гра скасовує заплановані ходи ботів', async () => {
+    vi.useFakeTimers();
+    try {
+      const { rooms, clock } = timed({ idleTtlMs: 1000 });
+      const host = unwrap(await rooms.create('Оля'));
+      unwrap(rooms.addBot(host.code, host.playerId));
+      unwrap(rooms.addBot(host.code, host.playerId));
+      unwrap(rooms.settings(host.code, host.playerId, 60));
+      unwrap(rooms.start(host.code, host.playerId));
+      expect(vi.getTimerCount()).toBe(1);
+      clock.now = 1000;
+      expect(rooms.sweep()).toBe(1);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('кімнат у памʼяті не більше ліміту: далі створення — unavailable', async () => {
+    const { rooms, clock } = timed({ maxRooms: 2, idleTtlMs: 1000 });
+    unwrap(await rooms.create('Оля'));
+    unwrap(await rooms.create('Петро'));
+    expect(errorCode(await rooms.create('Іра'))).toBe('unavailable');
+    // Покинуті кімнати звільняють місце.
+    clock.now = 1000;
+    unwrap(await rooms.create('Іра'));
   });
 });

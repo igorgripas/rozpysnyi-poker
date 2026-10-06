@@ -1,4 +1,11 @@
-import { type Action, type Card, type GameState, gameLog, replay } from '@poker/engine';
+import {
+  type Action,
+  type Card,
+  type GameState,
+  gameLog,
+  legalActions,
+  replay,
+} from '@poker/engine';
 import { playerViewSchema } from '@poker/protocol';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RoomManager } from '../src/rooms.js';
@@ -219,5 +226,70 @@ describe('боти', () => {
     const view = rooms.view(code, host);
     unwrap(send(rooms, code, host, view?.legalActions[0] as Action));
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('помилка бота', () => {
+  it('нелегальна дія бота не валить таймер: помилку логуємо із seed і логом, ходимо першою легальною дією', async () => {
+    const errors: { error: unknown; code: string; seed: number; log: unknown }[] = [];
+    const rooms = new RoomManager({
+      random: testRandom(5),
+      botDelayMs: DELAY,
+      // Бот із багом: завжди замовляє неможливе.
+      createBot: () => ({
+        name: 'зламаний',
+        act: (view) => ({ type: 'bid', seat: view.seat, bid: 99 }),
+      }),
+      onBotError: (error, context) => errors.push({ error, ...context }),
+    });
+    const host = unwrap(await rooms.create('Оля'));
+    unwrap(rooms.addBot(host.code, host.playerId));
+    unwrap(rooms.addBot(host.code, host.playerId));
+    unwrap(rooms.start(host.code, host.playerId));
+    const human = host.playerId;
+    for (let steps = 0; errors.length === 0; steps++) {
+      const view = rooms.view(host.code, human);
+      if (view?.legalActions.length)
+        unwrap(send(rooms, host.code, human, view.legalActions[0] as Action));
+      else expect(() => vi.advanceTimersByTime(DELAY)).not.toThrow();
+      expect(steps).toBeLessThan(100);
+    }
+    const game = rooms.get(host.code)?.game as GameState;
+    const [report] = errors;
+    expect(report?.error).toBeInstanceOf(Error);
+    expect(report?.code).toBe(host.code);
+    expect(report?.seed).toBe(game.seed);
+    // Лог — до ходу бота; замість нелегальної дії зіграно першу легальну.
+    const before = replay(game.seed, report?.log as ReturnType<typeof gameLog>);
+    expect(game.actions.length).toBe(before.actions.length + 1);
+    expect(game.actions.at(-1)).toEqual(legalActions(before)[0]);
+  });
+
+  it('виняток усередині бота теж не валить сервер', async () => {
+    const errors: unknown[] = [];
+    const rooms = new RoomManager({
+      random: testRandom(5),
+      botDelayMs: DELAY,
+      createBot: () => ({
+        name: 'зламаний',
+        act: () => {
+          throw new Error('бот зламався');
+        },
+      }),
+      onBotError: (error) => errors.push(error),
+    });
+    const host = unwrap(await rooms.create('Оля'));
+    unwrap(rooms.addBot(host.code, host.playerId));
+    unwrap(rooms.addBot(host.code, host.playerId));
+    unwrap(rooms.start(host.code, host.playerId));
+    for (let steps = 0; steps < 30; steps++) {
+      const view = rooms.view(host.code, host.playerId);
+      if (view?.legalActions.length)
+        unwrap(send(rooms, host.code, host.playerId, view.legalActions[0] as Action));
+      else expect(() => vi.advanceTimersByTime(DELAY)).not.toThrow();
+    }
+    expect(errors.length).toBeGreaterThan(0);
+    expect(rooms.get(host.code)?.game?.actions.length).toBeGreaterThan(10);
+    rooms.close();
   });
 });

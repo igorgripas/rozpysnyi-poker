@@ -3,6 +3,7 @@ import {
   type Action,
   type Card,
   DEFAULT_OPTIONS,
+  type GameLog,
   type GameOptions,
   type GameState,
   IllegalActionError,
@@ -14,6 +15,7 @@ import {
   apply,
   createGame,
   gameLog,
+  legalActions,
   replay,
   viewFor,
 } from '@poker/engine';
@@ -88,6 +90,27 @@ export interface RoomManagerOptions {
   store?: RoomStore;
   /** Помилка запису у сховище (після всіх повторних спроб). */
   onStoreError?: (error: unknown) => void;
+  /** Створює бота для місця бота чи гравця, за якого ходить сервер (у тестах — підмінний). */
+  createBot?: () => Bot;
+  /**
+   * Бот кинув виняток або повернув нелегальну дію: замість неї зіграно першу легальну.
+   * У контексті — seed і лог гри до цього ходу, щоб відтворити баг.
+   */
+  onBotError?: (error: unknown, context: BotErrorContext) => void;
+  /** Скільки кімнат може бути в памʼяті одночасно. */
+  maxRooms?: number;
+  /** Через скільки мс без підключених людей і без змін кімната вважається покинутою. */
+  idleTtlMs?: number;
+  /** Годинник для TTL кімнат (у тестах — керований). */
+  now?: () => number;
+}
+
+/** Що потрібно, щоб відтворити помилку бота: кімната, seed і лог гри до його ходу. */
+export interface BotErrorContext {
+  readonly code: string;
+  readonly seat: number;
+  readonly seed: number;
+  readonly log: GameLog;
 }
 
 /** Затримка ходу бота за замовчуванням: щоб люди встигали бачити карти. */
@@ -95,6 +118,12 @@ export const DEFAULT_BOT_DELAY_MS = 700;
 
 /** Пауза після взятки за замовчуванням: клієнт стільки ж показує, хто її бере. */
 export const TRICK_PAUSE_MS = 2000;
+
+/** Ліміт кімнат у памʼяті за замовчуванням. */
+export const MAX_ROOMS = 1000;
+
+/** Покинута кімната (без підключених людей і змін) прибирається з памʼяті через 30 хв. */
+export const IDLE_ROOM_TTL_MS = 30 * 60 * 1000;
 
 /** Сповіщення про зміну кімнати з кодом `code`. */
 export type RoomListener = (code: string) => void;
@@ -150,6 +179,8 @@ export class RoomManager {
   /** Боти за ідентифікатором учасника. */
   private readonly bots = new Map<string, Bot>();
   private readonly onStoreError: (error: unknown) => void;
+  private readonly createBot: () => Bot;
+  private readonly onBotError: (error: unknown, context: BotErrorContext) => void;
   /** Остання черга записів кожної кімнати: записи однієї кімнати йдуть послідовно. */
   private readonly writes = new Map<string, Promise<boolean>>();
   /** Збережені ігри, які цей рушій не може продовжити: код → пояснення для гравців. */
@@ -160,6 +191,11 @@ export class RoomManager {
   private closed = false;
   /** Коди, зайняті кімнатами, які ще створюються. */
   private readonly reserved = new Set<string>();
+  private readonly maxRooms: number;
+  private readonly idleTtlMs: number;
+  private readonly now: () => number;
+  /** Час останньої зміни чи відключення в кожній кімнаті: від нього рахується TTL. */
+  private readonly lastActive = new Map<string, number>();
 
   constructor(options: RoomManagerOptions = {}) {
     this.random = options.random ?? cryptoRandom;
@@ -168,6 +204,11 @@ export class RoomManager {
     this.trickPauseMs = options.trickPauseMs ?? TRICK_PAUSE_MS;
     this.store = options.store ?? null;
     this.onStoreError = options.onStoreError ?? (() => undefined);
+    this.createBot = options.createBot ?? createHeuristicBot;
+    this.onBotError = options.onBotError ?? (() => undefined);
+    this.maxRooms = options.maxRooms ?? MAX_ROOMS;
+    this.idleTtlMs = options.idleTtlMs ?? IDLE_ROOM_TTL_MS;
+    this.now = options.now ?? (() => Date.now());
   }
 
   /** Готує сховище під час старту сервера (схема бази). */
@@ -187,6 +228,8 @@ export class RoomManager {
       const store = this.store;
       pending = (async () => {
         try {
+          // Кімнату могли щойно вивантажити (`sweep`): спершу дописуємо її останні зміни.
+          await this.writes.get(code);
           const snapshot = await store.load(code);
           // Поки читали, кімнату могли завантажити або створити.
           const existing = this.rooms.get(code);
@@ -238,9 +281,10 @@ export class RoomManager {
       bugReportsSent: { ...snapshot.bugReportsSent },
     };
     for (const member of room.seats) {
-      if (member.kind === 'bot') this.bots.set(member.id, createHeuristicBot());
+      if (member.kind === 'bot') this.bots.set(member.id, this.createBot());
     }
     this.rooms.set(room.code, room);
+    this.lastActive.set(room.code, this.now());
     if (room.status === 'playing' && game !== null) {
       // Рестарт міг статися одразу після взятки: пауза взятки починається заново.
       this.scheduleTurn(room, afterTrick(game));
@@ -270,7 +314,10 @@ export class RoomManager {
 
   protected changed(code: string): void {
     const room = this.rooms.get(code);
-    if (room !== undefined) this.persist(room);
+    if (room !== undefined) {
+      this.lastActive.set(code, this.now());
+      this.persist(room);
+    }
     for (const listener of this.listeners) listener(code);
   }
 
@@ -302,11 +349,37 @@ export class RoomManager {
 
   /** Закриває кімнату: прибирає її з памʼяті й зі сховища. */
   private remove(room: Room): void {
-    this.rooms.delete(room.code);
-    for (const member of room.seats) this.bots.delete(member.id);
+    this.forget(room);
     const store = this.store;
     if (store !== null) this.enqueue(room.code, () => store.delete(room.code));
     for (const listener of this.listeners) listener(room.code);
+  }
+
+  /** Прибирає кімнату з памʼяті: її боти й заплановані ходи скасовуються. */
+  private forget(room: Room): void {
+    this.rooms.delete(room.code);
+    this.lastActive.delete(room.code);
+    for (const member of room.seats) this.bots.delete(member.id);
+    const timer = this.turnTimers.get(room.code);
+    if (timer !== undefined) clearTimeout(timer);
+    this.turnTimers.delete(room.code);
+  }
+
+  /**
+   * Прибирає з памʼяті покинуті кімнати: без підключених людей і без змін довше `idleTtlMs`.
+   * Зі сховищем кімната лише вивантажується: `load` поверне її за кодом, і гра продовжиться.
+   * Без сховища кімната зникає назавжди. Повертає кількість прибраних кімнат.
+   */
+  sweep(): number {
+    const since = this.now() - this.idleTtlMs;
+    let removed = 0;
+    for (const room of [...this.rooms.values()]) {
+      if (room.seats.some((m) => m.kind === 'human' && m.connected)) continue;
+      if ((this.lastActive.get(room.code) ?? 0) > since) continue;
+      this.forget(room);
+      removed++;
+    }
+    return removed;
   }
 
   /**
@@ -417,6 +490,10 @@ export class RoomManager {
   }
 
   async create(name: string): Promise<Result<Session>> {
+    if (this.rooms.size + this.reserved.size >= this.maxRooms) this.sweep();
+    if (this.rooms.size + this.reserved.size >= this.maxRooms) {
+      return fail('unavailable', 'На сервері забагато кімнат, спробуйте пізніше');
+    }
     const code = await this.newCode();
     const host = this.newHuman(name);
     const room: Room = {
@@ -529,7 +606,7 @@ export class RoomManager {
       connected: true,
       away: false,
     };
-    this.bots.set(bot.id, createHeuristicBot());
+    this.bots.set(bot.id, this.createBot());
     return bot;
   }
 
@@ -785,11 +862,11 @@ export class RoomManager {
     if (member.kind === 'bot' || member.away) {
       // За гравця, що вийшов (T180), ходить евристичний бот — так само швидко, як звичайний.
       delay = afterTrick ? Math.max(this.botDelayMs, this.trickPauseMs) : this.botDelayMs;
-      bot = member.kind === 'bot' ? (this.bots.get(member.id) as Bot) : createHeuristicBot();
+      bot = member.kind === 'bot' ? (this.bots.get(member.id) as Bot) : this.createBot();
     } else if (room.turnTimerSec !== null) {
       delay = room.turnTimerSec * 1000;
       room.turnDeadline = Date.now() + delay;
-      bot = createHeuristicBot();
+      bot = this.createBot();
     } else {
       return;
     }
@@ -797,9 +874,25 @@ export class RoomManager {
       this.turnTimers.delete(room.code);
       const game = room.game as GameState;
       if (game.turn !== turn) return;
-      this.applyAction(room, bot.act(viewFor(game, turn)));
+      this.botTurn(room, game, turn, bot);
     }, delay);
     this.turnTimers.set(room.code, timer);
+  }
+
+  /**
+   * Хід бота з таймера. Баг бота (виняток чи нелегальна дія) не має валити процес:
+   * помилка логується із seed і логом гри, а замість ходу бота грається перша легальна дія.
+   */
+  private botTurn(room: Room, game: GameState, turn: number, bot: Bot): void {
+    let action: Action;
+    try {
+      action = bot.act(viewFor(game, turn));
+      apply(game, action);
+    } catch (error) {
+      this.onBotError(error, { code: room.code, seat: turn, seed: game.seed, log: gameLog(game) });
+      action = legalActions(game)[0] as Action;
+    }
+    this.applyAction(room, action);
   }
 
   /** Позначає, чи підключений гравець (є хоч одне активне зʼєднання). */
