@@ -6,6 +6,9 @@ export type PluralForms = readonly [one: string, few: string, many: string];
 /** Усі тексти інтерфейсу українською. */
 export const uk = {
   appTitle: 'Розписний покер',
+  settings: {
+    label: 'Налаштування',
+  },
   theme: {
     toLight: 'Світла тема',
     toDark: 'Темна тема',

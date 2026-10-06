@@ -133,7 +133,7 @@ export function useGameSounds(latest: WirePlayerView, yourTurn: boolean): void {
   }, [yourTurn]);
 }
 
-/** Перемикач звуку в шапці; без Web Audio не показується. */
+/** Перемикач звуку в меню налаштувань; без Web Audio не показується. */
 export function SoundToggle() {
   const enabled = useSyncExternalStore(subscribe, soundEnabled);
   useSoundUnlock();
@@ -141,13 +141,14 @@ export function SoundToggle() {
   return (
     <button
       type="button"
-      className="icon-button"
+      className="settings__item"
       aria-label={uk.sound.label}
       aria-pressed={enabled}
       title={enabled ? uk.sound.on : uk.sound.off}
       onClick={() => setSoundEnabled(!enabled)}
     >
       <span aria-hidden="true">{enabled ? '🔊' : '🔇'}</span>
+      {uk.sound.label}
     </button>
   );
 }

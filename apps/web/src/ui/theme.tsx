@@ -51,12 +51,13 @@ export function ThemeToggle() {
   return (
     <button
       type="button"
-      className="icon-button"
+      className="settings__item"
       aria-label={label}
       title={label}
       onClick={() => setTheme(next)}
     >
       <span aria-hidden="true">{next === 'dark' ? '☾' : '☀'}</span>
+      {label}
     </button>
   );
 }

@@ -39,20 +39,21 @@ export function useTurnVibration(yourTurn: boolean): void {
   }, [yourTurn, enabled]);
 }
 
-/** Перемикач вібрації в шапці; без підтримки вібрації не показується. */
+/** Перемикач вібрації в меню налаштувань; без підтримки вібрації не показується. */
 export function VibrationToggle() {
   const enabled = useSyncExternalStore(subscribe, vibrationEnabled);
   if (!vibrationSupported()) return null;
   return (
     <button
       type="button"
-      className="icon-button"
+      className="settings__item"
       aria-label={uk.vibration.label}
       aria-pressed={enabled}
       title={enabled ? uk.vibration.on : uk.vibration.off}
       onClick={() => setVibrationEnabled(!enabled)}
     >
       <span aria-hidden="true">{enabled ? '📳' : '📴'}</span>
+      {uk.vibration.label}
     </button>
   );
 }
