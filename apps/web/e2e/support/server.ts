@@ -21,6 +21,7 @@ export interface SeededServer {
 /**
  * Окремий сервер у процесі тесту з фіксованим seed, миттєвими ботами й без паузи після взятки:
  * екрани відтворюються піксель у піксель незалежно від інших тестів і повторів.
+ * Ліміт запитів зʼєднання знято: з миттєвими ботами гравець ходить частіше, ніж людина.
  */
 export async function startSeededServer(seed: number, publicUrl: string): Promise<SeededServer> {
   const server: PokerServer = createPokerServer({
@@ -28,6 +29,7 @@ export async function startSeededServer(seed: number, publicUrl: string): Promis
     publicUrl,
     botDelayMs: 0,
     trickPauseMs: 0,
+    connectionLimits: { requests: Number.POSITIVE_INFINITY },
   });
   const url = await server.listen({ port: 0, host: '127.0.0.1' });
   return {

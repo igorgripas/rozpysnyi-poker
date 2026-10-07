@@ -11,7 +11,10 @@ test('повна гра: 4 гравці в окремих браузерах г�
   const contexts: BrowserContext[] = [];
   const pages: Page[] = [];
   for (let i = 0; i < NAMES.length; i++) {
+    // Без анімацій під час гри: інакше збирання взятки (≈0,4 с × 162) і переходи карт
+    // у руці додають хвилини. Перед фінальним екраном рух вмикаємо назад.
     const context = await browser.newContext({
+      reducedMotion: 'reduce',
       ...(viewport !== undefined && { viewport }),
       ...(isMobile !== undefined && { isMobile }),
       ...(hasTouch !== undefined && { hasTouch }),
@@ -43,6 +46,7 @@ test('повна гра: 4 гравці в окремих браузерах г�
 
   // Кожен гравець грає у своєму браузері одночасно з іншими; ходи чергує сервер.
   await Promise.all(pages.map((page) => playUntil(page)));
+  for (const page of pages) await page.emulateMedia({ reducedMotion: 'no-preference' });
 
   // Фінальний екран однаковий у всіх: ті самі підсумки в тому самому порядку.
   const results = await Promise.all(

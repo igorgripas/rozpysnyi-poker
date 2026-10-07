@@ -45,7 +45,7 @@ async function nextMove(page: Page, timeout: number): Promise<Move> {
 
 /**
  * Робить один хід через інтерфейс, як людина: замовлення — перша дозволена кнопка,
- * карта — перша легальна (тап вибирає, другий тап грає), джокер — перше оголошення.
+ * карта — перша легальна (тап вибирає, другий тап грає — подвійним кліком), джокер — перше оголошення.
  * Повертає `false`, якщо гру завершено.
  */
 export async function takeTurn(page: Page, timeout = 60_000): Promise<boolean> {
@@ -66,8 +66,9 @@ export async function takeTurn(page: Page, timeout = 60_000): Promise<boolean> {
     // Конкретна карта за data-card: «перша доступна» може змінитися між тапами.
     const id = await page.locator('.hand__card:enabled').first().getAttribute('data-card');
     const card = page.locator(`.hand__card[data-card="${id}"]`);
-    if ((await card.getAttribute('aria-pressed')) !== 'true') await card.click();
-    await card.click();
+    // Два тапи одним подвійним кліком: удвічі менше перевірок дієздатності на хід.
+    if ((await card.getAttribute('aria-pressed')) === 'true') await card.click();
+    else await card.dblclick();
   }
   // Дія дійшла до сервера, і він надіслав новий стан.
   await page.waitForFunction(
