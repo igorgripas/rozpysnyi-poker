@@ -6,6 +6,7 @@ import {
   UnsupportedLogVersionError,
   apply,
   biddingOrder,
+  buildScoreTable,
   cardId,
   createGame,
   createRng,
@@ -21,7 +22,15 @@ import {
   shuffle,
   viewFor,
 } from '../src/index.js';
-import type { Action, Card, GameState, LogMigration, Rng } from '../src/index.js';
+import type {
+  Action,
+  Card,
+  GameState,
+  HandRecord,
+  LogMigration,
+  Rng,
+  ScoreTable,
+} from '../src/index.js';
 
 /** Випадковий легальний хід — детермінований через окремий seed RNG. */
 function randomAction(state: GameState, rng: Rng): Action {
@@ -515,6 +524,59 @@ describe('viewFor', () => {
 
   it('rejects an invalid seat', () => {
     expect(() => viewFor(createGame(1, 3), 3)).toThrow(RangeError);
+  });
+});
+
+describe('scoreTable: кеш завершених роздач', () => {
+  /** Таблиця, зібрана наново з історії й поточної роздачі — еталон для кешованої. */
+  function freshTable(state: GameState): ScoreTable {
+    const records: HandRecord[] = [...state.history];
+    if (state.status !== 'finished') {
+      const { hand } = state;
+      records.push({
+        spec: hand.spec,
+        dealer: hand.dealer,
+        trump: hand.trump,
+        hands: hand.dealt,
+        bids: hand.bids,
+        taken: hand.taken,
+        completed: false,
+      });
+    }
+    return buildScoreTable(records, state.playerCount);
+  }
+
+  it('R-8.1–R-8.4: table equals one rebuilt from history after every action', () => {
+    for (const n of [3, 6]) {
+      let state = createGame(400 + n, n, { dark: true, zeroLimit: true });
+      const rng = createRng(n);
+      while (state.status !== 'finished') {
+        expect(scoreTable(state)).toEqual(freshTable(state));
+        expect(viewFor(state, 0).table).toEqual(freshTable(state));
+        state = apply(state, randomAction(state, rng));
+      }
+      expect(scoreTable(state)).toEqual(freshTable(state));
+    }
+  });
+
+  it('R-8.3: table of a state restored from JSON matches the original', () => {
+    const state = playUntil(createGame(410, 4), createRng(2), (s) => s.history.length >= 3);
+    const restored = JSON.parse(JSON.stringify(state)) as GameState;
+    expect(scoreTable(restored)).toEqual(scoreTable(state));
+  });
+
+  it('R-8.2: completed hands are not rebuilt on every move of the current hand', () => {
+    const start = playUntil(
+      createGame(420, 4),
+      createRng(3),
+      (s) => s.history.length >= 2 && s.status === 'playing',
+    );
+    const next = apply(start, legalActions(start)[0] as Action);
+    expect(next.history).toBe(start.history);
+    const before = viewFor(start, 0).table;
+    const after = viewFor(next, 1).table;
+    expect(after.rows[0]).toBe(before.rows[0]);
+    expect(after.summary).toBe(before.summary);
   });
 });
 
