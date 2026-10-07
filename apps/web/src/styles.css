@@ -993,13 +993,22 @@ textarea {
   line-height: 1.2;
 }
 
+/* Значення замовлення й значок роздаючого — в одному рядку однакової висоти в усіх клітинках. */
+.bid-queue__line {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 1.75rem;
+}
+
+/* Роздаючий у черзі — значок колоди поруч зі значенням, без окремого рядка тексту. */
 .bid-queue__dealer {
-  max-width: 100%;
-  overflow: hidden;
-  font-size: 0.6875rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--muted);
+  flex: none;
+  width: 0.875rem;
+  height: 0.875rem;
+  fill: var(--surface);
+  stroke: var(--muted);
+  stroke-width: 1.5;
 }
 
 .bidding__summary {

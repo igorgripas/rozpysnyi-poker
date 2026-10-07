@@ -97,12 +97,12 @@ export function GameTable({ room, view: latest }: GameTableProps) {
   useTurnVibration(yourTurn);
   useGameSounds(latest, yourTurn);
 
-  // Стан, з якого надіслано хід: до нового стану від сервера рука вимкнена,
-  // щоб показане не розходилося з уже надісланим.
-  const [playedFrom, setPlayedFrom] = useState<WirePlayerView | null>(null);
+  // Стан, з якого надіслано хід чи замовлення: до нового стану від сервера рука й кнопки
+  // замовлення вимкнені, щоб показане не розходилося з уже надісланим.
+  const [sentFrom, setSentFrom] = useState<WirePlayerView | null>(null);
   const plays = view.legalActions.filter((action): action is PlayAction => action.type === 'play');
   const legal =
-    view.status === 'playing' && view.turn === view.seat && !stale && playedFrom !== latest
+    view.status === 'playing' && view.turn === view.seat && !stale && sentFrom !== latest
       ? new Set(plays.map((action) => cardId(action.card)))
       : null;
 
@@ -116,15 +116,19 @@ export function GameTable({ room, view: latest }: GameTableProps) {
     if (failure !== null) setError(failure.message);
   }
 
-  function play(card: Card, call?: JokerCall) {
-    setJoker(null);
-    setPlayedFrom(latest);
+  /** Надсилає хід чи замовлення зі стану `latest`; відмова сервера знову вмикає керування. */
+  function sendAction(request: () => Promise<ClientError | null>) {
+    setSentFrom(latest);
     void send(async () => {
-      const failure = await client.send('game:play', { card, ...(call !== undefined && { call }) });
-      // Хід не прийнято — рука знову активна.
-      if (failure !== null) setPlayedFrom(null);
+      const failure = await request();
+      if (failure !== null) setSentFrom(null);
       return failure;
     });
+  }
+
+  function play(card: Card, call?: JokerCall) {
+    setJoker(null);
+    sendAction(() => client.send('game:play', { card, ...(call !== undefined && { call }) }));
   }
 
   // Джокер спершу відкриває діалог оголошення (§6).
@@ -307,7 +311,8 @@ export function GameTable({ room, view: latest }: GameTableProps) {
         <Bidding
           view={view}
           nameOf={nameOf}
-          onBid={(bid) => void send(() => client.send('game:bid', { bid }))}
+          disabled={sentFrom === latest}
+          onBid={(bid) => sendAction(() => client.send('game:bid', { bid }))}
         />
       )}
 

@@ -86,3 +86,29 @@ test('факти роздачі на телефоні не розривають�
   );
   expect(overflow).toBeLessThanOrEqual(0);
 });
+
+test('R-4.2: черга замовлень на телефоні з 6 гравцями — позначку роздаючого видно цілою', async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile-360', 'перевірка вузького екрана');
+  await startGame(page, 5);
+  await expect(page.locator('.game__turn')).toHaveText('Ваш хід — замовлення', { timeout: 15_000 });
+  const items = page.getByRole('list', { name: 'Черга замовлень' }).getByRole('listitem');
+  await expect(items).toHaveCount(6);
+  // Роздаючий — останній у черзі (R-4.2); позначка компактна, з доступною назвою.
+  const mark = items.last().getByRole('img', { name: 'роздає' });
+  await expect(mark).toBeVisible();
+  await expect(mark).toBeInViewport({ ratio: 1 });
+  // Позначка цілком у своїй клітинці черги, не вилазить за її межі.
+  const cell = await items.last().boundingBox();
+  const box = await mark.boundingBox();
+  expect(box?.x ?? -Infinity).toBeGreaterThanOrEqual(cell?.x ?? Infinity);
+  expect((box?.x ?? Infinity) + (box?.width ?? 0)).toBeLessThanOrEqual(
+    (cell?.x ?? -Infinity) + (cell?.width ?? 0),
+  );
+  // Позначка не додає окремого рядка: стоїть поруч зі значенням замовлення.
+  const value = await items.last().locator('.bid-queue__value').boundingBox();
+  const middle = (box?.y ?? 0) + (box?.height ?? 0) / 2;
+  expect(middle).toBeGreaterThanOrEqual(value?.y ?? Infinity);
+  expect(middle).toBeLessThanOrEqual((value?.y ?? 0) + (value?.height ?? 0));
+});
