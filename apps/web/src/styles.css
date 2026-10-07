@@ -183,6 +183,24 @@ textarea {
   color: var(--muted);
 }
 
+.settings__label {
+  flex: 1;
+}
+
+/* Стан перемикача текстом (увімкнено/вимкнено): праворуч, як позначка-«пігулка». */
+.settings__state {
+  padding: 0 var(--space-2);
+  border-radius: 999px;
+  font-size: 0.875rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.settings__item[aria-pressed='true'] .settings__state {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* ── Стан звʼязку ───────────────────────────────────────────────────────── */
 
 .net-dot {

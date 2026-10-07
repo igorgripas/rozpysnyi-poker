@@ -53,7 +53,8 @@ export function VibrationToggle() {
       onClick={() => setVibrationEnabled(!enabled)}
     >
       <span aria-hidden="true">{enabled ? '📳' : '📴'}</span>
-      {uk.vibration.label}
+      <span className="settings__label">{uk.vibration.label}</span>
+      <span className="settings__state">{enabled ? uk.settings.on : uk.settings.off}</span>
     </button>
   );
 }

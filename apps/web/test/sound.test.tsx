@@ -1,5 +1,5 @@
 import { type GameState, apply, createGame, legalActions } from '@poker/engine';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App';
@@ -143,10 +143,12 @@ describe('звуки гри', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Налаштування' }));
     const toggle = screen.getByRole('button', { name: 'Звуки гри' });
     expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    expect(within(toggle).getByText('увімкнено')).toBeVisible();
     // Поруч із перемикачем вібрації.
     expect(toggle.previousElementSibling).toHaveAccessibleName('Вібрація на свій хід');
     await userEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    expect(within(toggle).getByText('вимкнено')).toBeVisible();
     expect(localStorage.getItem(SOUND_STORAGE_KEY)).toBe('off');
     await userEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-pressed', 'true');

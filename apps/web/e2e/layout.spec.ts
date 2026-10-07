@@ -43,6 +43,10 @@ test('шапка: назва в один рядок, вібрація, звук 
   await menu.click();
   const panel = page.getByRole('group', { name: 'Налаштування' });
   await expect(panel.getByRole('button', { name: 'Темна тема' })).toBeInViewport({ ratio: 1 });
+  // Стан перемикача читається текстом, і на 360px він теж у межах екрана.
+  const sound = panel.getByRole('button', { name: 'Звуки гри' });
+  await expect(sound).toContainText('увімкнено');
+  await expect(sound).toBeInViewport({ ratio: 1 });
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );
