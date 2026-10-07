@@ -251,7 +251,7 @@ export class PokerClient {
       }
     }
     this.set({ room: null, view: null, resumeError: null });
-    globalThis.history?.replaceState(null, '', '/');
+    replacePath('/');
     await this.connection.request('room:leave', {});
   }
 
@@ -301,6 +301,14 @@ export function parseName(name: string): string | null {
 export function parseRoomCode(code: string): string | null {
   const parsed = roomCodeSchema.safeParse(code);
   return parsed.success ? parsed.data : null;
+}
+
+/**
+ * Замінює шлях в адресі сторінки, зберігаючи параметри запиту (`?server=`, `?trickPause=`):
+ * інакше після перезавантаження dev- чи e2e-клієнт підключився б до іншого сервера.
+ */
+export function replacePath(pathname: string): void {
+  globalThis.history?.replaceState(null, '', `${pathname}${globalThis.location?.search ?? ''}`);
 }
 
 /** Код кімнати з посилання-запрошення `/r/КОД`. */

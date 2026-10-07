@@ -50,10 +50,9 @@ test('завершена гра → «Нова гра» → після пере�
 
   await page.getByRole('button', { name: 'Нова гра' }).click();
   await expect(page.getByRole('button', { name: 'Створити кімнату' })).toBeVisible();
-  await expect(page).toHaveURL(/\/\?|\/$/);
-
-  // Знову відкриваємо застосунок (адреса без `?server=` вела б на інший сервер).
-  await open(page);
+  // Адреса — головна з тими самими параметрами: перезавантаження лишає той самий сервер.
+  await expect(page).toHaveURL(/\/\?server=[^/]*$/);
+  await page.reload();
   await expect(page.getByRole('button', { name: 'Створити кімнату' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Результати' })).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'Незавершені ігри' })).toHaveCount(0);
@@ -89,8 +88,9 @@ test('вихід посеред гри: інші бачать «(бот)», гр
   await expect(seat(page, 'Петро')).toContainText('Петро (бот)');
   await expect(page.getByRole('status').filter({ hasText: /^Ваш хід/ })).toBeVisible();
 
-  // Повторне відкриття не повертає в гру саме; повернутися можна з головної.
-  await open(guest);
+  // Перезавантаження не повертає в гру саме; повернутися можна з головної.
+  await expect(guest).toHaveURL(/\/\?server=[^/]*$/);
+  await guest.reload();
   const unfinished = guest.getByRole('region', { name: 'Незавершені ігри' });
   await expect(unfinished).toContainText(`Гра ${code}`);
   await expect(unfinished).toContainText('Оля, Петро, Бот 1');

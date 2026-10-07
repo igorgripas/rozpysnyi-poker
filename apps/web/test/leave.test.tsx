@@ -46,6 +46,14 @@ describe('PokerClient.leave (T180)', () => {
     expect(window.location.pathname).toBe('/');
   });
 
+  it('повертає на головну, не губячи параметри запиту (?server=)', async () => {
+    const { client } = inRoom('lobby');
+    window.history.replaceState(null, '', '/r/ABCDE?server=http%3A%2F%2Flocalhost%3A3101');
+    await client.leave();
+    expect(window.location.pathname).toBe('/');
+    expect(window.location.search).toBe('?server=http%3A%2F%2Flocalhost%3A3101');
+  });
+
   it('без мережі теж веде в лобі', async () => {
     const { connection, client } = inRoom('lobby');
     connection.on('room:leave', () => ({ ok: false, error: NETWORK_ERROR }));
