@@ -1,18 +1,39 @@
 import { type Locator, type Page, expect, test } from '@playwright/test';
 import { playUntil } from './support/player';
-import { startSeededServer } from './support/server';
+import { type SeededServer, startSeededServer } from './support/server';
 
-/** Seed сервера для тесту R-3.1 «козир на столі видно разом із рукою». */
-const R31_SEED = 7;
+// Кожен тест — на власному детермінованому сервері (як visual.spec): роздачі щоразу ті самі,
+// боти ходять миттєво, тож тести швидкі й відтворювані. З цим seed потрібні стани настають рано.
+const SEED = 7;
+let server: SeededServer;
 
-test('ігровий стіл: рука, гравці й стіл вміщуються в екран', async ({ page }) => {
-  await page.goto('/');
+test.beforeEach(async ({ baseURL }) => {
+  server = await startSeededServer(SEED, baseURL ?? '');
+});
+
+test.afterEach(async () => {
+  await server.close();
+});
+
+/**
+ * Кімната Олі з `bots` ботами на детермінованому сервері; гру почато.
+ * `trickPause: false` — без паузи після взятки в клієнті (для тестів, що грають багато взяток).
+ */
+async function startGame(page: Page, bots: number, { trickPause = true } = {}): Promise<void> {
+  const query = trickPause ? '' : '&trickPause=0';
+  await page.goto(`/?server=${encodeURIComponent(server.url)}${query}`);
+  await expect(page.getByRole('img', { name: 'Звʼязок є' })).toBeVisible();
   await page.getByLabel('Ваше імʼя').fill('Оля');
   await page.getByRole('button', { name: 'Створити кімнату' }).click();
-  await page.getByRole('button', { name: 'Додати бота' }).click();
-  await page.getByRole('button', { name: 'Додати бота' }).click();
-  await expect(page.getByRole('list', { name: 'Гравці' }).getByRole('listitem')).toHaveCount(3);
+  for (let i = 0; i < bots; i++) await page.getByRole('button', { name: 'Додати бота' }).click();
+  await expect(page.getByRole('list', { name: 'Гравці' }).getByRole('listitem')).toHaveCount(
+    bots + 1,
+  );
   await page.getByRole('button', { name: 'Почати гру' }).click();
+}
+
+test('ігровий стіл: рука, гравці й стіл вміщуються в екран', async ({ page }) => {
+  await startGame(page, 2);
 
   const hand = page.getByRole('list', { name: 'Ваші карти' });
   await expect(hand.getByRole('button')).toHaveCount(1);
@@ -32,12 +53,7 @@ test('ігровий стіл: рука, гравці й стіл вміщуют
 test('R-3.1: відкрита карта-козир не менша за карту в руці, значок козиря більший за текст', async ({
   page,
 }) => {
-  await page.goto('/');
-  await page.getByLabel('Ваше імʼя').fill('Оля');
-  await page.getByRole('button', { name: 'Створити кімнату' }).click();
-  await page.getByRole('button', { name: 'Додати бота' }).click();
-  await page.getByRole('button', { name: 'Додати бота' }).click();
-  await page.getByRole('button', { name: 'Почати гру' }).click();
+  await startGame(page, 2);
 
   const info = page.getByRole('region', { name: 'Роздача' });
   const table = page.getByRole('region', { name: 'Стіл' });
@@ -70,12 +86,7 @@ test('R-3.1: відкрита карта-козир не менша за кар�
 test('R-3.4: «Без козиря» на місці відкритої карти не дрібніше за текст гравців і вміщується', async ({
   page,
 }) => {
-  await page.goto('/');
-  await page.getByLabel('Ваше імʼя').fill('Оля');
-  await page.getByRole('button', { name: 'Створити кімнату' }).click();
-  await page.getByRole('button', { name: 'Додати бота' }).click();
-  await page.getByRole('button', { name: 'Додати бота' }).click();
-  await page.getByRole('button', { name: 'Почати гру' }).click();
+  await startGame(page, 2);
   const table = page.getByRole('region', { name: 'Стіл' });
   await expect(table.locator('.game__revealed')).toBeVisible();
 
@@ -141,47 +152,32 @@ test('R-3.1: козир на столі видно разом із рукою п
   page,
 }, testInfo) => {
   const mobile = testInfo.project.name === 'mobile-360';
-  // Детермінований сервер: на спільному сервері роздачі випадкові, і потрібний стан міг не настати
-  // за всю гру. З цим seed він настає вже в 3-й роздачі.
-  const server = await startSeededServer(R31_SEED, testInfo.project.use.baseURL ?? '');
-  try {
-    await page.goto(`/?server=${encodeURIComponent(server.url)}&trickPause=0`);
-    await page.getByLabel('Ваше імʼя').fill('Оля');
-    await page.getByRole('button', { name: 'Створити кімнату' }).click();
-    for (let i = 0; i < 3; i++) await page.getByRole('button', { name: 'Додати бота' }).click();
-    await expect(page.getByRole('list', { name: 'Гравці' }).getByRole('listitem')).toHaveCount(4);
-    await page.getByRole('button', { name: 'Почати гру' }).click();
+  // На спільному сервері роздачі були б випадкові, і потрібний стан міг не настати за всю гру.
+  // З цим seed він настає вже в 3-й роздачі.
+  await startGame(page, 3, { trickPause: false });
 
-    // Замовлення: козир (відкрита карта першої роздачі) видно разом із рукою.
-    await expect(page.getByRole('group', { name: 'Ваше замовлення' })).toBeVisible();
-    await expectOnPhones(page, mobile);
+  // Замовлення: козир (відкрита карта першої роздачі) видно разом із рукою.
+  await expect(page.getByRole('group', { name: 'Ваше замовлення' })).toBeVisible();
+  await expectOnPhones(page, mobile);
 
-    // Розіграш посеред роздачі: на столі вже є карти суперників, ваш хід.
-    await playUntil(page, async () => {
-      const onTable = await page
-        .locator('.felt__trick:not(.felt__trick--last, .felt__trick--taken) .felt__card')
-        .count();
-      return (
-        onTable >= 2 &&
-        (await page.locator('.hand__card').count()) >= 2 &&
-        (await page.locator('.hand__card:enabled').count()) > 0
-      );
-    });
-    // Стан настав рано, а не після кінця гри.
-    await expect(page.getByRole('region', { name: 'Роздача' })).toContainText('Роздача 3 з 22');
-    await expectOnPhones(page, mobile);
-  } finally {
-    await server.close();
-  }
+  // Розіграш посеред роздачі: на столі вже є карти суперників, ваш хід.
+  await playUntil(page, async () => {
+    const onTable = await page
+      .locator('.felt__trick:not(.felt__trick--last, .felt__trick--taken) .felt__card')
+      .count();
+    return (
+      onTable >= 2 &&
+      (await page.locator('.hand__card').count()) >= 2 &&
+      (await page.locator('.hand__card:enabled').count()) > 0
+    );
+  });
+  // Стан настав рано, а не після кінця гри.
+  await expect(page.getByRole('region', { name: 'Роздача' })).toContainText('Роздача 3 з 22');
+  await expectOnPhones(page, mobile);
 });
 
 test('замовлення: кнопки 0…K, сума замовлень на екрані', async ({ page }) => {
-  await page.goto('/');
-  await page.getByLabel('Ваше імʼя').fill('Оля');
-  await page.getByRole('button', { name: 'Створити кімнату' }).click();
-  await page.getByRole('button', { name: 'Додати бота' }).click();
-  await page.getByRole('button', { name: 'Додати бота' }).click();
-  await page.getByRole('button', { name: 'Почати гру' }).click();
+  await startGame(page, 2);
 
   // Перша роздача — 1 карта: кнопки 0 і 1.
   const options = page.getByRole('group', { name: 'Ваше замовлення' }).getByRole('button');
@@ -200,12 +196,7 @@ test('замовлення: кнопки 0…K, сума замовлень на
 test('R-4.2: черга замовлень показує замовлення попередніх гравців у порядку ходу', async ({
   page,
 }) => {
-  await page.goto('/');
-  await page.getByLabel('Ваше імʼя').fill('Оля');
-  await page.getByRole('button', { name: 'Створити кімнату' }).click();
-  for (let i = 0; i < 5; i++) await page.getByRole('button', { name: 'Додати бота' }).click();
-  await expect(page.getByRole('list', { name: 'Гравці' }).getByRole('listitem')).toHaveCount(6);
-  await page.getByRole('button', { name: 'Почати гру' }).click();
+  await startGame(page, 5);
 
   await expect(page.getByRole('group', { name: 'Ваше замовлення' })).toBeVisible();
   const items = page.getByRole('list', { name: 'Черга замовлень' }).getByRole('listitem');
@@ -243,12 +234,7 @@ test('R-4.2: черга замовлень показує замовлення �
 test('таблиця гри відкривається під час гри й на 6 гравців вміщується без прокручування', async ({
   page,
 }) => {
-  await page.goto('/');
-  await page.getByLabel('Ваше імʼя').fill('Оля');
-  await page.getByRole('button', { name: 'Створити кімнату' }).click();
-  for (let i = 0; i < 5; i++) await page.getByRole('button', { name: 'Додати бота' }).click();
-  await expect(page.getByRole('list', { name: 'Гравці' }).getByRole('listitem')).toHaveCount(6);
-  await page.getByRole('button', { name: 'Почати гру' }).click();
+  await startGame(page, 5);
 
   await page.getByRole('button', { name: 'Таблиця' }).click();
   const dialog = page.getByRole('dialog', { name: 'Таблиця гри' });
@@ -281,13 +267,7 @@ test('таблиця гри відкривається під час гри й �
 test('R-8.2: після роздачі в таблиці «замовив→взяв» з влучанням; на 6 гравців усе видно', async ({
   page,
 }) => {
-  test.setTimeout(2 * 60_000);
-  await page.goto('/?trickPause=0');
-  await page.getByLabel('Ваше імʼя').fill('Оля');
-  await page.getByRole('button', { name: 'Створити кімнату' }).click();
-  for (let i = 0; i < 5; i++) await page.getByRole('button', { name: 'Додати бота' }).click();
-  await expect(page.getByRole('list', { name: 'Гравці' }).getByRole('listitem')).toHaveCount(6);
-  await page.getByRole('button', { name: 'Почати гру' }).click();
+  await startGame(page, 5, { trickPause: false });
 
   // Перша роздача (1 карта) зіграна: у руці вже 2 карти другої роздачі.
   await playUntil(page, async () => (await page.locator('.hand__card').count()) === 2);
@@ -336,13 +316,7 @@ test('R-8.2: після роздачі в таблиці «замовив→вз
 test('пауза після взятки: видно, хто бере, і всі карти; у новій роздачі стіл чистий (R-9.2)', async ({
   page,
 }) => {
-  await page.goto('/');
-  await page.getByLabel('Ваше імʼя').fill('Оля');
-  await page.getByRole('button', { name: 'Створити кімнату' }).click();
-  await page.getByRole('button', { name: 'Додати бота' }).click();
-  await page.getByRole('button', { name: 'Додати бота' }).click();
-  await expect(page.getByRole('list', { name: 'Гравці' }).getByRole('listitem')).toHaveCount(3);
-  await page.getByRole('button', { name: 'Почати гру' }).click();
+  await startGame(page, 2);
 
   // Перша роздача — 1 карта: замовлення й одна взятка.
   const bidding = page.getByRole('group', { name: 'Ваше замовлення' });
@@ -400,12 +374,7 @@ for (const theme of ['light', 'dark'] as const) {
     page,
   }) => {
     await page.emulateMedia({ colorScheme: theme });
-    await page.goto('/');
-    await page.getByLabel('Ваше імʼя').fill('Оля');
-    await page.getByRole('button', { name: 'Створити кімнату' }).click();
-    for (let i = 0; i < 5; i++) await page.getByRole('button', { name: 'Додати бота' }).click();
-    await expect(page.getByRole('list', { name: 'Гравці' }).getByRole('listitem')).toHaveCount(6);
-    await page.getByRole('button', { name: 'Почати гру' }).click();
+    await startGame(page, 5);
     await expect(page.getByRole('list', { name: 'Ваші карти' })).toBeVisible();
 
     const red = theme === 'light' ? 'rgb(198, 40, 40)' : 'rgb(255, 123, 114)';
