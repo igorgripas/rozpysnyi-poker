@@ -63,7 +63,10 @@ export interface PokerServerOptions {
    * не більше `roomsPerHour` створених кімнат за годину, хоч би скільки було зʼєднань.
    */
   ipLimits?: { roomsPerHour?: number };
-  /** Ліміт сигналів голосового чату одного зʼєднання: не більше `signals` за `windowMs` мс. */
+  /**
+   * Ліміт сигналів голосового чату одного зʼєднання: не більше `signals` за `windowMs` мс.
+   * Сигнали рахуються лише тут, а не в `connectionLimits.requests`.
+   */
   voiceSignalLimits?: { signals?: number; windowMs?: number };
   /** Скільки кімнат може бути в памʼяті сервера. */
   maxRooms?: number;
@@ -452,11 +455,16 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
   function overLimit(socket: PokerSocket, event: ClientEvent): Result<never> | null {
     let used = usage.get(socket);
     if (used === undefined) usage.set(socket, (used = { requests: [], signals: [], rooms: 0 }));
+    // Сигнали голосу (десятки ICE-кандидатів при вході) мають власний ліміт
+    // і не забирають запити, потрібні для ходів у грі.
+    if (event === 'voice:signal') {
+      if (!withinWindow(used.signals, signalLimit, signalWindowMs)) {
+        return fail('rateLimited', 'Забагато сигналів голосового чату, зачекайте кілька секунд');
+      }
+      return null;
+    }
     if (!withinWindow(used.requests, requestLimit, requestWindowMs)) {
       return fail('rateLimited', 'Забагато запитів, зачекайте кілька секунд');
-    }
-    if (event === 'voice:signal' && !withinWindow(used.signals, signalLimit, signalWindowMs)) {
-      return fail('rateLimited', 'Забагато сигналів голосового чату, зачекайте кілька секунд');
     }
     if (event === 'room:create') {
       if (used.rooms >= roomLimit) return fail('rateLimited', 'Ви створили забагато кімнат');

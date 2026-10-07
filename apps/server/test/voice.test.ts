@@ -138,6 +138,30 @@ describe('голосовий чат: сигналінг', () => {
     expect(b.client.voice.filter((e) => e.type === 'signal')).toHaveLength(3);
   });
 
+  it('сигнали голосу не витрачають загальний ліміт запитів зʼєднання — ходи проходять', async () => {
+    for (const c of clients.splice(0)) c.close();
+    await server.close();
+    server = createPokerServer({
+      random: testRandom(),
+      connectionLimits: { requests: 6, windowMs: 60_000 },
+      voiceSignalLimits: { signals: 100, windowMs: 60_000 },
+    });
+    url = await server.listen({ port: 0, host: '127.0.0.1' });
+    const {
+      players: [a, b],
+    } = await room(['Оля', 'Петро']);
+    if (!a || !b) throw new Error('немає гравців');
+    for (const p of [a, b]) unwrap(await p.client.request('voice:join', {}));
+    // Десятки ICE-кандидатів при вході в голос.
+    for (let i = 0; i < 20; i++) {
+      unwrap(await a.client.request('voice:signal', { to: b.id, signal: OFFER }));
+    }
+    // У Олі використано 2 запити з 6 (створення кімнати й вхід у голос): решта — для гри.
+    unwrap(await a.client.request('room:addBot', {}));
+    for (let i = 0; i < 3; i++) unwrap(await a.client.request('room:shuffle', {}));
+    expect(errorCode(await a.client.request('room:shuffle', {}))).toBe('rateLimited');
+  });
+
   it('вихід із голосу й відключення повідомляють інших (voice:left)', async () => {
     const {
       players: [a, b, c],
