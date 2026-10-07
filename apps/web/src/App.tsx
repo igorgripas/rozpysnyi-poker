@@ -5,7 +5,7 @@ import { uk } from './i18n';
 import { Lobby } from './lobby/Lobby';
 import { UnfinishedGames } from './lobby/UnfinishedGames';
 import { WaitingRoom } from './lobby/WaitingRoom';
-import { type PokerClient, inviteCodeFromPath } from './net/client';
+import { type PokerClient, inviteCodeFromPath, replacePath } from './net/client';
 import { ClientProvider, useClientState } from './net/react';
 import { CardFace } from './ui/Card';
 import { ConnectionBanner, ConnectionIndicator } from './ui/ConnectionStatus';
@@ -80,7 +80,7 @@ function Screen({ client }: { client: PokerClient }) {
   // Адреса сторінки — посилання на поточну кімнату: його можна скопіювати або оновити сторінку.
   const code = room?.code ?? null;
   useEffect(() => {
-    if (code !== null) window.history.replaceState(null, '', `/r/${code}`);
+    if (code !== null) replacePath(`/r/${code}`);
   }, [code]);
 
   if (room !== null) {
@@ -104,7 +104,7 @@ function Screen({ client }: { client: PokerClient }) {
       <Lobby
         inviteCode={inviteCode}
         onForgetInvite={() => {
-          window.history.replaceState(null, '', '/');
+          replacePath('/');
           setInviteCode(null);
         }}
       />

@@ -128,6 +128,30 @@ describe('лобі', () => {
     expect(localStorage.getItem(SESSION_STORAGE_KEY)).toBeNull();
   });
 
+  it('адреса кімнати /r/КОД зберігає параметри запиту (?server=, ?trickPause=)', async () => {
+    const { connection, user, render } = setup(
+      '/?server=http%3A%2F%2Flocalhost%3A3101&trickPause=0',
+    );
+    connection.on('room:create', () => {
+      queueMicrotask(() => connection.pushRoom(roomState()));
+      return { ok: true, data: session() };
+    });
+    render();
+    await user.type(screen.getByLabelText('Ваше імʼя'), 'Оля');
+    await user.click(screen.getByRole('button', { name: 'Створити кімнату' }));
+    expect(await screen.findByRole('heading', { name: /Кімната ABCDE/ })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/r/ABCDE');
+    expect(window.location.search).toBe('?server=http%3A%2F%2Flocalhost%3A3101&trickPause=0');
+  });
+
+  it('«Інша кімната» веде на головну, не губячи параметри запиту', async () => {
+    const { user, render } = setup('/r/XYZ23?trickPause=0');
+    render();
+    await user.click(screen.getByRole('button', { name: 'Інша кімната' }));
+    expect(window.location.pathname).toBe('/');
+    expect(window.location.search).toBe('?trickPause=0');
+  });
+
   it('запрошення в іншу кімнату не використовує старий токен', () => {
     localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ code: 'ABCDE', token: TOKEN }));
     const { connection, render } = setup('/r/XYZ23');
