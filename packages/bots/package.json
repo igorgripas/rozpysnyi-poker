@@ -15,7 +15,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
-    "benchmark": "tsx --conditions=source scripts/benchmark.ts"
+    "benchmark": "tsx --conditions=source scripts/benchmark.ts",
+    "compare": "tsx --conditions=source scripts/compare.ts"
   },
   "dependencies": {
     "@poker/engine": "workspace:*"

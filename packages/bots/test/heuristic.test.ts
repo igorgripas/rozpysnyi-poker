@@ -162,6 +162,19 @@ describe('евристичний бот: памʼять зіграних кар�
 });
 
 describe('евристичний бот: джокер', () => {
+  it('R-6.1: заходить найстаршим козирем раніше за туза іншої масті, поки джокер «старший козир» не витяг його', () => {
+    // Суперники не мають козирів (R-5.2), тож обидва тузи беруть; але козирного туза
+    // суперник із джокером «старший козир» змусить покласти під джокер (R-6.1).
+    const view = scenario({
+      trump: 'spades',
+      hand: 'H14 S14 D6',
+      bids: [2, 0, 0, 0],
+      earlier: [{ leader: 0, cards: 'S7 H6 C6 D7' }],
+      taken: [1, 0, 0, 0],
+    });
+    expect(playOf(bot.act(view)).card).toEqual(card('S14'));
+  });
+
   it('R-6.1: заходить джокером «старший козир», коли треба взяти, а сильних карт немає', () => {
     const view = scenario({ trump: 'spades', hand: 'J0 H7 D8', bids: [1, 0, 0, 0] });
     const action = playOf(bot.act(view));
@@ -187,12 +200,34 @@ describe('евристичний бот: джокер', () => {
     const view = scenario({
       trump: 'spades',
       hand: 'J0 H7 D8',
-      bids: [1, 0, 0, 0],
+      // Треба ще дві взятки, а певна лише одна — джокер: брати зараз.
+      bids: [2, 0, 0, 0],
       trick: [played('H13'), played('H10'), played('H6')],
     });
     const action = playOf(bot.act(view));
     expect(action.card).toEqual(card('J0'));
     expect(action.call).toEqual({ type: 'take' });
+  });
+
+  it('R-6.4, R-7.3: коли певних взяток досить, не бере джокером, а скидає ризиковану старшу карту', () => {
+    // Треба одна взятка, і джокер її принесе пізніше; король треф може взяти зайву — геть його.
+    const view = scenario({
+      trump: 'spades',
+      hand: 'J0 C13 C6 H7',
+      bids: [1, 0, 0, 0],
+      trick: [played('D14'), played('D10'), played('D6')],
+    });
+    expect(playOf(bot.act(view)).card).toEqual(card('C13'));
+  });
+
+  it('R-5.4, R-7.3: коли певних взяток не вистачає, скидає найслабшу карту', () => {
+    const view = scenario({
+      trump: 'spades',
+      hand: 'S7 C13 C6 H7',
+      bids: [1, 0, 0, 0],
+      trick: [played('S14'), played('S10'), played('S6')],
+    });
+    expect(playOf(bot.act(view)).card).toEqual(card('S7'));
   });
 
   it('R-6.4: не витрачає джокера, якщо взятку бере звичайна карта', () => {
@@ -221,7 +256,8 @@ describe('евристичний бот: джокер', () => {
     const view = scenario({
       trump: 'spades',
       hand: 'J1 H14 D8',
-      bids: [1, 0, 0, 0],
+      // Треба всі три взятки — без джокера не обійтися.
+      bids: [3, 0, 0, 0],
       trick: [{ kind: 'joker', index: 0, call: { type: 'highTrump' } }],
     });
     const action = playOf(bot.act(view));
