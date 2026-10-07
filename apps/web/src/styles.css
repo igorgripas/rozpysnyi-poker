@@ -1432,15 +1432,15 @@ tfoot .sheet__cell {
   gap: var(--space-2);
 }
 
-/* Опції гри (R-10.1): один компактний рядок над таблицею, назви через «·». */
-.sheet-dialog__options {
+/* Опції гри (R-10.1): один компактний рядок (у таблиці гри й на результатах), назви через «·». */
+.game-options {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1);
   margin: 0;
 }
 
-.sheet-dialog__options ul {
+.game-options ul {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-1);
@@ -1449,7 +1449,7 @@ tfoot .sheet__cell {
   list-style: none;
 }
 
-.sheet-dialog__options li + li::before {
+.game-options li + li::before {
   content: '· ';
 }
 
@@ -1473,6 +1473,10 @@ tfoot .sheet__cell {
 
 .leave-dialog__hint {
   margin: 0;
+}
+
+.results__summary .game-options {
+  margin-top: var(--space-2);
 }
 
 .results__new {

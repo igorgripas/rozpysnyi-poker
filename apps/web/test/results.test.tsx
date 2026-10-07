@@ -1,12 +1,12 @@
 import { createGame } from '@poker/engine';
 import type { WirePlayerView } from '@poker/protocol';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { Results } from '../src/game/Results';
 import { PLAYER_NAMES, advanceUntil, wireView } from './support/views';
 
-function finishedView(): WirePlayerView {
-  const state = advanceUntil(createGame(1, 3), (s) => s.status === 'finished');
+function finishedView(options = { dark: false, zeroLimit: false }): WirePlayerView {
+  const state = advanceUntil(createGame(1, 3, options), (s) => s.status === 'finished');
   return wireView(state, 0);
 }
 
@@ -48,5 +48,33 @@ describe('фінальний екран: привітання переможця
     expect(screen.getByRole('heading', { level: 3 })).toHaveTextContent(
       '🏆 Вітаємо, Оля, Бот 1 і Бот 2! Спільна перемога з −12 очками',
     );
+  });
+});
+
+describe('фінальний екран: опції гри', () => {
+  it('R-10.1: ввімкнені опції видно й на екрані результатів', () => {
+    const results = renderResults(finishedView({ dark: true, zeroLimit: true }));
+    const options = within(results).getByRole('list', { name: 'Опції гри' });
+    expect(
+      within(options)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual(['Темна', 'Не більше трьох нулів поспіль']);
+  });
+
+  it('R-10.2: підсумок гри з «Темною» пояснено — опцію видно в результатах', () => {
+    const results = renderResults(finishedView({ dark: true, zeroLimit: false }));
+    const options = within(results).getByRole('list', { name: 'Опції гри' });
+    expect(
+      within(options)
+        .getAllByRole('listitem')
+        .map((item) => item.textContent),
+    ).toEqual(['Темна']);
+  });
+
+  it('R-10.1: без опцій результати кажуть, що гра йшла за основними правилами', () => {
+    const results = renderResults(finishedView());
+    expect(within(results).queryByRole('list', { name: 'Опції гри' })).not.toBeInTheDocument();
+    expect(results).toHaveTextContent('Опції гри: немає');
   });
 });

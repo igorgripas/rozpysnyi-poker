@@ -1,6 +1,7 @@
 import type { WirePlayerView } from '@poker/protocol';
 import { useEffect, useRef } from 'react';
 import { uk } from '../i18n';
+import { GameOptions } from './GameOptions';
 import { ScoreSheet } from './ScoreSheet';
 
 export interface SheetDialogProps {
@@ -44,26 +45,6 @@ export function SheetDialog({ table, options, names, onClose, onReportBug }: She
           {uk.bugReport.open}
         </button>
       </div>
-    </div>
-  );
-}
-
-/** Ввімкнені опції гри (R-10.1): гравець, що повернувся в гру, бачить, за якими правилами вона йде. */
-function GameOptions({ options }: { options: WirePlayerView['options'] }) {
-  const enabled = [options.dark && uk.room.dark, options.zeroLimit && uk.room.zeroLimit].filter(
-    (name) => name !== false,
-  );
-  if (enabled.length === 0) {
-    return <p className="sheet-dialog__options muted">{uk.sheet.noOptions}</p>;
-  }
-  return (
-    <div className="sheet-dialog__options">
-      <span aria-hidden="true">{uk.room.options}:</span>
-      <ul aria-label={uk.room.options}>
-        {enabled.map((name) => (
-          <li key={name}>{name}</li>
-        ))}
-      </ul>
     </div>
   );
 }
