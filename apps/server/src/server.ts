@@ -58,7 +58,15 @@ export interface PokerServerOptions {
    * і не більше `rooms` створених кімнат.
    */
   connectionLimits?: { requests?: number; windowMs?: number; rooms?: number };
-  /** Ліміт сигналів голосового чату одного зʼєднання: не більше `signals` за `windowMs` мс. */
+  /**
+   * Ліміти однієї IP-адреси (визначається як для звітів про баги, з `trustProxy`):
+   * не більше `roomsPerHour` створених кімнат за годину, хоч би скільки було зʼєднань.
+   */
+  ipLimits?: { roomsPerHour?: number };
+  /**
+   * Ліміт сигналів голосового чату одного зʼєднання: не більше `signals` за `windowMs` мс.
+   * Сигнали рахуються лише тут, а не в `connectionLimits.requests`.
+   */
   voiceSignalLimits?: { signals?: number; windowMs?: number };
   /** Скільки кімнат може бути в памʼяті сервера. */
   maxRooms?: number;
@@ -77,6 +85,11 @@ export const REQUESTS_PER_WINDOW = 100;
 export const REQUEST_WINDOW_MS = 10 * 1000;
 /** Скільки кімнат може створити одне зʼєднання. */
 export const ROOMS_PER_CONNECTION = 10;
+/**
+ * Скільки кімнат за годину можна створити з однієї IP-адреси: перепідключення не дає
+ * нового ліміту, а запас — під NAT і мобільних операторів (багато гравців за однією IP).
+ */
+export const ROOMS_PER_IP_PER_HOUR = 30;
 /**
  * Сигналів голосу з одного зʼєднання за вікно: вистачає на з'єднання з п'ятьма
  * співрозмовниками (offer/answer і десяток ICE-кандидатів на кожного), але не на флуд.
@@ -418,6 +431,9 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
   const requestLimit = options.connectionLimits?.requests ?? REQUESTS_PER_WINDOW;
   const requestWindowMs = options.connectionLimits?.windowMs ?? REQUEST_WINDOW_MS;
   const roomLimit = options.connectionLimits?.rooms ?? ROOMS_PER_CONNECTION;
+  const roomsPerIpPerHour = options.ipLimits?.roomsPerHour ?? ROOMS_PER_IP_PER_HOUR;
+  /** Час створення кімнат за останню годину за IP-адресою. */
+  const recentRoomsByIp = new Map<string, number[]>();
   const signalLimit = options.voiceSignalLimits?.signals ?? VOICE_SIGNALS_PER_WINDOW;
   const signalWindowMs = options.voiceSignalLimits?.windowMs ?? VOICE_SIGNAL_WINDOW_MS;
   /** Лічильники кожного зʼєднання: час останніх запитів і сигналів, скільки кімнат створено. */
@@ -439,15 +455,27 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
   function overLimit(socket: PokerSocket, event: ClientEvent): Result<never> | null {
     let used = usage.get(socket);
     if (used === undefined) usage.set(socket, (used = { requests: [], signals: [], rooms: 0 }));
+    // Сигнали голосу (десятки ICE-кандидатів при вході) мають власний ліміт
+    // і не забирають запити, потрібні для ходів у грі.
+    if (event === 'voice:signal') {
+      if (!withinWindow(used.signals, signalLimit, signalWindowMs)) {
+        return fail('rateLimited', 'Забагато сигналів голосового чату, зачекайте кілька секунд');
+      }
+      return null;
+    }
     if (!withinWindow(used.requests, requestLimit, requestWindowMs)) {
       return fail('rateLimited', 'Забагато запитів, зачекайте кілька секунд');
     }
-    if (event === 'voice:signal' && !withinWindow(used.signals, signalLimit, signalWindowMs)) {
-      return fail('rateLimited', 'Забагато сигналів голосового чату, зачекайте кілька секунд');
-    }
     if (event === 'room:create') {
       if (used.rooms >= roomLimit) return fail('rateLimited', 'Ви створили забагато кімнат');
+      const ip = clientIp(socket);
+      const byIp = lastHour(recentRoomsByIp.get(ip) ?? []);
+      if (byIp.length >= roomsPerIpPerHour) {
+        return fail('rateLimited', 'З вашої мережі створено забагато кімнат, спробуйте пізніше');
+      }
       used.rooms++;
+      byIp.push(now());
+      recentRoomsByIp.set(ip, byIp);
     }
     return null;
   }
@@ -483,6 +511,9 @@ export function createPokerServer(options: PokerServerOptions = {}): PokerServer
   const sweepTimer = setInterval(() => {
     const removed = rooms.sweep();
     if (removed > 0) app.log.info(`Прибрано покинутих кімнат: ${removed}`);
+    for (const [ip, times] of recentRoomsByIp) {
+      if (lastHour(times).length === 0) recentRoomsByIp.delete(ip);
+    }
   }, options.sweepIntervalMs ?? SWEEP_INTERVAL_MS);
   sweepTimer.unref();
 

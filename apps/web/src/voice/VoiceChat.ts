@@ -15,6 +15,12 @@ const SPEAKING_LEVEL = 0.02;
 /** Скільки індикатор горить після останнього звуку, мс: паузи між словами не блимають. */
 const SPEAKING_HOLD_MS = 800;
 
+/**
+ * Паузи перед повторами сигналу, відхиленого сервером через `rateLimited`, мс: зростають,
+ * а разом перекривають вікно ліміту сигналів на сервері (5 с). Далі — помилка в лозі.
+ */
+export const VOICE_SIGNAL_RETRY_MS: readonly number[] = [1000, 2000, 4000];
+
 /** Можливості браузера, потрібні голосу; у тестах їх підмінюють. */
 export interface VoiceEnv {
   /** Без WebRTC голосу немає зовсім. */
@@ -100,6 +106,8 @@ export class VoiceChat {
   private track: MediaStreamTrack | null = null;
   /** Сигнали обробляються по черзі: кандидат не має випередити опис сесії. */
   private queue: Promise<void> = Promise.resolve();
+  /** Вихідні сигнали кожному гравцеві — теж по черзі, разом із повторами. */
+  private readonly outbox = new Map<string, Promise<void>>();
   private audioContext: AudioContext | null = null;
   private meterTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -213,7 +221,37 @@ export class VoiceChat {
   }
 
   private send(to: string, signal: VoiceSignal): void {
-    void this.client.send('voice:signal', { to, signal });
+    const session = this.joined;
+    const previous = this.outbox.get(to);
+    // Порожня черга — сигнал іде одразу, без зайвої затримки.
+    const sent =
+      previous === undefined
+        ? this.deliver(session, to, signal)
+        : previous.then(() => this.deliver(session, to, signal));
+    this.outbox.set(to, sent);
+    void sent.finally(() => {
+      if (this.outbox.get(to) === sent) this.outbox.delete(to);
+    });
+  }
+
+  /** Надсилає сигнал; на `rateLimited` повторює після паузи, інакше губити його не можна. */
+  private async deliver(
+    session: VoiceChat['joined'],
+    to: string,
+    signal: VoiceSignal,
+  ): Promise<void> {
+    for (let attempt = 0; ; attempt++) {
+      // Вийшли з голосу чи кімнати — сигнал уже не потрібен.
+      if (this.joined !== session) return;
+      const error = await this.client.send('voice:signal', { to, signal });
+      if (error === null) return;
+      const delay = VOICE_SIGNAL_RETRY_MS[attempt];
+      if (error.code !== 'rateLimited' || delay === undefined) {
+        console.error('Голосовий чат: сигнал не надіслано', error);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
   }
 
   private createPeer(id: string, initiator: boolean): Peer {

@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PokerClient } from '../src/net/client';
 import { ClientProvider } from '../src/net/react';
-import { VoiceChat, type VoiceEnv } from '../src/voice/VoiceChat';
+import { VOICE_SIGNAL_RETRY_MS, VoiceChat, type VoiceEnv } from '../src/voice/VoiceChat';
 import { VoiceControls, VoiceProvider } from '../src/voice/VoiceControls';
 import { FakeConnection, human, roomState } from './support/fakeConnection';
 
@@ -193,6 +193,89 @@ describe('голосовий чат (T63)', () => {
     connection.push({ type: 'voice', message: { type: 'left', playerId: 'p2' } });
     await flush();
     expect(pc?.closed).toBe(true);
+  });
+
+  it('сигнал, відхилений через rateLimited, повторюється з паузою й по порядку', async () => {
+    vi.useFakeTimers();
+    try {
+      const { connection, signals } = setup(['p2']);
+      let rejections = 2;
+      connection.on('voice:signal', () =>
+        rejections-- > 0
+          ? { ok: false, error: { code: 'rateLimited', message: 'Забагато сигналів' } }
+          : { ok: true, data: null },
+      );
+      connection.pushStatus('online');
+      connection.pushRoom(ROOM);
+      await flush();
+      const [pc] = FakePeerConnection.all;
+      pc?.onicecandidate?.({
+        candidate: { candidate: 'candidate:1', sdpMid: '0', sdpMLineIndex: 0 },
+      });
+      await flush();
+      // Кандидат не обганяє відхилену пропозицію: чекає в черзі.
+      expect(signals().map((s) => s.signal.type)).toEqual(['offer']);
+      await vi.advanceTimersByTimeAsync(VOICE_SIGNAL_RETRY_MS[0] ?? 0);
+      expect(signals().map((s) => s.signal.type)).toEqual(['offer', 'offer']);
+      await vi.advanceTimersByTimeAsync(VOICE_SIGNAL_RETRY_MS[1] ?? 0);
+      expect(signals().map((s) => s.signal.type)).toEqual(['offer', 'offer', 'offer', 'candidate']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('після кількох відмов rateLimited сигнал не губиться тихо — помилка в лозі', async () => {
+    vi.useFakeTimers();
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { connection, signals } = setup(['p2']);
+      connection.on('voice:signal', () => ({
+        ok: false,
+        error: { code: 'rateLimited', message: 'Забагато сигналів' },
+      }));
+      connection.pushStatus('online');
+      connection.pushRoom(ROOM);
+      await flush();
+      expect(VOICE_SIGNAL_RETRY_MS.length).toBeGreaterThanOrEqual(2);
+      expect(VOICE_SIGNAL_RETRY_MS.length).toBeLessThanOrEqual(3);
+      // Паузи зростають (backoff).
+      for (let i = 1; i < VOICE_SIGNAL_RETRY_MS.length; i++) {
+        expect(VOICE_SIGNAL_RETRY_MS[i]).toBeGreaterThan(VOICE_SIGNAL_RETRY_MS[i - 1] ?? 0);
+      }
+      await vi.advanceTimersByTimeAsync(VOICE_SIGNAL_RETRY_MS.reduce((a, b) => a + b, 0));
+      expect(signals()).toHaveLength(VOICE_SIGNAL_RETRY_MS.length + 1);
+      expect(error).toHaveBeenCalledWith(
+        expect.stringContaining('Голосовий чат'),
+        expect.objectContaining({ code: 'rateLimited' }),
+      );
+      // Після останньої спроби сигнал більше не надсилається.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(signals()).toHaveLength(VOICE_SIGNAL_RETRY_MS.length + 1);
+    } finally {
+      error.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('інші помилки сигналу не повторюються, а логуються', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { connection, signals } = setup(['p2']);
+      connection.on('voice:signal', () => ({
+        ok: false,
+        error: { code: 'notInRoom', message: 'Не в голосі' },
+      }));
+      connection.pushStatus('online');
+      connection.pushRoom(ROOM);
+      await flush();
+      expect(signals()).toHaveLength(1);
+      expect(error).toHaveBeenCalledWith(
+        expect.stringContaining('Голосовий чат'),
+        expect.objectContaining({ code: 'notInRoom' }),
+      );
+    } finally {
+      error.mockRestore();
+    }
   });
 
   it('перепідключення після засинання чи деплою відновлює голос і мікрофон', async () => {

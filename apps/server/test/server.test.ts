@@ -2,7 +2,13 @@ import { parseReplayFile, replay } from '@poker/engine';
 import { PROTOCOL_VERSION, playerViewSchema, roomStateSchema } from '@poker/protocol';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { BUG_REPORTS_PER_PLAYER, type BugReport } from '../src/bugReport.js';
-import { type PokerServer, type PokerServerOptions, createPokerServer } from '../src/server.js';
+import {
+  type PokerServer,
+  type PokerServerOptions,
+  ROOMS_PER_CONNECTION,
+  ROOMS_PER_IP_PER_HOUR,
+  createPokerServer,
+} from '../src/server.js';
 import { ABANDONED_TTL_MS, MemoryRoomStore } from '../src/store.js';
 import { TestClient } from './client.js';
 import { FAST_PLAY, GatedStore, errorCode, testRandom, unwrap } from './support.js';
@@ -149,6 +155,40 @@ describe('ліміти зʼєднання', () => {
     unwrap(await c.request('room:create', { name: 'Оля' }));
     expect(errorCode(await c.request('room:create', { name: 'Оля' }))).toBe('rateLimited');
     unwrap(await client().request('room:create', { name: 'Петро' }));
+  });
+
+  it('кімнат з однієї IP-адреси не більше ліміту за годину — перепідключення не допомагає', async () => {
+    let time = 0;
+    await restart({ ipLimits: { roomsPerHour: 2 }, trustProxy: true, now: () => time });
+    const fromIp = (ip: string) => {
+      const created = new TestClient(url, undefined, { 'x-forwarded-for': ip });
+      clients.push(created);
+      return created;
+    };
+    unwrap(await fromIp('1.2.3.4').request('room:create', { name: 'Оля' }));
+    unwrap(await fromIp('1.2.3.4').request('room:create', { name: 'Оля' }));
+    const third = fromIp('1.2.3.4');
+    expect(errorCode(await third.request('room:create', { name: 'Оля' }))).toBe('rateLimited');
+    // Підроблений перший запис X-Forwarded-For не дає нової адреси.
+    expect(
+      errorCode(await fromIp('5.6.7.8, 1.2.3.4').request('room:create', { name: 'Оля' })),
+    ).toBe('rateLimited');
+    // Інша адреса має власний ліміт, а входити в чужі кімнати ліміт не заважає.
+    const other = unwrap(await fromIp('5.6.7.8').request('room:create', { name: 'Петро' }));
+    unwrap(await third.request('room:join', { code: other.code, name: 'Оля' }));
+    time += 60 * 60 * 1000;
+    unwrap(await third.request('room:create', { name: 'Оля' }));
+  });
+
+  it('ліміт кімнат за IP за замовчуванням — із запасом під NAT', async () => {
+    expect(ROOMS_PER_IP_PER_HOUR).toBeGreaterThanOrEqual(30);
+    let c = client();
+    for (let i = 0; i < ROOMS_PER_IP_PER_HOUR; i++) {
+      // Кожне зʼєднання впирається у власний ліміт — перепідключаємося.
+      if (i > 0 && i % ROOMS_PER_CONNECTION === 0) c = client();
+      unwrap(await c.request('room:create', { name: 'Оля' }));
+    }
+    expect(errorCode(await client().request('room:create', { name: 'Оля' }))).toBe('rateLimited');
   });
 
   it('покинута кімната прибирається з памʼяті сервера', async () => {

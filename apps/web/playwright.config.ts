@@ -39,7 +39,12 @@ export default defineConfig({
       command: 'node --import tsx --conditions=source src/main.ts',
       cwd: '../server',
       url: `http://localhost:${SERVER_PORT}/health`,
-      env: { PORT: String(SERVER_PORT), PUBLIC_URL: `http://localhost:${WEB_PORT}` },
+      // Усі тести створюють кімнати з localhost: ліміт кімнат за IP тут не потрібен.
+      env: {
+        PORT: String(SERVER_PORT),
+        PUBLIC_URL: `http://localhost:${WEB_PORT}`,
+        ROOMS_PER_IP_PER_HOUR: 'Infinity',
+      },
       reuseExistingServer: !process.env.CI,
     },
     {

@@ -21,11 +21,15 @@ const bugReporter =
         repo: process.env.BUG_REPORT_REPO ?? 'igorgripas/rozpysnyi-poker',
       })
     : undefined;
+// ROOMS_PER_IP_PER_HOUR — ліміт створення кімнат з однієї IP-адреси (у e2e всі гравці з localhost).
+const roomsPerIpPerHour = process.env.ROOMS_PER_IP_PER_HOUR;
 const server = createPokerServer({
   publicUrl: process.env.PUBLIC_URL ?? '',
   logger: true,
   // Render (змінна RENDER) стоїть проксі перед сервером: IP клієнта — з X-Forwarded-For.
   trustProxy: process.env.RENDER !== undefined,
+  ...(roomsPerIpPerHour !== undefined &&
+    roomsPerIpPerHour !== '' && { ipLimits: { roomsPerHour: Number(roomsPerIpPerHour) } }),
   ...(store !== undefined && { store }),
   ...(bugReporter !== undefined && { bugReporter }),
 });

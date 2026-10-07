@@ -40,6 +40,7 @@ export async function startSeededServer(
     botDelayMs: 0,
     trickPauseMs: 0,
     connectionLimits: { requests: Number.POSITIVE_INFINITY },
+    ipLimits: { roomsPerHour: Number.POSITIVE_INFINITY },
     ...overrides,
   });
   const url = await server.listen({ port: 0, host: '127.0.0.1' });
