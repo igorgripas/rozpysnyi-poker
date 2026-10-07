@@ -1,6 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
 // E2E веб-клієнта: вузький телефон (360px) і десктоп; сервер — справжній (apps/server).
+// Пакети монорепо тести імпортують з вихідних TS: скрипт `e2e` задає умову `source`
+// (NODE_OPTIONS), тож у чистому checkout dist не потрібен.
 const WEB_PORT = 5174;
 const SERVER_PORT = 3101;
 
