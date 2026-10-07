@@ -478,6 +478,32 @@ describe('viewFor', () => {
     }
   });
 
+  it('R-5.1, R-9.2: the view lists every card played in the current hand, in order, and resets it in a new hand', () => {
+    let state = createGame(67, 4);
+    const rng = createRng(68);
+    let played: { seat: number; card: Card }[] = [];
+    let hand = state.hand.spec.index;
+    while (state.status !== 'finished') {
+      const action = randomAction(state, rng);
+      state = apply(state, action);
+      if (state.hand.spec.index !== hand) {
+        hand = state.hand.spec.index;
+        played = [];
+      } else if (action.type === 'play') {
+        played.push({ seat: action.seat, card: action.card });
+      }
+      for (let seat = 0; seat < 4; seat++) {
+        const view = viewFor(state, seat);
+        expect(view.played.map((p) => ({ seat: p.seat, card: cardId(p.card) }))).toEqual(
+          played.map((p) => ({ seat: p.seat, card: cardId(p.card) })),
+        );
+        expect(
+          view.played.slice(view.played.length - view.trick.length).map((p) => p.card),
+        ).toEqual(view.trick);
+      }
+    }
+  });
+
   it('lists legal moves only for the player on turn', () => {
     const state = createGame(66, 4);
     const turn = state.turn as number;

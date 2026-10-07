@@ -120,6 +120,12 @@ export const completedTrickSchema = z.strictObject({
   winner: seatSchema,
 });
 
+/** Карта, зіграна в поточній роздачі: хто її поклав і як. */
+export const playedCardSchema = z.strictObject({
+  seat: seatSchema,
+  card: trickCardSchema,
+});
+
 /** Опції кімнати (§10): за замовчуванням вимкнені, фіксуються на старті гри (R-10.1). */
 export const gameOptionsSchema = z.strictObject({
   /** «Темна» (R-10.2). */
@@ -156,6 +162,7 @@ export const playerViewSchema = z
     leader: seatSchema,
     trick: z.array(trickCardSchema),
     lastTrick: completedTrickSchema.nullable(),
+    played: z.array(playedCardSchema),
     table: scoreTableSchema,
     legalActions: z.array(actionSchema),
   })

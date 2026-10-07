@@ -403,6 +403,31 @@ describe('вихід із кімнати (T180)', () => {
   });
 
   it('нова подія й нове поле — нова версія протоколу', () => {
-    expect(PROTOCOL_VERSION).toBe(4);
+    expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(4);
+  });
+});
+
+describe('зіграні карти роздачі в погляді (#108)', () => {
+  it('R-5.1: погляд містить усі зіграні в роздачі карти з місцем і оголошенням джокера', () => {
+    const states = randomGame(9, 4);
+    const playing = states.filter(
+      (state) => state.status === 'playing' && state.hand.trick.length > 0,
+    );
+    expect(playing.length).toBeGreaterThan(0);
+    for (const state of playing.filter((_, i) => i % 5 === 0)) {
+      const wire = JSON.parse(JSON.stringify(viewFor(state, 0))) as Record<string, unknown>;
+      expect(playerViewSchema.parse(wire)).toEqual(wire);
+      expect(playerViewSchema.safeParse({ ...wire, played: undefined }).success).toBe(false);
+      expect(
+        playerViewSchema.safeParse({
+          ...wire,
+          played: [{ seat: 0, card: { kind: 'joker', index: 0 } }],
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it('нове поле погляду — нова версія протоколу', () => {
+    expect(PROTOCOL_VERSION).toBe(5);
   });
 });

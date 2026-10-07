@@ -78,6 +78,7 @@ export type {
   GameState,
   GameStatus,
   HandState,
+  PlayedCard,
   PlayerView,
 } from './game.js';
 export { REPLAY_FILE_FORMAT, parseReplayFile, toReplayFile } from './replayFile.js';

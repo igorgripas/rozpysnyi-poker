@@ -378,6 +378,32 @@ export function scoreTable(state: GameState): ScoreTable {
   return buildScoreTable(records, state.playerCount);
 }
 
+/** Карта, зіграна в роздачі: хто її поклав і як (джокер — з оголошенням). */
+export interface PlayedCard {
+  readonly seat: number;
+  readonly card: TrickCard;
+}
+
+/**
+ * Карти, зіграні в поточній роздачі, у порядку ходів (зокрема поточної взятки).
+ * Їх бачили всі за столом, тож вони публічні; виводяться з логу дій: зіграно стільки карт,
+ * скільки зникло з рук, і всі вони — останні дії логу.
+ */
+function playedInHand(state: GameState): PlayedCard[] {
+  const { hand } = state;
+  const count = hand.dealt.reduce((sum, cards, seat) => {
+    return sum + cards.length - (hand.hands[seat] as readonly Card[]).length;
+  }, 0);
+  if (count === 0) return [];
+  return state.actions.slice(-count).map((action) => {
+    if (action.type !== 'play') throw new Error('Лог роздачі не узгоджений зі станом');
+    const card: TrickCard = isJoker(action.card)
+      ? { kind: 'joker', index: action.card.index, call: action.call as JokerCall }
+      : action.card;
+    return { seat: action.seat, card };
+  });
+}
+
 /** Що бачить гравець: лише власну руку, публічні дані й таблицю без чужих кружечків. */
 export interface PlayerView {
   readonly seat: number;
@@ -411,6 +437,8 @@ export interface PlayerView {
   readonly leader: number;
   readonly trick: readonly TrickCard[];
   readonly lastTrick: CompletedTrick | null;
+  /** Усі карти, зіграні в поточній роздачі, у порядку ходів; у новій роздачі — порожньо. */
+  readonly played: readonly PlayedCard[];
   /** Таблиця гри; кружечки поточної роздачі приховані до її завершення (R-8.3). */
   readonly table: ScoreTable;
   /** Допустимі дії гравця, якщо зараз його хід; інакше порожньо. */
@@ -448,6 +476,7 @@ export function viewFor(state: GameState, seat: number): PlayerView {
     leader: hand.leader,
     trick: hand.trick,
     lastTrick: state.lastTrick,
+    played: playedInHand(state),
     table: scoreTable(state),
     legalActions: state.turn === seat ? legalActions(state) : [],
   };
