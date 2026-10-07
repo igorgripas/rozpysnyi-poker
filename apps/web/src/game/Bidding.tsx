@@ -5,6 +5,8 @@ import { uk } from '../i18n';
 export interface BiddingProps {
   view: WirePlayerView;
   nameOf: (seat: number) => string;
+  /** Замовлення надіслано, сервер ще не надіслав новий стан: кнопки вимкнені. */
+  disabled?: boolean;
   onBid: (bid: number) => void;
 }
 
@@ -16,7 +18,7 @@ type QueueState = 'bid' | 'turn' | 'waiting';
  * значення вимкнене й пояснене. У роздачах з 1–3 картами заборони немає (R-4.6).
  * Четвертий нуль поспіль (опція R-10.3) теж вимкнений і пояснений.
  */
-export function Bidding({ view, nameOf, onBid }: BiddingProps) {
+export function Bidding({ view, nameOf, disabled = false, onBid }: BiddingProps) {
   const hintId = useId();
   const zeroHintId = useId();
   const cards = view.spec.cards;
@@ -95,7 +97,7 @@ export function Bidding({ view, nameOf, onBid }: BiddingProps) {
               key={bid}
               type="button"
               className="button bidding__option"
-              disabled={!legal.has(bid)}
+              disabled={disabled || !legal.has(bid)}
               aria-describedby={describedBy(bid)}
               onClick={() => onBid(bid)}
             >

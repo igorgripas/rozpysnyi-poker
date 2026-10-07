@@ -1,5 +1,5 @@
 import { type GameState, createGame } from '@poker/engine';
-import { screen, within } from '@testing-library/react';
+import { act, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { defined, renderAt, renderTable } from './support/render';
 import { findState, gameRoom, wireView } from './support/views';
@@ -124,6 +124,35 @@ describe('замовлення', () => {
     await user.click(screen.getByRole('button', { name: '0' }));
     await user.click(screen.getByRole('button', { name: '1' }));
     expect(connection.requests).toHaveLength(1);
+  });
+
+  it('R-4.3: після замовлення кнопки вимкнені, доки сервер не надіслав новий стан', async () => {
+    const state = findState(3, otherBids);
+    const { connection, user } = renderAt(state, state.turn as number);
+    let answer: (result: { ok: true; data: null }) => void = () => {};
+    connection.request = (event, payload) => {
+      connection.requests.push({ event, payload });
+      return new Promise((resolve) => (answer = resolve as typeof answer));
+    };
+    await user.click(screen.getByRole('button', { name: '0' }));
+    // Замовлення надіслано: панель одразу неактивна, як і рука після ходу картою.
+    for (const button of bidButtons()) expect(button).toBeDisabled();
+    // Сервер підтвердив, але новий стан ще не прийшов — кнопки лишаються вимкненими.
+    await act(async () => answer({ ok: true, data: null }));
+    for (const button of bidButtons()) expect(button).toBeDisabled();
+    expect(connection.requests).toEqual([{ event: 'game:bid', payload: { bid: 0 } }]);
+  });
+
+  it('R-4.3: відмова сервера знову вмикає кнопки замовлення', async () => {
+    const state = findState(3, otherBids);
+    const { connection, user } = renderAt(state, state.turn as number);
+    connection.on('game:bid', () => ({
+      ok: false,
+      error: { code: 'illegalAction', message: 'Недопустиме замовлення' },
+    }));
+    await user.click(screen.getByRole('button', { name: '0' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Недопустиме замовлення');
+    for (const button of bidButtons()) expect(button).toBeEnabled();
   });
 
   it('помилка сервера показана гравцю', async () => {
