@@ -79,3 +79,66 @@ describe('replay-файл у тексті issue', () => {
     expect(replay(file.seed, file.log)).toEqual(state);
   });
 });
+
+describe('розбір replay-файлу', () => {
+  const log = { version: 2, playerCount: 3, actions: [] };
+  const file = (overrides: Record<string, unknown> = {}) =>
+    JSON.stringify({ format: 'rozpysnyi-poker/replay', seed: 7, log, ...overrides });
+
+  it('R-2.3: формат replay-файлу — стала позначка rozpysnyi-poker/replay', () => {
+    expect(REPLAY_FILE_FORMAT).toBe('rozpysnyi-poker/replay');
+    expect(parseReplayFile(file())).toEqual({ format: REPLAY_FILE_FORMAT, seed: 7, log });
+  });
+
+  it('R-2.3: JSON іншого формату не вважається replay-файлом', () => {
+    expect(() => parseReplayFile(file({ format: 'інше' }))).toThrow('Не знайдено replay-файл');
+    expect(() => parseReplayFile(JSON.stringify({ seed: 7, log }))).toThrow(
+      'Не знайдено replay-файл',
+    );
+    for (const text of ['null', '5', '"рядок"', '[]']) {
+      expect(() => parseReplayFile(text)).toThrow('Не знайдено replay-файл');
+    }
+  });
+
+  it('R-2.3: seed — невідʼємне ціле, нуль допустимий', () => {
+    expect(parseReplayFile(file({ seed: 0 })).seed).toBe(0);
+    for (const seed of [-1, 1.5, '7', null]) {
+      expect(() => parseReplayFile(file({ seed }))).toThrow(
+        'Replay-файл: seed має бути невідʼємним цілим',
+      );
+    }
+  });
+
+  it('R-2.3: log має містити version, playerCount і actions', () => {
+    const message = 'Replay-файл: log має містити version, playerCount і actions';
+    for (const bad of [
+      null,
+      [],
+      'log',
+      { playerCount: 3, actions: [] },
+      { version: '2', playerCount: 3, actions: [] },
+      { version: 2, actions: [] },
+      { version: 2, playerCount: '3', actions: [] },
+      { version: 2, playerCount: 3 },
+      { version: 2, playerCount: 3, actions: {} },
+    ]) {
+      expect(() => parseReplayFile(file({ log: bad }))).toThrow(message);
+    }
+  });
+
+  it('R-2.3: блок ```json знаходиться з пробілами після мітки й відступом перед закриттям', () => {
+    const pretty = JSON.stringify(JSON.parse(file()), null, 2);
+    const body = ['Опис', '```json  ', pretty, '  ```', 'кінець'].join('\n');
+    expect(parseReplayFile(body).seed).toBe(7);
+  });
+
+  it('R-2.3: некоректний JSON у блоці пропускається, знаходиться попередній блок', () => {
+    const body = ['```json', file(), '```', '', '```json', '{ зламано', '```'].join('\n');
+    expect(parseReplayFile(body).seed).toBe(7);
+  });
+
+  it('R-2.3: якщо всі replay-блоки зіпсовані — помилка останнього з них', () => {
+    const body = ['```json', file({ seed: -1 }), '```', '```json', file({ log: null }), '```'];
+    expect(() => parseReplayFile(body.join('\n'))).toThrow(/log має містити/);
+  });
+});
