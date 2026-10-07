@@ -85,6 +85,18 @@ test('гра: замовлення, стіл, джокер, таблиця й р
   await expect(joker).toBeVisible();
   await checkScreen(page, 'joker', joker);
 
+  // Без відкритої карти: на її місці великий значок козиря «Мастей» (R-3.3)
+  // чи «Без козиря» безкозирки (R-3.4). Знімок — під час вашого замовлення.
+  const biddingWith = (slot: string) => async () =>
+    (await page.locator(`.game__revealed--${slot}`).isVisible()) && (await bidding.isVisible());
+  await playUntil(page, biddingWith('suit'));
+  const felt = page.getByRole('region', { name: 'Стіл' });
+  await expect(felt.getByRole('img', { name: 'Козир: піка' })).toBeVisible();
+  await checkScreen(page, 'suits-bidding');
+  await playUntil(page, biddingWith('none'));
+  await expect(felt.locator('.game__revealed--none')).toHaveText('Без козиря');
+  await checkScreen(page, 'no-trump-bidding');
+
   await playUntil(page);
   await expect(page.getByRole('region', { name: 'Результати' })).toBeVisible();
   // prefers-reduced-motion: привітання переможця без анімації.
