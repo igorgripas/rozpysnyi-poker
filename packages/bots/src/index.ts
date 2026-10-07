@@ -15,3 +15,5 @@ export type {
   BenchmarkRow,
   SelfPlayResult,
 } from './benchmark.js';
+export { COMPARE_Z, compareBots, formatComparison } from './compare.js';
+export type { CompareOptions, CompareResult, CompareRow, CompareSide } from './compare.js';
