@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App';
 import { PokerClient } from '../src/net/client';
 import { FakeConnection } from './support/fakeConnection';
@@ -34,6 +34,24 @@ describe('меню налаштувань у шапці', () => {
     expect(panel).toContainElement(screen.getByRole('button', { name: /^(Темна|Світла) тема$/ }));
     // Підписи видно текстом, а не лише значками.
     expect(panel).toHaveTextContent('Вібрація на свій хід');
+  });
+
+  it('стан перемикачів видно текстом, а не лише значком чи підказкою', async () => {
+    vi.stubGlobal('AudioContext', function AudioContext() {});
+    renderApp();
+    await userEvent.click(screen.getByRole('button', { name: 'Налаштування' }));
+    const vibration = screen.getByRole('button', { name: 'Вібрація на свій хід' });
+    const sound = screen.getByRole('button', { name: 'Звуки гри' });
+    expect(within(vibration).getByText('увімкнено')).toBeVisible();
+    expect(within(sound).getByText('увімкнено')).toBeVisible();
+
+    await userEvent.click(sound);
+    expect(within(sound).getByText('вимкнено')).toBeVisible();
+    expect(within(vibration).getByText('увімкнено')).toBeVisible();
+    // Назва кнопки — без стану: стан передає aria-pressed.
+    expect(sound).toHaveAccessibleName('Звуки гри');
+    expect(sound).toHaveAttribute('aria-pressed', 'false');
+    vi.unstubAllGlobals();
   });
 
   it('перемикач у меню не закриває його; Escape закриває й повертає фокус на ⚙', async () => {

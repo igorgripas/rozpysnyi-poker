@@ -148,7 +148,8 @@ export function SoundToggle() {
       onClick={() => setSoundEnabled(!enabled)}
     >
       <span aria-hidden="true">{enabled ? '🔊' : '🔇'}</span>
-      {uk.sound.label}
+      <span className="settings__label">{uk.sound.label}</span>
+      <span className="settings__state">{enabled ? uk.settings.on : uk.settings.off}</span>
     </button>
   );
 }

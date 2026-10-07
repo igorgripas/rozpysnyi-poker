@@ -1,5 +1,5 @@
 import { createGame } from '@poker/engine';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../src/App';
@@ -56,8 +56,10 @@ describe('вібрація на свій хід', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Налаштування' }));
     const toggle = screen.getByRole('button', { name: 'Вібрація на свій хід' });
     expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    expect(within(toggle).getByText('увімкнено')).toBeVisible();
     await userEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    expect(within(toggle).getByText('вимкнено')).toBeVisible();
     expect(localStorage.getItem(VIBRATION_STORAGE_KEY)).toBe('off');
     await userEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-pressed', 'true');

@@ -1,6 +1,7 @@
 import type { WirePlayerView } from '@poker/protocol';
 import { formatScore } from '@poker/engine';
 import { uk } from '../i18n';
+import { GameOptions } from './GameOptions';
 import { ScoreSheet } from './ScoreSheet';
 
 export interface ResultsProps {
@@ -14,7 +15,7 @@ export interface ResultsProps {
 
 /**
  * Фінальний екран: привітання переможця (за рівних підсумків — усіх, R-9.4), підсумки
- * гравців від найбільшого (R-8.4) і вся таблиця гри.
+ * гравців від найбільшого (R-8.4), ввімкнені опції (R-10.1) і вся таблиця гри.
  */
 export function Results({ view, names, onReportBug, onNewGame }: ResultsProps) {
   const ranking = view.table.summary
@@ -43,6 +44,7 @@ export function Results({ view, names, onReportBug, onNewGame }: ResultsProps) {
             </li>
           ))}
         </ul>
+        <GameOptions options={view.options} />
         <button type="button" className="button button--primary results__new" onClick={onNewGame}>
           {uk.results.newGame}
         </button>
