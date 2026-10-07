@@ -1,5 +1,9 @@
 import { type Locator, type Page, expect, test } from '@playwright/test';
 import { playUntil } from './support/player';
+import { startSeededServer } from './support/server';
+
+/** Seed сервера для тесту R-3.1 «козир на столі видно разом із рукою». */
+const R31_SEED = 7;
 
 test('ігровий стіл: рука, гравці й стіл вміщуються в екран', async ({ page }) => {
   await page.goto('/');
@@ -136,31 +140,39 @@ async function expectOnPhones(page: Page, mobile: boolean): Promise<void> {
 test('R-3.1: козир на столі видно разом із рукою під час замовлень і розіграшу', async ({
   page,
 }, testInfo) => {
-  test.setTimeout(3 * 60_000);
   const mobile = testInfo.project.name === 'mobile-360';
-  await page.goto('/?trickPause=0');
-  await page.getByLabel('Ваше імʼя').fill('Оля');
-  await page.getByRole('button', { name: 'Створити кімнату' }).click();
-  for (let i = 0; i < 3; i++) await page.getByRole('button', { name: 'Додати бота' }).click();
-  await expect(page.getByRole('list', { name: 'Гравці' }).getByRole('listitem')).toHaveCount(4);
-  await page.getByRole('button', { name: 'Почати гру' }).click();
+  // Детермінований сервер: на спільному сервері роздачі випадкові, і потрібний стан міг не настати
+  // за всю гру. З цим seed він настає вже в 3-й роздачі.
+  const server = await startSeededServer(R31_SEED, testInfo.project.use.baseURL ?? '');
+  try {
+    await page.goto(`/?server=${encodeURIComponent(server.url)}&trickPause=0`);
+    await page.getByLabel('Ваше імʼя').fill('Оля');
+    await page.getByRole('button', { name: 'Створити кімнату' }).click();
+    for (let i = 0; i < 3; i++) await page.getByRole('button', { name: 'Додати бота' }).click();
+    await expect(page.getByRole('list', { name: 'Гравці' }).getByRole('listitem')).toHaveCount(4);
+    await page.getByRole('button', { name: 'Почати гру' }).click();
 
-  // Замовлення: козир (відкрита карта першої роздачі) видно разом із рукою.
-  await expect(page.getByRole('group', { name: 'Ваше замовлення' })).toBeVisible();
-  await expectOnPhones(page, mobile);
+    // Замовлення: козир (відкрита карта першої роздачі) видно разом із рукою.
+    await expect(page.getByRole('group', { name: 'Ваше замовлення' })).toBeVisible();
+    await expectOnPhones(page, mobile);
 
-  // Розіграш посеред роздачі: на столі вже є карти суперників, ваш хід.
-  await playUntil(page, async () => {
-    const onTable = await page
-      .locator('.felt__trick:not(.felt__trick--last, .felt__trick--taken) .felt__card')
-      .count();
-    return (
-      onTable >= 2 &&
-      (await page.locator('.hand__card').count()) >= 2 &&
-      (await page.locator('.hand__card:enabled').count()) > 0
-    );
-  });
-  await expectOnPhones(page, mobile);
+    // Розіграш посеред роздачі: на столі вже є карти суперників, ваш хід.
+    await playUntil(page, async () => {
+      const onTable = await page
+        .locator('.felt__trick:not(.felt__trick--last, .felt__trick--taken) .felt__card')
+        .count();
+      return (
+        onTable >= 2 &&
+        (await page.locator('.hand__card').count()) >= 2 &&
+        (await page.locator('.hand__card:enabled').count()) > 0
+      );
+    });
+    // Стан настав рано, а не після кінця гри.
+    await expect(page.getByRole('region', { name: 'Роздача' })).toContainText('Роздача 3 з 22');
+    await expectOnPhones(page, mobile);
+  } finally {
+    await server.close();
+  }
 });
 
 test('замовлення: кнопки 0…K, сума замовлень на екрані', async ({ page }) => {
