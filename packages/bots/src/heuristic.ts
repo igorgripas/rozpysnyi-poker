@@ -282,6 +282,17 @@ function lowTrumpLead(k: Knowledge): StandardCard | undefined {
   return lowest;
 }
 
+/**
+ * Найстарший козир у грі з руки. Відкладати його ризиковано: суперник заходом джокера
+ * «старший козир» змусить покласти його під джокер (R-6.1). А зігране раніше, він ще й
+ * витягує козирі суперників, якими ті перебили б наші старші карти інших мастей (R-5.2).
+ */
+function topTrump(k: Knowledge, cards: readonly StandardCard[]): StandardCard | undefined {
+  const trump = k.view.trump;
+  if (trump === null) return undefined;
+  return cards.find((card) => card.suit === trump && countUnknown(k, trump, card.rank) === 0);
+}
+
 function lead(k: Knowledge, goal: Goal): PlayAction {
   const { view } = k;
   const drawTrump = goal === 'avoid' && view.spec.phase === 'misere' ? lowTrumpLead(k) : undefined;
@@ -291,6 +302,8 @@ function lead(k: Knowledge, goal: Goal): PlayAction {
   const chance = (card: StandardCard): number => leadChance(k, card) + card.rank / 1000;
 
   if (goal === 'take') {
+    const top = topTrump(k, standard);
+    if (top !== undefined) return playAction(view, top);
     const strongest = standard.length > 0 ? maxBy(standard, chance) : undefined;
     if (strongest !== undefined && (leadChance(k, strongest) >= LEAD_CONFIDENCE || !joker)) {
       return playAction(view, strongest);
@@ -378,9 +391,9 @@ function holdChance(k: Knowledge, card: StandardCard): number {
  * перебиває найменшим козирем і заходить джокером «старший козир».
  * Поки добирає замовлення, але певних взяток (джокери й майже напевні карти) уже досить,
  * віддає взятку суперникам і скидає в неї найризиковішу непевну карту, щоб та не взяла
- * зайву взятку пізніше (R-7.3). Джокера береже для взяток, які інакше не взяти.
- * Памʼятає зіграні в роздачі карти
- * (`played`) і з ходів суперників виводить, яких мастей і козирів у них уже немає (R-5.2).
+ * зайву взятку пізніше (R-7.3). На взяття першим заходить найстаршим козирем у грі, поки
+ * його не витяг чужий джокер «старший козир» (R-6.1). Джокера береже для взяток, які
+ * інакше не взяти. Памʼятає зіграні в роздачі карти (`played`) і з ходів суперників виводить, яких мастей і козирів у них уже немає (R-5.2).
  */
 export function createHeuristicBot(): Bot {
   return {
