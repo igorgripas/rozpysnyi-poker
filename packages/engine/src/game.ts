@@ -360,22 +360,44 @@ export function replay(seed: number, log: GameLog): GameState {
   return actions.reduce(apply, createGame(seed, playerCount, options, rulesVersion));
 }
 
+/**
+ * Таблиця завершених роздач для масиву історії. `apply` замінює `history` лише наприкінці
+ * роздачі, а між ходами передає той самий масив, тож таблиця будується раз на роздачу,
+ * а не на кожен `viewFor`. Ключ — сам масив: форма `GameState` не змінюється, а стан,
+ * відновлений з JSON, просто один раз перебудує таблицю.
+ */
+const completedTables = new WeakMap<readonly HandRecord[], ScoreTable>();
+
+function completedTable(history: readonly HandRecord[], playerCount: number): ScoreTable {
+  let table = completedTables.get(history);
+  if (table === undefined) {
+    table = buildScoreTable(history, playerCount);
+    completedTables.set(history, table);
+  }
+  return table;
+}
+
 /** Таблиця гри (R-8.1–R-8.4): завершені роздачі й поточна, якщо гра триває. */
 export function scoreTable(state: GameState): ScoreTable {
-  const records: HandRecord[] = [...state.history];
-  if (state.status !== 'finished') {
-    const { hand } = state;
-    records.push({
-      spec: hand.spec,
-      dealer: hand.dealer,
-      trump: hand.trump,
-      hands: hand.dealt,
-      bids: hand.bids,
-      taken: hand.taken,
-      completed: false,
-    });
-  }
-  return buildScoreTable(records, state.playerCount);
+  const done = completedTable(state.history, state.playerCount);
+  if (state.status === 'finished') return done;
+  const { hand } = state;
+  // Незавершена роздача не впливає на бали й підсумок (R-8.3), тож її рядок будується окремо.
+  const current = buildScoreTable(
+    [
+      {
+        spec: hand.spec,
+        dealer: hand.dealer,
+        trump: hand.trump,
+        hands: hand.dealt,
+        bids: hand.bids,
+        taken: hand.taken,
+        completed: false,
+      },
+    ],
+    state.playerCount,
+  );
+  return { rows: [...done.rows, ...current.rows], summary: done.summary };
 }
 
 /** Карта, зіграна в роздачі: хто її поклав і як (джокер — з оголошенням). */
