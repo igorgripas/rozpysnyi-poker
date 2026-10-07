@@ -55,8 +55,11 @@ export function Bidding({ view, nameOf, onBid }: BiddingProps) {
               aria-current={state === 'turn' ? 'true' : undefined}
             >
               <span className="bid-queue__name">{nameOf(seat)}</span>
-              <span className="bid-queue__value" aria-hidden="true">
-                {bid !== null ? bid : state === 'turn' ? '?' : '—'}
+              <span className="bid-queue__line">
+                <span className="bid-queue__value" aria-hidden="true">
+                  {bid !== null ? bid : state === 'turn' ? '?' : '—'}
+                </span>
+                {seat === view.dealer && <DealerMark />}
               </span>
               <span className="sr-only">
                 {bid !== null
@@ -65,7 +68,6 @@ export function Bidding({ view, nameOf, onBid }: BiddingProps) {
                     ? uk.bidding.turn
                     : uk.bidding.waiting}
               </span>
-              {seat === view.dealer && <span className="bid-queue__dealer">{uk.game.dealer}</span>}
             </li>
           );
         })}
@@ -103,5 +105,19 @@ export function Bidding({ view, nameOf, onBid }: BiddingProps) {
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * Компактна позначка роздаючого в черзі: колода з двох карт поруч зі значенням замовлення.
+ * Текст «роздає» не вміщується в клітинку на 360px при 6 гравцях, тож він — доступна назва.
+ */
+function DealerMark() {
+  return (
+    <svg className="bid-queue__dealer" viewBox="0 0 16 16" role="img" aria-label={uk.game.dealer}>
+      <title>{uk.game.dealer}</title>
+      <rect x="1.5" y="3.5" width="8" height="11" rx="1.5" />
+      <rect x="6.5" y="1.5" width="8" height="11" rx="1.5" />
+    </svg>
   );
 }

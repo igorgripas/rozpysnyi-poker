@@ -33,7 +33,7 @@ describe('черга замовлень', () => {
         expect(items.map(nameOf)).toEqual(expected);
         const last = defined(items.at(-1));
         expect(last).toHaveAttribute('data-dealer');
-        expect(within(last).getByText('роздає')).toBeVisible();
+        expect(within(last).getByRole('img', { name: 'роздає' })).toBeVisible();
         for (const item of items.slice(0, -1)) expect(item).not.toHaveAttribute('data-dealer');
       });
     }
