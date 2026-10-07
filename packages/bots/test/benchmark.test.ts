@@ -55,6 +55,13 @@ describe('самогра евристичних ботів: точність з�
     expect(result.bidPoints).toBeGreaterThan(5.6);
   });
 
+  it('R-7.3: з планом розіграшу бот скидає зайві старші карти й влучає ще частіше (#209)', () => {
+    // Без плану на цих seed: 58,0 % точних замовлень, 13,3 % недоборів і 6,0 бала за роздачу.
+    expect(result.exactRate).toBeGreaterThan(0.6);
+    expect(result.underRate).toBeLessThan(0.12);
+    expect(result.bidPoints).toBeGreaterThan(6.6);
+  });
+
   it('детермінована й дає звіт у markdown', () => {
     expect(runSelfPlay({ games: 4, from: 3 })).toEqual(runSelfPlay({ games: 4, from: 3 }));
     expect(formatSelfPlay(result)).toContain(`${(result.exactRate * 100).toFixed(1)}%`);

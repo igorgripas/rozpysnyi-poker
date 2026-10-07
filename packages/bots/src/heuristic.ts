@@ -29,6 +29,9 @@ const LEAD_CONFIDENCE = 0.5;
 /** Хто ходить не останнім, бере найменшою картою, що втримає взятку з такою ймовірністю. */
 const HOLD_CONFIDENCE = 0.6;
 
+/** Карта вважається певною взяткою, якщо бере з такою ймовірністю. */
+const SURE_CHANCE = 0.8;
+
 /** Джокерів у колоді (R-1.1). */
 const JOKER_COUNT = 2;
 
@@ -215,6 +218,21 @@ function goalOf(view: PlayerView): Goal {
   return taken === bid ? 'avoid' : 'take';
 }
 
+/**
+ * Певні взятки руки: джокери й карти, що беруть майже напевно. Якщо їх вистачає, щоб
+ * добрати замовлення, решту взяток брати не треба — інакше вийде перебір (R-7.3).
+ */
+function sureCount(k: Knowledge): number {
+  return k.view.hand.filter((card) => isJoker(card) || leadChance(k, card) >= SURE_CHANCE).length;
+}
+
+function hasSurplus(k: Knowledge): boolean {
+  const { view } = k;
+  if (!view.spec.bidding) return false;
+  const need = (view.bids[view.seat] ?? 0) - (view.taken[view.seat] ?? 0);
+  return need > 0 && sureCount(k) >= need;
+}
+
 function sameCall(a: JokerCall | undefined, b: JokerCall | undefined): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
@@ -308,6 +326,14 @@ function follow(k: Knowledge, goal: Goal): PlayAction {
     minBy(standard, (card) => leadChance(k, card) + card.rank / 1000);
 
   if (goal === 'take') {
+    // Певних взяток досить: позбуваємося найризиковішої непевної карти, що зараз не бере.
+    const risky = losers.filter((card) => leadChance(k, card) < SURE_CHANCE);
+    if (risky.length > 0 && hasSurplus(k)) {
+      return playAction(
+        view,
+        maxBy(risky, (card) => leadChance(k, card) + card.rank / 1000),
+      );
+    }
     if (winners.length > 0) {
       if (last) return playAction(view, winners[0] as StandardCard);
       // Не останнім: найменша карта, яку навряд чи переб'ють, інакше найстарша.
@@ -350,7 +376,10 @@ function holdChance(k: Knowledge, card: StandardCard): number {
  * кладе найстаршого козиря, що не бере, а коли взятку однаково брати — позбувається
  * найстаршого, а заходить найменшим козирем, поки старші козирі в суперників; у відіграші
  * перебиває найменшим козирем і заходить джокером «старший козир».
- * Джокера береже для взяток, які інакше не взяти. Памʼятає зіграні в роздачі карти
+ * Поки добирає замовлення, але певних взяток (джокери й майже напевні карти) уже досить,
+ * віддає взятку суперникам і скидає в неї найризиковішу непевну карту, щоб та не взяла
+ * зайву взятку пізніше (R-7.3). Джокера береже для взяток, які інакше не взяти.
+ * Памʼятає зіграні в роздачі карти
  * (`played`) і з ходів суперників виводить, яких мастей і козирів у них уже немає (R-5.2).
  */
 export function createHeuristicBot(): Bot {
