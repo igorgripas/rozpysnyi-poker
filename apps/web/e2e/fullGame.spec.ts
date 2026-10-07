@@ -1,7 +1,20 @@
 import { type BrowserContext, type Page, expect, test } from '@playwright/test';
 import { expectAccessible, playUntil } from './support/player';
+import { type SeededServer, startSeededServer } from './support/server';
 
 const NAMES = ['Оля', 'Петро', 'Марія', 'Тарас'];
+
+// Власний сервер із фіксованим seed: щоразу ті самі роздачі, тож падіння відтворюється.
+const SEED = 7;
+let server: SeededServer;
+
+test.beforeEach(async ({ baseURL }) => {
+  server = await startSeededServer(SEED, baseURL ?? '');
+});
+
+test.afterEach(async () => {
+  await server.close();
+});
 
 test('повна гра: 4 гравці в окремих браузерах грають усі 22 роздачі до результатів', async ({
   browser,
@@ -26,14 +39,15 @@ test('повна гра: 4 гравці в окремих браузерах г�
   const [host, ...guests] = pages as [Page, ...Page[]];
 
   // Пауза взятки вимкнена: інакше 162 взятки не вкладуться в таймаут.
-  await host.goto('/?trickPause=0');
+  const query = `server=${encodeURIComponent(server.url)}&trickPause=0`;
+  await host.goto(`/?${query}`);
   await host.getByLabel('Ваше імʼя').fill(NAMES[0] ?? '');
   await host.getByRole('button', { name: 'Створити кімнату' }).click();
   const heading = host.getByRole('heading', { name: /^Кімната [A-Z0-9]{5}$/ });
   const code = ((await heading.textContent()) ?? '').replace('Кімната ', '');
 
   for (const [i, guest] of guests.entries()) {
-    await guest.goto(`/r/${code}?trickPause=0`);
+    await guest.goto(`/r/${code}?${query}`);
     await guest.getByLabel('Ваше імʼя').fill(NAMES[i + 1] ?? '');
     await guest.getByRole('button', { name: 'Увійти в кімнату' }).click();
     await expect(guest.getByText('Чекаємо, поки хост почне гру')).toBeVisible();
