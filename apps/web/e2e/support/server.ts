@@ -1,5 +1,10 @@
 import { createRng } from '@poker/engine';
-import { type PokerServer, type RandomSource, createPokerServer } from '@poker/server';
+import {
+  type PokerServer,
+  type PokerServerOptions,
+  type RandomSource,
+  createPokerServer,
+} from '@poker/server';
 
 /** Детермінована випадковість сервера: той самий seed — ті самі код кімнати, місця й роздачі. */
 function seededRandom(seed: number): RandomSource {
@@ -21,13 +26,21 @@ export interface SeededServer {
 /**
  * Окремий сервер у процесі тесту з фіксованим seed, миттєвими ботами й без паузи після взятки:
  * екрани відтворюються піксель у піксель незалежно від інших тестів і повторів.
+ * Ліміт запитів зʼєднання знято: з миттєвими ботами гравець ходить частіше, ніж людина.
+ * `overrides` — інші опції сервера для окремого тесту.
  */
-export async function startSeededServer(seed: number, publicUrl: string): Promise<SeededServer> {
+export async function startSeededServer(
+  seed: number,
+  publicUrl: string,
+  overrides: PokerServerOptions = {},
+): Promise<SeededServer> {
   const server: PokerServer = createPokerServer({
     random: seededRandom(seed),
     publicUrl,
     botDelayMs: 0,
     trickPauseMs: 0,
+    connectionLimits: { requests: Number.POSITIVE_INFINITY },
+    ...overrides,
   });
   const url = await server.listen({ port: 0, host: '127.0.0.1' });
   return {
