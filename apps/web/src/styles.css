@@ -1741,13 +1741,8 @@ tfoot .sheet__cell {
   width: 7mm;
 }
 
-.print-table__col--phase {
-  width: 22mm;
-}
-
-.print-table__col--cards,
-.print-table__col--trump {
-  width: 11mm;
+.print-table__col--cards {
+  width: 15mm;
 }
 
 /* Рядки високі, щоб у клітинку можна було вписати число ручкою. */
@@ -1755,16 +1750,17 @@ tfoot .sheet__cell {
   height: 8.4mm;
 }
 
-.print-table .print-table__phase,
-.print-table .print-table__label {
-  font-weight: 400;
-  text-align: left;
+.print-table .print-table__cards {
+  font-weight: 700;
+  white-space: nowrap;
 }
 
+/* Підпис підсумку займає «№» і «Карти» й може переноситися на два рядки. */
 .print-table__total .print-table__label {
   font-size: 8pt;
   font-weight: 700;
-  white-space: nowrap;
+  line-height: 1.1;
+  text-align: left;
 }
 
 .print-table__total td {
@@ -1773,6 +1769,12 @@ tfoot .sheet__cell {
 
 .print-table .suit-mark[data-color='red'] {
   color: #c62828;
+}
+
+.print-legend {
+  margin: 1.5mm 0 0;
+  font-size: 8pt;
+  line-height: 1.2;
 }
 
 /* ── Адаптивність ───────────────────────────────────────────────────────── */

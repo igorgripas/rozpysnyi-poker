@@ -1,5 +1,5 @@
 import { type HandPhase, MAX_PLAYERS, MIN_PLAYERS, type Suit, createSchedule } from '@poker/engine';
-import { useEffect, useId, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { phaseName, uk } from '../i18n';
 import { SuitMark } from '../ui/SuitMark';
 
@@ -135,6 +135,25 @@ export function PrintSheet({ onBack }: { onBack: () => void }) {
   );
 }
 
+/** Етапи, які позначаються літерою замість кількості карт — як у таблиці гри (`ScoreSheet`). */
+const PHASE_MARKS = ['noTrump', 'dark', 'misere', 'comeback'] as const;
+type MarkedPhase = (typeof PHASE_MARKS)[number];
+
+function isMarked(phase: HandPhase): phase is MarkedPhase {
+  return (PHASE_MARKS as readonly HandPhase[]).includes(phase);
+}
+
+/** Клітинка «Карти»: кількість, у «Мастях» — з мастю козиря, інакше — літера етапу. */
+function cardsLabel(row: Extract<PrintRow, { kind: 'hand' }>): ReactNode {
+  if (isMarked(row.phase)) return uk.sheet.marks[row.phase];
+  if (row.trump === null || row.trump === 'none') return row.cards;
+  return (
+    <>
+      {row.cards} <SuitMark suit={row.trump} />
+    </>
+  );
+}
+
 function PrintTable({ playerCount, dark }: { playerCount: number; dark: boolean }) {
   const rows = buildPrintRows(playerCount, dark);
   const seats = Array.from({ length: playerCount }, (_, seat) => seat);
@@ -143,82 +162,73 @@ function PrintTable({ playerCount, dark }: { playerCount: number; dark: boolean 
       <td key={`${key}-${seat}-bid`} className="print-table__cell" />,
       <td key={`${key}-${seat}-points`} className="print-table__cell" />,
     ]);
+  // Легенда — лише для літер, що є в таблиці (R-10.2: «Темна» — тільки з опцією).
+  const marks = PHASE_MARKS.filter((phase) =>
+    rows.some((row) => row.kind === 'hand' && row.phase === phase),
+  );
 
   return (
-    <table className="print-table" aria-label={uk.print.title} data-players={playerCount}>
-      <colgroup>
-        <col className="print-table__col--number" />
-        <col className="print-table__col--phase" />
-        <col className="print-table__col--cards" />
-        <col className="print-table__col--trump" />
-        {seats.flatMap((seat) => [
-          <col key={`${seat}-bid`} className="print-table__col--player" />,
-          <col key={`${seat}-points`} className="print-table__col--player" />,
-        ])}
-      </colgroup>
-      <thead>
-        <tr className="print-table__names">
-          <th scope="col" rowSpan={2}>
-            {uk.print.number}
-          </th>
-          <th scope="col" rowSpan={2}>
-            {uk.print.phase}
-          </th>
-          <th scope="col" rowSpan={2}>
-            {uk.print.cards}
-          </th>
-          <th scope="col" rowSpan={2}>
-            {uk.print.trump}
-          </th>
-          {seats.map((seat) => (
-            <th
-              key={seat}
-              scope="colgroup"
-              colSpan={2}
-              className="print-table__name"
-              aria-label={uk.print.name(seat + 1)}
-            />
-          ))}
-        </tr>
-        <tr>
+    <>
+      <table className="print-table" aria-label={uk.print.title} data-players={playerCount}>
+        <colgroup>
+          <col className="print-table__col--number" />
+          <col className="print-table__col--cards" />
           {seats.flatMap((seat) => [
-            <th key={`${seat}-bid`} scope="col" aria-label={uk.print.bid}>
-              {uk.print.bidText}
-            </th>,
-            <th key={`${seat}-points`} scope="col">
-              {uk.print.points}
-            </th>,
+            <col key={`${seat}-bid`} className="print-table__col--player" />,
+            <col key={`${seat}-points`} className="print-table__col--player" />,
           ])}
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row, index) =>
-          row.kind === 'hand' ? (
-            <tr key={index} className="print-table__hand" data-phase={row.phase}>
-              <td className="print-table__number">{row.number}</td>
-              <th scope="row" className="print-table__phase">
-                {phaseName(row.phase)}
-              </th>
-              <td className="print-table__cards">{row.cards}</td>
-              <td className="print-table__trump">
-                {row.trump === 'none' ? (
-                  uk.noTrump
-                ) : row.trump === null ? null : (
-                  <SuitMark suit={row.trump} />
-                )}
-              </td>
-              {playerCells(String(index))}
-            </tr>
-          ) : (
-            <tr key={index} className="print-table__total" data-kind={row.kind}>
-              <th scope="row" colSpan={4} className="print-table__label">
-                {uk.print[row.kind]}
-              </th>
-              {playerCells(String(index))}
-            </tr>
-          ),
-        )}
-      </tbody>
-    </table>
+        </colgroup>
+        <thead>
+          <tr className="print-table__names">
+            <th scope="col" rowSpan={2}>
+              {uk.print.number}
+            </th>
+            <th scope="col" rowSpan={2}>
+              {uk.print.cards}
+            </th>
+            {seats.map((seat) => (
+              <th
+                key={seat}
+                scope="colgroup"
+                colSpan={2}
+                className="print-table__name"
+                aria-label={uk.print.name(seat + 1)}
+              />
+            ))}
+          </tr>
+          <tr>
+            {seats.flatMap((seat) => [
+              <th key={`${seat}-bid`} scope="col" aria-label={uk.print.bid}>
+                {uk.print.bidText}
+              </th>,
+              <th key={`${seat}-points`} scope="col">
+                {uk.print.points}
+              </th>,
+            ])}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) =>
+            row.kind === 'hand' ? (
+              <tr key={index} className="print-table__hand" data-phase={row.phase}>
+                <td className="print-table__number">{row.number}</td>
+                <th scope="row" className="print-table__cards" title={phaseName(row.phase)}>
+                  {cardsLabel(row)}
+                </th>
+                {playerCells(String(index))}
+              </tr>
+            ) : (
+              <tr key={index} className="print-table__total" data-kind={row.kind}>
+                <th scope="row" colSpan={2} className="print-table__label">
+                  {uk.print[row.kind]}
+                </th>
+                {playerCells(String(index))}
+              </tr>
+            ),
+          )}
+        </tbody>
+      </table>
+      <p className="print-legend">{marks.map((phase) => uk.print.legend[phase]).join(' · ')}</p>
+    </>
   );
 }

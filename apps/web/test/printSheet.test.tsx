@@ -84,11 +84,56 @@ describe('екран «Таблиця для друку» (T64)', () => {
     expect(labels).toContain('Разом після основних');
     expect(labels).toContain('Разом після мастей');
     expect(labels).toContain('Разом після безкозирки');
-    expect(labels.slice(-2)).toEqual(['Джокери (кружечки × −10)', 'Разом']);
-    expect(within(table).getByText('Темна')).toBeInTheDocument();
+    expect(labels.slice(-2)).toEqual(['Джокери (−10 за кожен)', 'Разом']);
+    expect(within(table).getByText('Тем')).toBeInTheDocument();
   });
 
-  it('R-3.3: масті козиря — через спільний значок масті, безкозирка — «б/к»', () => {
+  it('T66: службова колонка одна — «Карти» поруч із «№», підсумки займають обидві', () => {
+    render(<PrintSheet onBack={() => {}} />);
+    const table = screen.getByRole('table');
+    const [names] = within(table).getAllByRole('row');
+    if (names === undefined) throw new Error('Немає шапки');
+    expect(
+      within(names)
+        .getAllByRole('columnheader')
+        .slice(0, 2)
+        .map((cell) => cell.textContent),
+    ).toEqual(['№', 'Карти']);
+    expect(within(table).queryByRole('columnheader', { name: 'Роздача' })).toBeNull();
+    expect(within(table).queryByRole('columnheader', { name: 'Козир' })).toBeNull();
+    expect(table.querySelectorAll('col')).toHaveLength(2 + 3 * 2);
+    for (const row of bodyRows()) {
+      // На кожного з 3 гравців — «Замовлення» і «Бали».
+      expect(row.children).toHaveLength(row.dataset.kind === undefined ? 2 + 6 : 1 + 6);
+    }
+    const total = table.querySelector('tr[data-kind="final"] th');
+    expect(total?.getAttribute('colspan')).toBe('2');
+  });
+
+  it('R-2.1, R-3.3, R-10.2: клітинка «Карти» — як у таблиці гри: кількість, масть або літера етапу', async () => {
+    const user = userEvent.setup();
+    render(<PrintSheet onBack={() => {}} />);
+    await user.click(screen.getByRole('radio', { name: '4' }));
+    await user.click(screen.getByRole('switch', { name: /Темною/ }));
+    const cardsOf = (phase: string) =>
+      [...screen.getByRole('table').querySelectorAll(`tr[data-phase="${phase}"]`)].map(
+        (row) => row.children[1]?.textContent,
+      );
+    expect(cardsOf('ascending')).toEqual(['1', '2', '3', '4', '5', '6', '7', '8']);
+    expect(cardsOf('maximum')).toEqual(['9', '9', '9', '9']);
+    expect(cardsOf('suits').map((text) => text?.replace('\uFE0E', ''))).toEqual([
+      '9 ♠',
+      '9 ♣',
+      '9 ♦',
+      '9 ♥',
+    ]);
+    expect(cardsOf('noTrump')).toEqual(['Б', 'Б', 'Б', 'Б']);
+    expect(cardsOf('dark')).toEqual(['Тем']);
+    expect(cardsOf('misere')).toEqual(['М']);
+    expect(cardsOf('comeback')).toEqual(['В']);
+  });
+
+  it('R-3.3: масті козиря — через спільний значок масті, ♦ ♥ червоні', () => {
     const { container } = render(<PrintSheet onBack={() => {}} />);
     const marks = [...container.querySelectorAll('table .suit-mark')];
     expect(marks.map((mark) => mark.getAttribute('data-suit'))).toEqual([
@@ -97,7 +142,21 @@ describe('екран «Таблиця для друку» (T64)', () => {
       'diamonds',
       'hearts',
     ]);
-    expect(within(screen.getByRole('table')).getAllByText('б/к')).toHaveLength(3);
+    expect(marks.map((mark) => mark.getAttribute('data-color'))).toEqual([
+      'black',
+      'black',
+      'red',
+      'red',
+    ]);
+  });
+
+  it('R-10.2: легенда під таблицею розшифровує лише літери, що є в таблиці', async () => {
+    const user = userEvent.setup();
+    const { container } = render(<PrintSheet onBack={() => {}} />);
+    const legend = () => container.querySelector('.print-legend')?.textContent;
+    expect(legend()).toBe('Б — безкозирка · М — мізер · В — відіграш');
+    await user.click(screen.getByRole('switch', { name: /Темною/ }));
+    expect(legend()).toBe('Б — безкозирка · Тем — темна (бали ×2) · М — мізер · В — відіграш');
   });
 
   it('друкує через браузер і повертається на головну', async () => {
