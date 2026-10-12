@@ -312,6 +312,10 @@ export function apply(state: GameState, action: Action): GameState {
   } else {
     throw new IllegalActionError('Невідомий тип дії');
   }
+  // Лог копіюється на кожну дію (O(n²) за гру), але n обмежене (≈900 дій у грі на 6), і це
+  // дешевше за альтернативи, що зберігають форму стану й серіалізацію (#229): лінивий лог
+  // (звʼязний список + геттер `actions`) давав −8…+3 % часу гри, бо геттер у літералі
+  // й WeakMap коштують на кожен стан стільки ж, скільки копія; Proxy ламає `structuredClone`.
   return { ...next, actions: [...state.actions, action] };
 }
 

@@ -580,6 +580,65 @@ describe('scoreTable: кеш завершених роздач', () => {
   });
 });
 
+describe('лог дій: дописування без копіювання', () => {
+  it('R-2.3: every intermediate state keeps its own log prefix', () => {
+    const states: GameState[] = [createGame(430, 5)];
+    const rng = createRng(4);
+    while ((states.at(-1) as GameState).status !== 'finished') {
+      const last = states.at(-1) as GameState;
+      states.push(apply(last, randomAction(last, rng)));
+    }
+    const full = (states.at(-1) as GameState).actions;
+    states.forEach((state, i) => expect(state.actions).toEqual(full.slice(0, i)));
+  });
+
+  it('R-2.3: branching from the same state gives independent logs', () => {
+    const start = playUntil(
+      createGame(431, 4),
+      createRng(5),
+      (s) => s.actions.length > 5 && legalActions(s).length >= 2,
+    );
+    const [first, second] = legalActions(start) as [Action, Action];
+    const a = apply(start, first);
+    const b = apply(start, second);
+    const a2 = apply(a, legalActions(a)[0] as Action);
+    expect(start.actions).toHaveLength(a.actions.length - 1);
+    expect(a.actions.at(-1)).toEqual(first);
+    expect(b.actions.at(-1)).toEqual(second);
+    expect(b.actions.slice(0, -1)).toEqual(start.actions);
+    expect(a2.actions.slice(0, -1)).toEqual(a.actions);
+  });
+
+  it('R-2.3: state survives JSON and structuredClone and continues the same game', () => {
+    const rng = createRng(6);
+    let live = playUntil(createGame(432, 6), rng, (s) => s.history.length >= 2);
+    let json = JSON.parse(JSON.stringify(live)) as GameState;
+    expect(structuredClone(live)).toEqual(json);
+    expect(json).toEqual(live);
+    for (let step = 0; step < 40 && live.status !== 'finished'; step++) {
+      const action = randomAction(live, rng);
+      live = apply(live, action);
+      json = apply(json, action);
+      expect(viewFor(json, 2)).toEqual(viewFor(live, 2));
+    }
+    expect(json.actions).toEqual(live.actions);
+    expect(JSON.stringify(json)).toBe(JSON.stringify(live));
+    expect(replay(live.seed, gameLog(live))).toEqual(live);
+  });
+
+  it('R-9.2: played cards come from the log for states with a plain log', () => {
+    const live = playUntil(createGame(433, 4), createRng(7), (s) => s.hand.trick.length === 3);
+    const plain = { ...live, actions: [...live.actions] };
+    expect(viewFor(plain, 0).played).toEqual(viewFor(live, 0).played);
+    expect(viewFor(live, 0).played).toHaveLength(
+      live.hand.dealt.reduce(
+        (sum, cards, seat) => sum + cards.length - (live.hand.hands[seat] as Card[]).length,
+        0,
+      ),
+    );
+  });
+});
+
 describe('козир у мізері й відіграші', () => {
   const noBids = (state: GameState) => !state.hand.spec.bidding;
 
