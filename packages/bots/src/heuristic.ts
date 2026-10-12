@@ -29,8 +29,20 @@ const LEAD_CONFIDENCE = 0.5;
 /** Хто ходить не останнім, бере найменшою картою, що втримає взятку з такою ймовірністю. */
 const HOLD_CONFIDENCE = 0.6;
 
-/** Карта вважається певною взяткою, якщо бере з такою ймовірністю. */
+/**
+ * Карта вважається певною взяткою, якщо бере з такою ймовірністю. Перевірено A/B після
+ * #209/#210 (#233): 0,6–0,95 не кращі за 0,8.
+ */
 const SURE_CHANCE = 0.8;
+
+/**
+ * Калібрування оцінки руки для замовлення (A/B, #233): у роздачах з 1–3 картами оцінка
+ * заходом завищена, тож ймовірність узяти звичайною картою підноситься до степеня.
+ * Підвищувати оцінку великих роздач не варто: проти обережних суперників це дає бали,
+ * але в самогрі, де так замовляють усі, частішають недобори.
+ */
+const SMALL_HAND = 3;
+const SMALL_HAND_POWER = 1.3;
 
 /** Джокерів у колоді (R-1.1). */
 const JOKER_COUNT = 2;
@@ -154,6 +166,11 @@ function leadChance(k: Knowledge, card: StandardCard): number {
 /** Оцінка ймовірності, що карта руки принесе взятку, — для замовлення. */
 function cardChance(k: Knowledge, card: Card): number {
   if (isJoker(card)) return JOKER_CHANCE;
+  const chance = rawCardChance(k, card);
+  return k.view.spec.cards <= SMALL_HAND ? chance ** SMALL_HAND_POWER : chance;
+}
+
+function rawCardChance(k: Knowledge, card: StandardCard): number {
   const top = leadChance(k, card);
   const trump = k.view.trump;
   if (trump === null || card.suit !== trump || k.view.spec.cards < RUFF_MIN_CARDS) return top;

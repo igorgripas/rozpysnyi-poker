@@ -23,6 +23,11 @@ describe('евристичний бот: замовлення', () => {
     expect(bot.act(view)).toEqual({ type: 'bid', seat: 0, bid: 0 });
   });
 
+  it('R-4.3, R-7.4: у роздачі з 1–3 картами оцінка обережніша — дама козир із шісткою пасує', () => {
+    const view = scenario({ phase: 'ascending', trump: 'spades', hand: 'S12 S6' });
+    expect(bot.act(view)).toEqual({ type: 'bid', seat: 0, bid: 0 });
+  });
+
   it('R-4.4: роздаючий не замовляє заборонене значення, навіть якщо рука його просить', () => {
     // Інші замовили 6 з 6 → роздаючому заборонено 0, хоча рука слабка.
     const view = scenario({
