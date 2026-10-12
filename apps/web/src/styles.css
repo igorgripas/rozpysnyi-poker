@@ -1601,6 +1601,156 @@ tfoot .sheet__cell {
   white-space: nowrap;
 }
 
+/* ── Таблиця для друку (T64) ────────────────────────────────────────────── */
+
+.home__print {
+  margin-top: var(--space-2);
+}
+
+.print-sheet {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.print-setup {
+  display: grid;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 420px;
+}
+
+.print-setup__title {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.print-setup__hint {
+  margin: 0;
+}
+
+.print-setup__count {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.print-setup__count legend {
+  margin-bottom: var(--space-2);
+  padding: 0;
+  font-weight: 600;
+}
+
+.print-setup__radio {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  cursor: pointer;
+}
+
+.print-setup__radio:has(input:checked) {
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.print-setup__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* Прев'ю аркуша: ширина як у A4 без полів, на вузькому екрані зменшується (zoom). */
+.print-preview {
+  width: 100%;
+  overflow: hidden;
+}
+
+/* Аркуш чорно-білий незалежно від теми; лише ♦ ♥ червоні. */
+.print-page {
+  width: 190mm;
+  padding: 0;
+  background: #fff;
+  color: #000;
+  box-shadow: var(--shadow);
+}
+
+.print-table {
+  width: 190mm;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 9pt;
+  line-height: 1.15;
+}
+
+.print-table th,
+.print-table td {
+  padding: 0 1mm;
+  border: 0.3mm solid #000;
+  overflow: hidden;
+  text-align: center;
+  hyphens: manual;
+  overflow-wrap: break-word;
+}
+
+.print-table thead th {
+  height: 7mm;
+  padding: 0 0.5mm;
+  font-size: 7.5pt;
+  font-weight: 600;
+  /* «Замовлення» ділиться лише за мʼяким переносом, не посеред складу. */
+  overflow-wrap: normal;
+}
+
+.print-table .print-table__name {
+  height: 10mm;
+}
+
+.print-table__col--number {
+  width: 7mm;
+}
+
+.print-table__col--phase {
+  width: 22mm;
+}
+
+.print-table__col--cards,
+.print-table__col--trump {
+  width: 11mm;
+}
+
+/* Рядки високі, щоб у клітинку можна було вписати число ручкою. */
+.print-table tbody tr {
+  height: 8.4mm;
+}
+
+.print-table .print-table__phase,
+.print-table .print-table__label {
+  font-weight: 400;
+  text-align: left;
+}
+
+.print-table__total .print-table__label {
+  font-size: 8pt;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.print-table__total td {
+  border-top-width: 0.6mm;
+}
+
+.print-table .suit-mark[data-color='red'] {
+  color: #c62828;
+}
+
 /* ── Адаптивність ───────────────────────────────────────────────────────── */
 
 /*
@@ -1777,5 +1927,55 @@ tfoot .sheet__cell {
   * {
     transition: none !important;
     animation: none !important;
+  }
+}
+
+/* ── Друк (T64): після адаптивних правил, щоб перекривати їх ─────────────── */
+
+@page {
+  size: A4 portrait;
+  margin: 10mm;
+}
+
+@media print {
+  :root,
+  html,
+  body {
+    background: #fff;
+    color: #000;
+  }
+
+  /* На папері — лише аркуш: без шапки, банерів і елементів вибору. */
+  .app__header,
+  .net-banner,
+  .print-setup {
+    display: none !important;
+  }
+
+  .app {
+    min-height: 0;
+  }
+
+  .app__main,
+  .print-sheet {
+    display: block;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .print-preview {
+    overflow: visible;
+  }
+
+  .print-page {
+    box-shadow: none;
+    zoom: 1 !important;
+  }
+
+  .print-table {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+    break-inside: avoid;
   }
 }

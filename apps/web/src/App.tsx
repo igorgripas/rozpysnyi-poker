@@ -5,6 +5,7 @@ import { uk } from './i18n';
 import { Lobby } from './lobby/Lobby';
 import { UnfinishedGames } from './lobby/UnfinishedGames';
 import { WaitingRoom } from './lobby/WaitingRoom';
+import { PrintSheet } from './print/PrintSheet';
 import { type PokerClient, inviteCodeFromPath, replacePath } from './net/client';
 import { ClientProvider, useClientState } from './net/react';
 import { CardFace } from './ui/Card';
@@ -69,6 +70,7 @@ export function App({
 function Screen({ client }: { client: PokerClient }) {
   const { status, room, view } = useClientState();
   const [inviteCode, setInviteCode] = useState(() => inviteCodeFromPath(window.location.pathname));
+  const [printing, setPrinting] = useState(false);
   // Гравець уже в кімнаті: запрошення використане, після виходу — звичайна головна.
   if (room !== null && inviteCode !== null) setInviteCode(null);
 
@@ -92,6 +94,8 @@ function Screen({ client }: { client: PokerClient }) {
     );
   }
   if (status === 'resuming') return <p className="muted">{uk.lobby.resuming}</p>;
+  // Порожня таблиця для гри на папері (T64): кімната не потрібна.
+  if (printing) return <PrintSheet onBack={() => setPrinting(false)} />;
   return (
     <div className="home">
       <div className="home__cards" aria-hidden="true">
@@ -108,6 +112,9 @@ function Screen({ client }: { client: PokerClient }) {
           setInviteCode(null);
         }}
       />
+      <button type="button" className="button home__print" onClick={() => setPrinting(true)}>
+        {uk.print.open}
+      </button>
     </div>
   );
 }
