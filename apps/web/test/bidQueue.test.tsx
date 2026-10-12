@@ -159,13 +159,13 @@ describe('картки гравців', () => {
     )) {
       const seat = PLAYER_NAMES.indexOf(defined(item.querySelector('.player__name')?.textContent));
       const bid = state.hand.bids[seat] ?? null;
-      const value = defined(item.querySelector('.player__bid-value'));
-      const box = defined(item.querySelector('.player__bid'));
+      const value = defined(item.querySelector('.player__score-value'));
+      const box = defined(item.querySelector('.player__score'));
       if (bid === null) {
         expect(value.textContent).toBe('—');
         expect(box).toHaveAttribute('data-empty');
       } else {
-        expect(value.textContent).toBe(String(bid));
+        expect(value.textContent).toBe(`0 / ${bid}`);
         expect(box).not.toHaveAttribute('data-empty');
       }
     }
