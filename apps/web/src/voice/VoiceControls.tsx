@@ -1,5 +1,6 @@
 import { type ReactNode, createContext, use, useSyncExternalStore } from 'react';
 import { uk } from '../i18n';
+import { useClientState } from '../net/react';
 import type { VoiceChat, VoiceState } from './VoiceChat';
 
 const VoiceContext = createContext<VoiceChat | null>(null);
@@ -36,7 +37,9 @@ export function useSpeaking(playerId: string): boolean {
 export function VoiceControls() {
   const voice = use(VoiceContext);
   const state = useVoiceState();
+  const { room } = useClientState();
   if (voice === null || state === null) return null;
+  const failed = state.failed.map((id) => room?.seats.find((s) => s.id === id)?.name ?? id);
   const micOn = state.mic === 'on';
   return (
     <div className="voice" role="group" aria-label={uk.voice.title}>
@@ -62,7 +65,7 @@ export function VoiceControls() {
         <span aria-hidden="true">{state.othersMuted ? '🔇' : '🔈'}</span>
       </button>
       <p role="status" className="voice__notice">
-        {state.notice}
+        {state.notice ?? (failed.length > 0 ? uk.voice.failed(failed) : null)}
       </p>
     </div>
   );

@@ -112,3 +112,44 @@ test('R-4.2: черга замовлень на телефоні з 6 гравц
   expect(middle).toBeGreaterThanOrEqual(value?.y ?? Infinity);
   expect(middle).toBeLessThanOrEqual((value?.y ?? 0) + (value?.height ?? 0));
 });
+
+test('R-4.2: черга замовлень на телефоні з 6 гравцями — довге імʼя не скорочується до кількох літер', async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile-360', 'перевірка вузького екрана');
+  await startGame(page, 5);
+  await expect(page.locator('.game__turn')).toHaveText('Ваш хід — замовлення', { timeout: 15_000 });
+  const queue = page.getByRole('list', { name: 'Черга замовлень' });
+  const name = queue.locator('.bid-queue__name').filter({ hasText: LONG_NAME });
+  await expect(name).toHaveCount(1);
+  // Скільки літер кожного слова видно: символ видно, якщо він цілком у межах свого рядка.
+  const visible = await name.evaluate((element) => {
+    const words: string[] = [];
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+      const clip = (node.parentElement ?? element).getBoundingClientRect();
+      const text = node.textContent ?? '';
+      let shown = '';
+      for (let i = 0; i < text.length; i++) {
+        const range = document.createRange();
+        range.setStart(node, i);
+        range.setEnd(node, i + 1);
+        const rect = range.getBoundingClientRect();
+        if (rect.width > 0 && rect.left >= clip.left - 0.5 && rect.right <= clip.right + 0.5) {
+          shown += text[i];
+        }
+      }
+      words.push(...shown.split(/\s+/).filter(Boolean));
+    }
+    return words;
+  });
+  // Видно початок і імені, і прізвища — по кілька літер, а не «Ол…».
+  expect(visible).toHaveLength(2);
+  const [first, last] = visible;
+  expect(first?.length ?? 0, visible.join(' ')).toBeGreaterThanOrEqual(4);
+  expect(last?.length ?? 0, visible.join(' ')).toBeGreaterThanOrEqual(4);
+  expect(LONG_NAME.split(' ')[0]?.startsWith(first ?? '-')).toBe(true);
+  expect(LONG_NAME.split(' ')[1]?.startsWith(last ?? '-')).toBe(true);
+  // Повне імʼя — у підказці.
+  await expect(name).toHaveAttribute('title', LONG_NAME);
+});

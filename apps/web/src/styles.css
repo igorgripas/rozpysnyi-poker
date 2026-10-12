@@ -152,7 +152,9 @@ textarea {
   display: grid;
   gap: var(--space-2);
   width: max-content;
-  max-width: calc(100vw - 2 * var(--space-4));
+  /* Праворуч панель вирівняна з ⚙, ліворуч може підійти ближче до краю екрана: на 360px
+     кожен перемикач уміщується в один рядок. */
+  max-width: calc(100vw - var(--space-4) - var(--space-2));
   padding: var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -169,7 +171,7 @@ textarea {
   align-items: center;
   gap: var(--space-2);
   min-height: 44px;
-  padding: 0 var(--space-3);
+  padding: 0 var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface-2);
@@ -189,7 +191,8 @@ textarea {
 
 /* Стан перемикача текстом (увімкнено/вимкнено): праворуч, як позначка-«пігулка». */
 .settings__state {
-  padding: 0 var(--space-2);
+  padding: 0 var(--space-1);
+  white-space: nowrap;
   border-radius: 999px;
   font-size: 0.875rem;
   background: var(--surface);
@@ -976,10 +979,13 @@ textarea {
   list-style: none;
 }
 
+/* Імʼя зверху, значення — внизу: у клітинках з одно- і дворядковими іменами значення на одній лінії. */
 .bid-queue__item {
   display: grid;
+  grid-template-rows: 1fr auto;
+  /* Колонка не ширша за клітинку: інакше довге імʼя розпирає її й зсуває значення. */
+  grid-template-columns: minmax(0, 1fr);
   justify-items: center;
-  align-content: start;
   min-width: 0;
   padding: var(--space-1);
   border: 2px solid var(--border);
@@ -997,10 +1003,21 @@ textarea {
   color: var(--muted);
 }
 
+/* Імʼя в один рядок, якщо вміщується; інакше перше слово й решта — окремими рядками,
+   кожен обрізається трикрапкою сам. */
 .bid-queue__name {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  column-gap: 0.25em;
+  max-width: 100%;
+  font-size: 0.75rem;
+}
+
+.bid-queue__word {
+  min-width: 0;
   max-width: 100%;
   overflow: hidden;
-  font-size: 0.75rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

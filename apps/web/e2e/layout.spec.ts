@@ -54,3 +54,33 @@ test('шапка: назва в один рядок, вібрація, звук 
   await page.keyboard.press('Escape');
   await expect(panel).toBeHidden();
 });
+
+test('меню ⚙ на телефоні: кожен перемикач — в один рядок (підпис і стан не переносяться)', async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile-360', 'перевірка вузького екрана');
+  await page.goto('/');
+  await page.getByRole('banner').getByRole('button', { name: 'Налаштування' }).click();
+  const panel = page.getByRole('group', { name: 'Налаштування' });
+  const items = panel.getByRole('button');
+  // Вібрація, звук і тема.
+  await expect(items).toHaveCount(3);
+  await expect(panel.getByRole('button', { name: 'Вібрація на свій хід' })).toBeVisible();
+  // Текст перемикача в один рядок: середини всіх рядків тексту (підпис і стан мають різний
+  // кегль, але стоять по центру) майже збігаються.
+  const spreads = await items.evaluateAll((buttons) =>
+    buttons.map((button) => {
+      const middles: number[] = [];
+      const walker = document.createTreeWalker(button, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+        if (!node.textContent?.trim()) continue;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        for (const rect of range.getClientRects()) middles.push(rect.top + rect.height / 2);
+      }
+      return { text: button.textContent, spread: Math.max(...middles) - Math.min(...middles) };
+    }),
+  );
+  for (const item of spreads) expect(item.spread, item.text ?? '').toBeLessThan(4);
+  for (const item of await items.all()) await expect(item).toBeInViewport({ ratio: 1 });
+});

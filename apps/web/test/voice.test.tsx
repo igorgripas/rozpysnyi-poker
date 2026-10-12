@@ -4,7 +4,13 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PokerClient } from '../src/net/client';
 import { ClientProvider } from '../src/net/react';
-import { VOICE_SIGNAL_RETRY_MS, VoiceChat, type VoiceEnv } from '../src/voice/VoiceChat';
+import {
+  VOICE_CONNECT_RETRIES,
+  VOICE_CONNECT_TIMEOUT_MS,
+  VOICE_SIGNAL_RETRY_MS,
+  VoiceChat,
+  type VoiceEnv,
+} from '../src/voice/VoiceChat';
 import { VoiceControls, VoiceProvider } from '../src/voice/VoiceControls';
 import { FakeConnection, human, roomState } from './support/fakeConnection';
 
@@ -21,7 +27,7 @@ class FakePeerConnection {
   closed = false;
   onicecandidate: ((event: { candidate: unknown }) => void) | null = null;
   ontrack: unknown = null;
-  onconnectionstatechange: unknown = null;
+  onconnectionstatechange: (() => void) | null = null;
   connectionState = 'new';
 
   constructor(readonly config: unknown) {
@@ -77,6 +83,12 @@ class FakePeerConnection {
 
   close() {
     this.closed = true;
+  }
+
+  /** Імітує зміну стану зʼєднання (ICE/DTLS). */
+  changeState(state: string) {
+    this.connectionState = state;
+    this.onconnectionstatechange?.();
   }
 }
 
@@ -361,5 +373,126 @@ describe('голосовий чат (T63)', () => {
       'false',
     );
     expect(screen.getByRole('status')).toHaveTextContent('Немає доступу до мікрофона');
+  });
+});
+
+describe('стан голосового зʼєднання зі співрозмовником', () => {
+  it('зʼєднання не встановилося вчасно — гравець бачить, з ким немає голосу, а пропозиція повторюється', async () => {
+    vi.useFakeTimers();
+    try {
+      const { connection, client, voice, signals } = setup(['p2']);
+      connection.pushStatus('online');
+      connection.pushRoom(ROOM);
+      await flush();
+      renderControls(voice, client);
+      expect(voice.getState().failed).toEqual([]);
+      expect(screen.getByRole('status')).toBeEmptyDOMElement();
+
+      await act(() => vi.advanceTimersByTimeAsync(VOICE_CONNECT_TIMEOUT_MS));
+      expect(voice.getState().failed).toEqual(['p2']);
+      expect(screen.getByRole('status')).toHaveTextContent('Немає голосового звʼязку з: Петро');
+      // Той, хто пропонував, пропонує знову.
+      expect(FakePeerConnection.all).toHaveLength(2);
+      expect(FakePeerConnection.all[0]?.closed).toBe(true);
+      expect(signals().filter((s) => s.signal.type === 'offer')).toHaveLength(2);
+
+      // Повторна пропозиція спрацювала — позначка зникає.
+      await act(async () => {
+        FakePeerConnection.all[1]?.changeState('connected');
+        await flush();
+      });
+      expect(voice.getState().failed).toEqual([]);
+      expect(screen.getByRole('status')).toBeEmptyDOMElement();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('повтори пропозиції обмежені; з ким голос так і не зʼєднався, лишається в позначці', async () => {
+    vi.useFakeTimers();
+    try {
+      const { connection, voice, signals } = setup(['p2']);
+      connection.pushStatus('online');
+      connection.pushRoom(ROOM);
+      await flush();
+      await vi.advanceTimersByTimeAsync(VOICE_CONNECT_TIMEOUT_MS * (VOICE_CONNECT_RETRIES + 5));
+      expect(signals().filter((s) => s.signal.type === 'offer')).toHaveLength(
+        VOICE_CONNECT_RETRIES + 1,
+      );
+      expect(voice.getState().failed).toEqual(['p2']);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('встановлене зʼєднання не вважається невдалим і не перепропонується', async () => {
+    vi.useFakeTimers();
+    try {
+      const { connection, voice, signals } = setup(['p2']);
+      connection.pushStatus('online');
+      connection.pushRoom(ROOM);
+      await flush();
+      FakePeerConnection.all[0]?.changeState('connected');
+      await vi.advanceTimersByTimeAsync(VOICE_CONNECT_TIMEOUT_MS * 3);
+      expect(voice.getState().failed).toEqual([]);
+      expect(signals().filter((s) => s.signal.type === 'offer')).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('той, хто відповідав, теж бачить, що зʼєднання не встановилося, але сам не пропонує', async () => {
+    vi.useFakeTimers();
+    try {
+      const { connection, voice, signals } = setup([]);
+      connection.pushStatus('online');
+      connection.pushRoom(ROOM);
+      await flush();
+      connection.push({
+        type: 'voice',
+        message: { type: 'signal', from: 'p2', signal: { type: 'offer', sdp: 'offer-sdp' } },
+      });
+      await flush();
+      await vi.advanceTimersByTimeAsync(VOICE_CONNECT_TIMEOUT_MS);
+      expect(voice.getState().failed).toEqual(['p2']);
+      expect(signals().filter((s) => s.signal.type === 'offer')).toHaveLength(0);
+      // Співрозмовник вийшов із голосу — позначка зникає.
+      connection.push({ type: 'voice', message: { type: 'left', playerId: 'p2' } });
+      await flush();
+      expect(voice.getState().failed).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('сигнал не дійшов до співрозмовника — гравець одразу бачить, що голосу з ним немає', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { connection, voice } = setup(['p2']);
+      connection.on('voice:signal', () => ({
+        ok: false,
+        error: { code: 'notInRoom', message: 'Не в голосі' },
+      }));
+      connection.pushStatus('online');
+      connection.pushRoom(ROOM);
+      await flush();
+      expect(voice.getState().failed).toEqual(['p2']);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it('розірване зʼєднання позначається, доки не відновиться', async () => {
+    const { connection, voice } = setup(['p2']);
+    connection.pushStatus('online');
+    connection.pushRoom(ROOM);
+    await flush();
+    FakePeerConnection.all[0]?.changeState('connected');
+    FakePeerConnection.all[0]?.changeState('failed');
+    await flush();
+    expect(voice.getState().failed).toEqual(['p2']);
+    // Повторна пропозиція (нове зʼєднання) зʼєдналася.
+    FakePeerConnection.all.at(-1)?.changeState('connected');
+    expect(voice.getState().failed).toEqual([]);
   });
 });

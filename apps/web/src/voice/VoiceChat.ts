@@ -21,6 +21,11 @@ const SPEAKING_HOLD_MS = 800;
  */
 export const VOICE_SIGNAL_RETRY_MS: readonly number[] = [1000, 2000, 4000];
 
+/** За скільки зʼєднання зі співрозмовником має встановитися, інакше воно вважається невдалим, мс. */
+export const VOICE_CONNECT_TIMEOUT_MS = 15_000;
+/** Скільки разів той, хто пропонував, повторює пропозицію, якщо зʼєднання не встановилося вчасно. */
+export const VOICE_CONNECT_RETRIES = 2;
+
 /** Можливості браузера, потрібні голосу; у тестах їх підмінюють. */
 export interface VoiceEnv {
   /** Без WebRTC голосу немає зовсім. */
@@ -63,6 +68,8 @@ export interface VoiceState {
   readonly othersMuted: boolean;
   /** Гравці, з якими є голосове зʼєднання. */
   readonly peers: readonly string[];
+  /** Гравці, зʼєднання з якими не встановилося чи розірвалося (сигнал не дійшов, тайм-аут). */
+  readonly failed: readonly string[];
   /** Хто зараз говорить (зокрема ви). */
   readonly speaking: ReadonlySet<string>;
 }
@@ -70,6 +77,8 @@ export interface VoiceState {
 interface Peer {
   readonly pc: RTCPeerConnection;
   audio: HTMLAudioElement | null;
+  /** Тайм-аут встановлення зʼєднання. */
+  timer: ReturnType<typeof setTimeout> | null;
 }
 
 interface Meter {
@@ -91,6 +100,7 @@ export class VoiceChat {
     notice: null,
     othersMuted: false,
     peers: [],
+    failed: [],
     speaking: new Set(),
   };
   private readonly listeners = new Set<() => void>();
@@ -108,6 +118,8 @@ export class VoiceChat {
   private queue: Promise<void> = Promise.resolve();
   /** Вихідні сигнали кожному гравцеві — теж по черзі, разом із повторами. */
   private readonly outbox = new Map<string, Promise<void>>();
+  /** Скільки разів поспіль пропозицію гравцеві повторено через тайм-аут. */
+  private readonly retries = new Map<string, number>();
   private audioContext: AudioContext | null = null;
   private meterTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -192,6 +204,7 @@ export class VoiceChat {
         return;
       }
       this.closePeer(message.playerId);
+      this.retries.delete(message.playerId);
       return;
     }
     // Новий учасник сам запропонує зʼєднання.
@@ -248,18 +261,46 @@ export class VoiceChat {
       const delay = VOICE_SIGNAL_RETRY_MS[attempt];
       if (error.code !== 'rateLimited' || delay === undefined) {
         console.error('Голосовий чат: сигнал не надіслано', error);
+        // Сервер відмовив остаточно: повторні пропозиції лише витрачали б ліміт.
+        this.stopTimer(this.peers.get(to));
+        this.setFailed(to, true);
         return;
       }
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
 
+  /** Позначає, що голосу з гравцем немає (або знову є). */
+  private setFailed(id: string, failed: boolean): void {
+    if (this.state.failed.includes(id) === failed) return;
+    this.set({
+      failed: failed ? [...this.state.failed, id] : this.state.failed.filter((f) => f !== id),
+    });
+  }
+
+  private stopTimer(peer: Peer | undefined): void {
+    if (peer === undefined || peer.timer === null) return;
+    clearTimeout(peer.timer);
+    peer.timer = null;
+  }
+
   private createPeer(id: string, initiator: boolean): Peer {
-    this.closePeer(id);
+    // Позначка невдачі лишається, доки нове зʼєднання не встановиться.
+    this.closePeer(id, true);
     const Connection = this.env.RTCPeerConnection;
     if (Connection === undefined) throw new Error('WebRTC недоступний');
     const pc = new Connection({ iceServers: ICE_SERVERS });
-    const peer: Peer = { pc, audio: null };
+    const peer: Peer = { pc, audio: null, timer: null };
+    peer.timer = setTimeout(() => {
+      peer.timer = null;
+      if (this.peers.get(id) !== peer || pc.connectionState === 'connected') return;
+      this.setFailed(id, true);
+      const retries = this.retries.get(id) ?? 0;
+      if (initiator && retries < VOICE_CONNECT_RETRIES) {
+        this.retries.set(id, retries + 1);
+        this.enqueue(() => this.offer(id));
+      }
+    }, VOICE_CONNECT_TIMEOUT_MS);
     this.peers.set(id, peer);
     this.set({ peers: [...this.peers.keys()] });
     pc.onicecandidate = (event) => {
@@ -281,9 +322,15 @@ export class VoiceChat {
       this.meter(id, stream);
     };
     pc.onconnectionstatechange = () => {
-      // Зʼєднання розірвалося (мережа змінилася): той, хто пропонував, пропонує знову.
-      if (pc.connectionState === 'failed' && initiator && this.peers.get(id) === peer) {
-        this.enqueue(() => this.offer(id));
+      if (this.peers.get(id) !== peer) return;
+      if (pc.connectionState === 'connected') {
+        this.stopTimer(peer);
+        this.retries.delete(id);
+        this.setFailed(id, false);
+      } else if (pc.connectionState === 'failed') {
+        // Зʼєднання розірвалося (мережа змінилася): той, хто пропонував, пропонує знову.
+        this.setFailed(id, true);
+        if (initiator) this.enqueue(() => this.offer(id));
       }
     };
     return peer;
@@ -312,10 +359,13 @@ export class VoiceChat {
     this.send(id, { type: 'answer', sdp: answer.sdp ?? '' });
   }
 
-  private closePeer(id: string): void {
+  /** Закриває зʼєднання; `keepFailed` — для заміни новим, позначка невдачі лишається. */
+  private closePeer(id: string, keepFailed = false): void {
+    if (!keepFailed) this.setFailed(id, false);
     const peer = this.peers.get(id);
     if (peer === undefined) return;
     this.peers.delete(id);
+    this.stopTimer(peer);
     peer.pc.close();
     if (peer.audio !== null) {
       peer.audio.srcObject = null;
@@ -327,6 +377,8 @@ export class VoiceChat {
 
   private closeAll(): void {
     for (const id of [...this.peers.keys()]) this.closePeer(id);
+    this.retries.clear();
+    if (this.state.failed.length > 0) this.set({ failed: [] });
   }
 
   /** Вмикає чи вимикає мікрофон; звук іде всім учасникам голосу. */
