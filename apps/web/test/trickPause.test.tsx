@@ -63,6 +63,12 @@ function seatItem(name: string) {
     .find((item) => item.querySelector('.player__name')?.textContent === name) as HTMLElement;
 }
 
+/** Скільки взяток узяв гравець за панеллю: «M / N» або «M» (без замовлень). */
+function taken(name: string): number {
+  const value = seatItem(name).querySelector('.player__score-value')?.textContent ?? '';
+  return Number(value.split(' / ')[0]);
+}
+
 /** Остання карта взятки, після якої роздача триває. */
 const beforeTrickEnd = (s: GameState) =>
   s.status === 'playing' &&
@@ -92,8 +98,8 @@ describe('пауза після взятки', () => {
     const winning = feltCards().filter((figure) => figure.dataset.winner === 'true');
     expect(winning).toHaveLength(1);
     expect(winning[0]).toHaveTextContent(nameAt(winner));
-    // Лічильник «Взято» оновлюється, лише коли карти забирають.
-    expect(seatItem(nameAt(winner))).toHaveTextContent(`Взято: ${takenBefore}`);
+    // Лічильник «взяв» оновлюється, лише коли карти забирають.
+    expect(taken(nameAt(winner))).toBe(takenBefore);
 
     // Переможець уже зайшов у нову взятку, але попередня ще на столі.
     const next = step(done);
@@ -104,7 +110,7 @@ describe('пауза після взятки', () => {
     wait(TRICK_PAUSE_MS - 1);
     expect(feltCards()).toHaveLength(3);
     wait(1);
-    expect(seatItem(nameAt(winner))).toHaveTextContent(`Взято: ${takenBefore + 1}`);
+    expect(taken(nameAt(winner))).toBe(takenBefore + 1);
     wait(COLLECT_MS);
     expect(felt()).not.toHaveTextContent('Бере');
     expect(feltCards()).toHaveLength(1);

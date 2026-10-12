@@ -26,7 +26,7 @@ export interface GameTableProps {
 type PlayAction = Extract<WireAction, { type: 'play' }>;
 
 /**
- * Що показати на час паузи взятки: лічильники «Взято» оновлюються, коли карти забирають.
+ * Що показати на час паузи взятки: лічильники «взяв» оновлюються, коли карти забирають.
  * Якщо взятка завершила роздачу, до кінця паузи показуємо стару роздачу з порожніми руками.
  */
 function pausedView(shown: WirePlayerView, pause: TrickPause, handOver: boolean): WirePlayerView {
@@ -294,15 +294,18 @@ export function GameTable({ room, view: latest }: GameTableProps) {
                 {uk.game.replaceWithBot}
               </button>
             )}
-            {view.spec.bidding && <PlayerBid bid={view.bids[seat] ?? null} />}
-            <span className="player__stats">
-              <span>{uk.game.taken(view.taken[seat] ?? 0)}</span>
-              {seat !== view.seat && (
+            <PlayerScore
+              bidding={view.spec.bidding}
+              bid={view.bids[seat] ?? null}
+              taken={view.taken[seat] ?? 0}
+            />
+            {seat !== view.seat && (
+              <span className="player__stats">
                 <span className="player__cards">
                   {uk.game.cardsLeft(view.handSizes[seat] ?? 0)}
                 </span>
-              )}
-            </span>
+              </span>
+            )}
           </li>
         ))}
       </ul>
@@ -426,20 +429,67 @@ export function GameTable({ room, view: latest }: GameTableProps) {
   );
 }
 
-/** Замовлення в картці гравця: велика цифра; до замовлення — порожній стан, не схожий на нуль. */
-function PlayerBid({ bid }: { bid: number | null }) {
-  return (
-    <span className="player__bid" data-empty={bid === null || undefined}>
-      <span className="player__bid-label">
-        <span className="player__bid-long">{uk.game.bid}</span>
-        <span className="player__bid-short" aria-hidden="true">
-          {uk.game.bidShort}
+/** Стан «взяв / замовив»: недобір нейтральний, рівно — ✓, перебір — ↑ (не лише колір). */
+type ScoreState = 'under' | 'exact' | 'over';
+
+function scoreState(taken: number, bid: number): ScoreState {
+  if (taken === bid) return 'exact';
+  return taken > bid ? 'over' : 'under';
+}
+
+const SCORE_MARK: Record<ScoreState, string> = { under: '', exact: '✓', over: '↑' };
+
+/**
+ * Велике значення в картці гравця (T65): «M / N» (взяв / замовив) зі станом; до замовлення —
+ * порожній стан «—», не схожий на нуль; у роздачах без замовлень (R-4.1) — лише «взяв M».
+ */
+function PlayerScore({
+  bidding,
+  bid,
+  taken,
+}: {
+  bidding: boolean;
+  bid: number | null;
+  taken: number;
+}) {
+  if (!bidding) {
+    return (
+      <span className="player__score">
+        <span className="player__score-label">{uk.game.takenLabel}</span>
+        <span className="player__score-value">{taken}</span>
+      </span>
+    );
+  }
+  if (bid === null) {
+    return (
+      <span className="player__score" data-empty>
+        <span className="player__score-label">{uk.game.scoreLabel}</span>
+        <span className="player__score-value" aria-hidden="true">
+          —
         </span>
+        <span className="sr-only">{uk.game.noBid}</span>
       </span>
-      <span className="player__bid-value" aria-hidden={bid === null || undefined}>
-        {bid ?? '—'}
+    );
+  }
+  const state = scoreState(taken, bid);
+  return (
+    <span className="player__score" data-state={state}>
+      <span className="player__score-label" aria-hidden="true">
+        {uk.game.scoreLabel}
       </span>
-      {bid === null && <span className="sr-only">{uk.game.noBid}</span>}
+      <span className="player__score-line" aria-hidden="true">
+        <span className="player__score-value">
+          {taken} / {bid}
+        </span>
+        {SCORE_MARK[state] !== '' && (
+          <span className="player__score-mark">{SCORE_MARK[state]}</span>
+        )}
+      </span>
+      <span className="sr-only">
+        {uk.game.score(taken, bid)}
+        {state === 'exact' && `, ${uk.game.scoreExact}`}
+        {state === 'over' && `, ${uk.game.scoreOver}`}
+      </span>
     </span>
   );
 }

@@ -23,6 +23,8 @@
   --suit-joker: #6a3fb5;
   --card-back: #2e4a8a;
   --focus: #f0b429;
+  /* «Взяв / замовив»: перебір (T65); контраст із фоном картки ≥ 4.5:1. */
+  --over: #b34700;
   --shadow: 0 1px 3px rgb(0 0 0 / 0.15);
 
   --space-1: 4px;
@@ -68,6 +70,7 @@
   --suit-joker: #6a3fb5;
   --card-back: #3a5aa8;
   --shadow: 0 1px 3px rgb(0 0 0 / 0.5);
+  --over: #ffa552;
 }
 
 *,
@@ -801,7 +804,7 @@ textarea {
   font-weight: 600;
 }
 
-.player > :not(.player__bid) {
+.player > :not(.player__score) {
   grid-column: 1;
 }
 
@@ -822,37 +825,58 @@ textarea {
   display: none;
 }
 
-/* Замовлення великою цифрою праворуч; до замовлення — пунктирна порожня рамка. */
-.player__bid {
+/*
+ * «Взяв / замовив» великим значенням праворуч (T65); до замовлення — пунктирна порожня рамка.
+ * Стан видно і кольором, і значком: рівно — ✓ акцентом, перебір — ↑ помаранчевим.
+ */
+.player__score {
   grid-column: 2;
   grid-row: 1 / span 3;
   display: grid;
   justify-items: center;
   align-content: center;
   min-width: 44px;
-  padding: 2px;
+  padding: 2px var(--space-1);
   border: 2px solid var(--border);
   border-radius: var(--radius);
+  white-space: nowrap;
 }
 
-.player__bid[data-empty] {
+.player__score[data-empty] {
   border-style: dashed;
   color: var(--muted);
 }
 
-.player__bid-label {
+.player__score[data-state='exact'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.player__score[data-state='over'] {
+  border-color: var(--over);
+  color: var(--over);
+}
+
+.player__score-label {
   color: var(--muted);
   font-size: 0.625rem;
 }
 
-.player__bid-short {
-  display: none;
+.player__score-line {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
 }
 
-.player__bid-value {
+.player__score-value {
   font-size: 1.5rem;
   font-weight: 700;
   line-height: 1.1;
+}
+
+.player__score-mark {
+  font-size: 1rem;
+  font-weight: 700;
 }
 
 /* Хост віддає боту місце відключеного гравця (R-9.3). */
@@ -1800,7 +1824,7 @@ tfoot .sheet__cell {
     white-space: nowrap;
   }
 
-  .player__bid {
+  .player__score {
     flex: none;
     display: inline-flex;
     align-items: baseline;
@@ -1810,25 +1834,14 @@ tfoot .sheet__cell {
     border-width: 1px;
   }
 
-  /* На телефоні підпис короткий («зам»), повний лишається для читачів екрана. */
-  .player__bid-long {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    margin: -1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-
-  .player__bid-short {
-    display: inline;
-  }
-
-  .player__bid-value {
+  .player__score-value {
     min-width: 1ch;
     font-size: 1rem;
     text-align: center;
+  }
+
+  .player__score-mark {
+    font-size: 0.875rem;
   }
 
   .player__stats {

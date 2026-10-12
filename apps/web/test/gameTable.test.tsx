@@ -334,8 +334,9 @@ describe('ігровий стіл', () => {
     renderAt(state, 0);
     state.hand.bids.forEach((bid, seat) => {
       const item = seatItem(nameAt(seat));
-      expect(item.querySelector('.player__bid-value')).toHaveTextContent(String(bid));
-      expect(item).toHaveTextContent(`Взято: ${state.hand.taken[seat]}`);
+      expect(item.querySelector('.player__score-value')).toHaveTextContent(
+        `${state.hand.taken[seat]} / ${bid}`,
+      );
     });
   });
 
@@ -350,8 +351,8 @@ describe('ігровий стіл', () => {
       revealed: null,
     });
     expect(seatItem('Оля')).not.toHaveTextContent(/замовлення/i);
-    expect(seatItem('Оля').querySelector('.player__bid')).toBeNull();
-    expect(seatItem('Оля')).toHaveTextContent('Взято: 0');
+    expect(seatItem('Оля')).not.toHaveTextContent('/');
+    expect(seatItem('Оля').querySelector('.player__score')).toHaveTextContent('взяв0');
   });
 
   it('позначає, чий хід', () => {
