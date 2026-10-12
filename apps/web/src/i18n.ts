@@ -35,6 +35,7 @@ export const uk = {
     httpsOnly: 'Голосовий чат працює лише через HTTPS — відкрийте гру за адресою https://',
     denied: 'Немає доступу до мікрофона: дозвольте його в налаштуваннях браузера',
     speaking: 'говорить',
+    failed: (names: readonly string[]) => `Немає голосового звʼязку з: ${names.join(', ')}`,
   },
   connection: {
     indicator: {
