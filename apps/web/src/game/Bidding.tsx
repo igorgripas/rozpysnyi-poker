@@ -56,7 +56,7 @@ export function Bidding({ view, nameOf, disabled = false, onBid }: BiddingProps)
               data-dealer={seat === view.dealer || undefined}
               aria-current={state === 'turn' ? 'true' : undefined}
             >
-              <span className="bid-queue__name">{nameOf(seat)}</span>
+              <QueueName name={nameOf(seat)} />
               <span className="bid-queue__line">
                 <span className="bid-queue__value" aria-hidden="true">
                   {bid !== null ? bid : state === 'turn' ? '?' : '—'}
@@ -107,6 +107,26 @@ export function Bidding({ view, nameOf, disabled = false, onBid }: BiddingProps)
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * Імʼя в черзі: клітинка на 360px при 6 гравцях вузька, тож якщо імʼя не вміщується, перше
+ * слово й решта переносяться окремими рядками й обрізаються кожен сам («Олек… / Крав…»,
+ * а не «Ол…»). Повне імʼя — у підказці.
+ */
+function QueueName({ name }: { name: string }) {
+  const [first = '', ...rest] = name.trim().split(/\s+/);
+  return (
+    <span className="bid-queue__name" title={name}>
+      <span className="bid-queue__word">{first}</span>
+      {rest.length > 0 && (
+        <>
+          {' '}
+          <span className="bid-queue__word">{rest.join(' ')}</span>
+        </>
+      )}
+    </span>
   );
 }
 

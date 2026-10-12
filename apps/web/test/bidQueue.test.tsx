@@ -112,6 +112,19 @@ describe('черга замовлень', () => {
     }
   });
 
+  it('R-4.2: імʼя в черзі — перше слово й решта окремими рядками, повне імʼя в підказці', () => {
+    const state = findState(6, biddingAfter(0));
+    renderAt(state, 0);
+    for (const item of queueItems()) {
+      const name = defined(item.querySelector('.bid-queue__name'));
+      const full = defined(name.textContent);
+      expect(name).toHaveAttribute('title', full);
+      const words = [...name.querySelectorAll('.bid-queue__word')].map((w) => w.textContent);
+      // «Бот 1» — два рядки; «Оля» — один.
+      expect(words).toEqual(full === 'Оля' ? ['Оля'] : full.split(' '));
+    }
+  });
+
   it('R-4.5: замовлення видно в черзі, навіть коли це не мій хід', () => {
     const state = findState(5, biddingAfter(2));
     const seat = state.hand.dealer;

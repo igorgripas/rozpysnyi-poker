@@ -976,10 +976,13 @@ textarea {
   list-style: none;
 }
 
+/* Імʼя зверху, значення — внизу: у клітинках з одно- і дворядковими іменами значення на одній лінії. */
 .bid-queue__item {
   display: grid;
+  grid-template-rows: 1fr auto;
+  /* Колонка не ширша за клітинку: інакше довге імʼя розпирає її й зсуває значення. */
+  grid-template-columns: minmax(0, 1fr);
   justify-items: center;
-  align-content: start;
   min-width: 0;
   padding: var(--space-1);
   border: 2px solid var(--border);
@@ -997,10 +1000,21 @@ textarea {
   color: var(--muted);
 }
 
+/* Імʼя в один рядок, якщо вміщується; інакше перше слово й решта — окремими рядками,
+   кожен обрізається трикрапкою сам. */
 .bid-queue__name {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  column-gap: 0.25em;
+  max-width: 100%;
+  font-size: 0.75rem;
+}
+
+.bid-queue__word {
+  min-width: 0;
   max-width: 100%;
   overflow: hidden;
-  font-size: 0.75rem;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
